@@ -1,0 +1,72 @@
+@media (max-width: 1400px) {
+  .core-body {
+    grid-template-columns: 180px 1fr 130px;
+  }
+  .app {
+    grid-template-columns: 190px 1fr;
+  }
+}
+@media (max-width: 1180px) {
+  .main {
+    grid-template-columns: 1fr;
+  }
+  .app {
+    height: auto;
+    min-height: 100vh;
+  }
+}
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto;
+  }
+  .sidebar {
+    grid-row: 1;
+    grid-column: 1;
+    flex-direction: column;
+    overflow-x: auto;
+  }
+  .topbar {
+    grid-row: 2;
+    grid-column: 1;
+    grid-template-columns: repeat(6, 145px);
+    overflow-x: auto;
+  }
+  .main {
+    grid-row: 3;
+    grid-column: 1;
+    min-width: 0;
+  }
+  .statusbar {
+    grid-row: 4;
+    grid-column: 1;
+    overflow-x: auto;
+  }
+  .statusbar .sb-item {
+    flex: 0 0 auto;
+  }
+  .navlist {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+  }
+  .navitem {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .brand {
+    display: none;
+  }
+  .sidebar-foot {
+    display: none;
+  }
+  .core-body {
+    grid-template-columns: 1fr;
+  }
+  .knowledge-graph-frame {
+    min-height: 440px;
+  }
+  .qa-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

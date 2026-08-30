@@ -1,0 +1,58 @@
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1.2fr auto auto;
+  align-items: stretch;
+}
+.tb-seg {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 18px;
+  border-right: 1px solid var(--border-orange-soft);
+  min-width: 0;
+}
+.tb-seg:last-child {
+  border-right: none;
+}
+.tb-seg .eyebrow {
+  margin-bottom: 3px;
+}
+.tb-usage {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.tb-usage span {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.tb-usage .lbl {
+  font-size: 8px;
+  color: var(--text-muted);
+  display: block;
+  letter-spacing: 0.08em;
+}
+.tb-uptime {
+  align-items: center;
+}
+.tb-uptime-val {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+}
+.tb-uptime-sub {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.tb-core {
+  align-items: flex-end;
+  text-align: right;
+  justify-content: center;
+}
+.tb-core .hud-status {
+  font-size: 13px;
+}

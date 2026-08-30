@@ -1,0 +1,57 @@
+.app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 68px 1fr 44px;
+  height: 100vh;
+  gap: 14px;
+  padding: 14px;
+}
+.sidebar {
+  grid-row: 1 / 4;
+  grid-column: 1;
+}
+.topbar {
+  grid-row: 1;
+  grid-column: 2;
+}
+.main {
+  grid-row: 2;
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 14px;
+  min-height: 0;
+}
+.workspace-main {
+  display: block;
+  overflow: hidden;
+}
+.main-left {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 14px;
+  min-height: 0;
+}
+.main-right {
+  display: grid;
+  grid-template-rows: 1fr 250px;
+  gap: 10px;
+  min-height: 0;
+}
+.lower-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 10px;
+}
+.statusbar {
+  grid-row: 3;
+  grid-column: 2;
+}
+
+/* scroll thin */
+.chat-log,
+.task-list,
+.navlist,
+.workspace-page {
+  scrollbar-width: thin;
+}

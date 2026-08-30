@@ -1,0 +1,76 @@
+.approvals-panel {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.appr-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.appr-icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+.appr-icon.med {
+  background: rgba(255, 157, 0, 0.08);
+  color: var(--orange);
+}
+.appr-icon.high {
+  background: rgba(255, 59, 47, 0.08);
+  color: var(--red);
+}
+.appr-icon svg {
+  width: 13px;
+  height: 13px;
+}
+.appr-meta {
+  flex: 1;
+  min-width: 0;
+}
+.appr-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+.appr-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.risk-tag {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.risk-tag.med {
+  color: var(--orange);
+  border: 1px solid var(--border-orange);
+}
+.risk-tag.high {
+  color: var(--red);
+  border: 1px solid rgba(255, 59, 47, 0.4);
+}
+.review-btn {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  border: 1px solid rgba(30, 232, 136, 0.4);
+  padding: 5px 12px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.review-btn:hover {
+  background: rgba(30, 232, 136, 0.08);
+  box-shadow: 0 0 10px rgba(30, 232, 136, 0.15);
+}

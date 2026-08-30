@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { executeTool } from '../server/toolExecutor.js';
+
+test('tool executor reads only bounded files inside the workspace', async () => {
+  const result = await executeTool('files.read', { path: 'package.json' });
+  assert.equal(result.ok, true);
+  assert.match(result.data.content, /jarvis-command-console/);
+  await assert.rejects(() => executeTool('files.read', { path: '..' }), /outside the JARVIS workspace/);
+});
+
+test('command execution requires an approved approval record', async () => {
+  await assert.rejects(() => executeTool('command.execute', { command: 'node --version' }), /requires an approved approvalId/);
+  await assert.rejects(() => executeTool('command.execute', { command: 'node && whoami' }, { approval: { status: 'approved' } }), /single executable command/);
+});
+
+test('central tool executor permits Composio reads but gates external writes', async () => {
+  const originalKey = process.env.COMPOSIO_API_KEY; process.env.COMPOSIO_API_KEY = 'test';
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ successful: true, data: { messages: [] }, log_id: 'log-read' }) });
+  const read = await executeTool('composio.execute', { toolSlug: 'GMAIL_FETCH_EMAILS', arguments: {} }, { fetchImpl });
+  assert.equal(read.ok, true);
+  await assert.rejects(() => executeTool('composio.execute', { toolSlug: 'GMAIL_SEND_EMAIL', arguments: { recipient_email: 'a@example.com' } }, { fetchImpl }), /requires a current approval/);
+  if (originalKey === undefined) delete process.env.COMPOSIO_API_KEY; else process.env.COMPOSIO_API_KEY = originalKey;
+});

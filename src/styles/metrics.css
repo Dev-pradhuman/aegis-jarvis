@@ -1,0 +1,75 @@
+.metrics-panel {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 16px;
+}
+.gauge-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.gauge-pct {
+  font-family: var(--font-display);
+  font-size: 26px;
+  color: var(--orange);
+}
+.gauge-lbl {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.gauge-status {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--green);
+  font-weight: 700;
+}
+.metrics-list {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+}
+.metric-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+.metric-row .m-lbl {
+  width: 82px;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.metric-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  position: relative;
+}
+.metric-bar span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--cyan);
+}
+.metric-val {
+  width: 60px;
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.metric-val.green {
+  color: var(--green);
+}
+.metrics-panel .waveform {
+  grid-column: 1 / -1;
+}

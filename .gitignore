@@ -1,0 +1,8 @@
+node_modules
+dist
+.gstack/
+server/graphify-out/
+.env.local
+server/data/credentials.env
+server/data/state.json
+server/data/generated/

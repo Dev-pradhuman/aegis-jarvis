@@ -1,0 +1,35 @@
+.statusbar {
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 0;
+}
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-right: 1px solid var(--border-orange-soft);
+  font-size: 10px;
+}
+.sb-item:first-child {
+  padding-left: 4px;
+}
+.sb-item .lbl {
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+.sb-item .v {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.sb-item svg {
+  width: 13px;
+  height: 13px;
+}
+.sb-spacer {
+  flex: 1;
+}
+.sb-chevron {
+  color: var(--orange);
+}

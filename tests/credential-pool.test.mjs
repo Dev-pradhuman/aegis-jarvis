@@ -1,0 +1,7 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { credentialEntries, fetchWithCredentialRotation } from '../server/credentialPool.js';
+
+test('numbered provider credentials are deduplicated and ordered', () => { process.env.TEST_API_KEY = 'a'; process.env.TEST_API_KEY_1 = 'a'; process.env.TEST_API_KEY_2 = 'b'; assert.deepEqual(credentialEntries('TEST_API_KEY').map((item) => item.credentialRef), ['TEST_API_KEY', 'TEST_API_KEY_2']); delete process.env.TEST_API_KEY; delete process.env.TEST_API_KEY_1; delete process.env.TEST_API_KEY_2; });
+test('provider credential rotation advances on quota and stops on success', async () => { process.env.TEST_API_KEY = 'a'; process.env.TEST_API_KEY_1 = 'b'; const seen = []; const result = await fetchWithCredentialRotation('TEST_API_KEY', async (key) => { seen.push(key); return { ok: key === 'b', status: key === 'b' ? 200 : 429 }; }); assert.deepEqual(seen, ['a', 'b']); assert.equal(result.credentialRef, 'TEST_API_KEY_1'); delete process.env.TEST_API_KEY; delete process.env.TEST_API_KEY_1; });
+test('credential rotation does not burn keys on malformed requests', async () => { process.env.TEST_API_KEY = 'a'; process.env.TEST_API_KEY_1 = 'b'; const seen = []; await fetchWithCredentialRotation('TEST_API_KEY', async (key) => { seen.push(key); return { ok: false, status: 400 }; }); assert.deepEqual(seen, ['a']); delete process.env.TEST_API_KEY; delete process.env.TEST_API_KEY_1; });

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS Unified Memory Graph</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #020304;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+  #jkg-root {
+    width: 100vw; height: 100vh;
+    background: radial-gradient(ellipse at center, #0a0e1a 0%, #05070c 70%, #020304 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  #jkg-canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  #jkg-canvas:active { cursor: grabbing; }
+  #jkg-label {
+    position: absolute; top: 20px; left: 24px;
+    color: #e8ecf5; font-size: 13px; letter-spacing: 2px;
+    text-transform: uppercase; opacity: 0.55; font-weight: 600;
+    pointer-events: none;
+  }
+  #jkg-sub {
+    position: absolute; bottom: 16px; left: 24px;
+    color: #9aa4bd; font-size: 11px; letter-spacing: 0.5px;
+    opacity: 0.4; pointer-events: none;
+  }
+  #jkg-legend {
+    position: absolute; top: 20px; right: 24px;
+    display: flex; flex-direction: column; gap: 6px;
+    pointer-events: none;
+  }
+  .jkg-legend-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: #c8cee0; opacity: 0.75;
+    letter-spacing: 0.3px;
+  }
+  .jkg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  #jkg-tooltip {
+    position: absolute; padding: 5px 10px; border-radius: 6px;
+    background: rgba(10,14,26,0.92); border: 1px solid rgba(255,255,255,0.1);
+    color: #eef1fa; font-size: 12px; pointer-events: none;
+    opacity: 0; transform: translate(-50%, -130%);
+    transition: opacity 0.12s ease; white-space: nowrap; z-index: 10;
+  }
+</style>
+</head>
+<body>
+
+<div id="jkg-root">
+  <canvas id="jkg-canvas"></canvas>
+  <div id="jkg-label">Unified Memory Graph</div>
+  <div id="jkg-sub">5 agent clusters &middot; shared memory &middot; live topology &middot; drag nodes / scroll to zoom</div>
+  <div id="jkg-legend"></div>
+  <div id="jkg-tooltip"></div>
+</div>
+
+<script>
+(function(){
+  const root = document.getElementById('jkg-root');
+  const canvas = document.getElementById('jkg-canvas');
+  const ctx = canvas.getContext('2d');
+  const tooltip = document.getElementById('jkg-tooltip');
+  const legendEl = document.getElementById('jkg-legend');
+
+  let W, H, DPR;
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = root.clientWidth;
+    H = root.clientHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---- Cluster / agent definitions (mirrors the Obsidian vault) ----
+  const clusterDefs = [
+    { key:'cyan',    color:'#3fe8ff', agent:'Research Agent',  topics:['Source Ingestion','Web Crawl Cache','Citation Index','Fact Verification','Query Expansion','Topic Modeling','Summary Drafts','Knowledge Gaps'] },
+    { key:'magenta', color:'#ff3fd8', agent:'Planning Agent',  topics:['Goal Decomposition','Task Queue','Dependency Graph','Priority Rules','Scheduling Heuristics','Risk Assessment','Milestone Tracker','Plan Revisions'] },
+    { key:'lime',    color:'#c6ff3f', agent:'Execution Agent', topics:['Tool Invocations','Action Log','Retry Policies','Sandbox State','API Bindings','Command History','Error Recovery','Output Validation'] },
+    { key:'orange',  color:'#ff9a3f', agent:'Comms Agent',     topics:['User Preferences','Conversation Threads','Tone Profiles','Notification Rules','Feedback Log','Escalation Paths','Response Templates','Channel Routing'] },
+    { key:'violet',  color:'#9a6bff', agent:'Memory Agent',    topics:['Episodic Log','Semantic Store','Embedding Index','Recall Triggers','Consolidation Rules','Forgetting Curve','Cross-Agent Links','Context Windows'] }
+  ];
+  const CORE_COLOR = '#fff6d8';
+
+  // legend
+  clusterDefs.forEach(cl => {
+    const item = document.createElement('div');
+    item.className = 'jkg-legend-item';
+    item.innerHTML = `<span class="jkg-dot" style="background:${cl.color};box-shadow:0 0 6px ${cl.color}"></span>${cl.agent}`;
+    legendEl.appendChild(item);
+  });
+
+  // ---- Build nodes ----
+  const nodes = [];
+  const core = { x:0, y:0, vx:0, vy:0, anchorX:0, anchorY:0, r:10, color:CORE_COLOR, isCore:true, isHub:false, pulse:Math.random()*Math.PI*2, label:'Core' };
+  nodes.push(core);
+
+  const hubByCluster = {};
+  const nodesByLabel = {};
+
+  clusterDefs.forEach((cl, ci) => {
+    const angle = (ci / clusterDefs.length) * Math.PI * 2 - Math.PI/2;
+    const cx = Math.cos(angle) * 190;
+    const cy = Math.sin(angle) * 190;
+
+    const hub = {
+      x: cx, y: cy, vx:0, vy:0, r:6.5, color: cl.color,
+      cluster: ci, anchorX: cx, anchorY: cy, isHub:true, isCore:false,
+      twinkle: Math.random()*Math.PI*2, twinkleSpeed: 0.015,
+      label: cl.agent
+    };
+    nodes.push(hub);
+    hubByCluster[cl.key] = hub;
+    nodesByLabel[cl.agent] = hub;
+
+    cl._leafNodes = [];
+    cl.topics.forEach((topic, i) => {
+      const a = (i / cl.topics.length) * Math.PI * 2 + ci;
+      const rad = 35 + (i % 3) * 14;
+      const n = {
+        x: cx + Math.cos(a)*rad, y: cy + Math.sin(a)*rad, vx:0, vy:0,
+        r: 2.4 + Math.random()*2, color: cl.color, cluster: ci,
+        anchorX: cx, anchorY: cy, isHub:false, isCore:false,
+        twinkle: Math.random()*Math.PI*2, twinkleSpeed: 0.02 + Math.random()*0.03,
+        label: topic
+      };
+      nodes.push(n);
+      cl._leafNodes.push(n);
+      nodesByLabel[topic] = n;
+    });
+  });
+
+  // ---- Edges ----
+  const edges = [];
+
+  // within-cluster mesh + hub link
+  clusterDefs.forEach(cl => {
+    const leaves = cl._leafNodes;
+    const hub = hubByCluster[cl.key];
+    leaves.forEach((n, i) => {
+      for (let k = 1; k <= 2; k++){
+        const j = (i + k) % leaves.length;
+        edges.push({ a:n, b:leaves[j], color:cl.color, w:0.6, kind:'mesh' });
+      }
+    });
+    edges.push({ a:hub, b:leaves[0], color:cl.color, w:1, kind:'hub' });
+    edges.push({ a:hub, b:leaves[Math.floor(leaves.length/2)], color:cl.color, w:1, kind:'hub' });
+    edges.push({ a:hub, b:core, color:cl.color, w:1.6, kind:'core' });
+  });
+
+  // hub-to-hub shared memory mesh (every agent shares with every other agent)
+  const hubs = clusterDefs.map(cl => hubByCluster[cl.key]);
+  for (let i = 0; i < hubs.length; i++){
+    for (let j = i+1; j < hubs.length; j++){
+      edges.push({ a:hubs[i], b:hubs[j], color:'#ffffff', w:0.7, kind:'shared-hub' });
+    }
+  }
+
+  // explicit cross-cluster shared-memory links between individual topic notes
+  const crossLinks = [
+    ['Summary Drafts','Goal Decomposition'],
+    ['Knowledge Gaps','Recall Triggers'],
+    ['Task Queue','Tool Invocations'],
+    ['Risk Assessment','Escalation Paths'],
+    ['Output Validation','Fact Verification'],
+    ['Error Recovery','Feedback Log'],
+    ['User Preferences','Episodic Log'],
+    ['Conversation Threads','Plan Revisions'],
+    ['Semantic Store','Topic Modeling'],
+    ['Context Windows','Sandbox State']
+  ];
+  crossLinks.forEach(([a,b]) => {
+    const na = nodesByLabel[a], nb = nodesByLabel[b];
+    if (na && nb) edges.push({ a:na, b:nb, color:'#ffffff', w:0.9, kind:'shared-leaf' });
+  });
+
+  // ---- Interaction state: pan / zoom / drag ----
+  let panX = 0, panY = 0, zoom = 1;
+  let dragNode = null, isPanning = false, lastMouse = {x:0,y:0};
+
+  function screenToWorld(mx, my){
+    return { x: (mx - W/2 - panX) / zoom, y: (my - H/2 - panY) / zoom };
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const w = screenToWorld(mx, my);
+    let hit = null, hitDist = Infinity;
+    for (const n of nodes){
+      const d = Math.hypot(n.x - w.x, n.y - w.y);
+      const hr = n.r + 6/zoom;
+      if (d < hr && d < hitDist){ hit = n; hitDist = d; }
+    }
+    if (hit){ dragNode = hit; }
+    else { isPanning = true; lastMouse = {x:e.clientX, y:e.clientY}; }
+  });
+  window.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (dragNode){
+      const w = screenToWorld(mx, my);
+      dragNode.x = w.x; dragNode.y = w.y;
+      dragNode.vx = 0; dragNode.vy = 0;
+      dragNode.pinned = true;
+    } else if (isPanning){
+      panX += e.clientX - lastMouse.x;
+      panY += e.clientY - lastMouse.y;
+      lastMouse = {x:e.clientX, y:e.clientY};
+    } else {
+      const w = screenToWorld(mx, my);
+      let hover = null, hd = Infinity;
+      for (const n of nodes){
+        const d = Math.hypot(n.x - w.x, n.y - w.y);
+        if (d < n.r + 6/zoom && d < hd){ hover = n; hd = d; }
+      }
+      if (hover){
+        tooltip.style.opacity = 1;
+        tooltip.style.left = mx + 'px';
+        tooltip.style.top = my + 'px';
+        tooltip.textContent = hover.label;
+        canvas.style.cursor = 'pointer';
+      } else {
+        tooltip.style.opacity = 0;
+        canvas.style.cursor = isPanning ? 'grabbing' : 'grab';
+      }
+    }
+  });
+  window.addEventListener('mouseup', () => {
+    if (dragNode) dragNode.pinned = false;
+    dragNode = null; isPanning = false;
+  });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 0.93;
+    zoom = Math.min(3, Math.max(0.4, zoom * factor));
+  }, { passive:false });
+
+  // ---- Force simulation ----
+  const REPEL = 900, SPRING = 0.006, ANCHOR_PULL = 0.01, DAMPING = 0.86, CENTER_PULL = 0.0006;
+  const CORE_ANCHOR_PULL = 0.035, CORE_DAMPING = 0.82;
+
+  function step(){
+    for (let i = 1; i < nodes.length; i++){
+      const n1 = nodes[i];
+      if (n1.pinned) continue;
+      for (let j = i+1; j < nodes.length; j++){
+        const n2 = nodes[j];
+        let dx = n1.x - n2.x, dy = n1.y - n2.y;
+        let d2 = dx*dx + dy*dy + 0.01, d = Math.sqrt(d2);
+        if (d < 130){
+          const f = REPEL / d2;
+          const fx = (dx/d)*f, fy = (dy/d)*f;
+          n1.vx += fx; n1.vy += fy;
+          if (!n2.pinned){ n2.vx -= fx; n2.vy -= fy; }
+        }
+      }
+    }
+    edges.forEach(e => {
+      const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
+      const dist = Math.sqrt(dx*dx+dy*dy) + 0.01;
+      let target = 45;
+      if (e.kind === 'core') target = 170;
+      else if (e.kind === 'shared-hub') target = 300;
+      else if (e.kind === 'shared-leaf') target = 260;
+      const f = (dist - target) * SPRING * (e.kind.startsWith('shared') ? 0.5 : 1);
+      const fx = (dx/dist)*f, fy = (dy/dist)*f;
+      if (!e.a.isCore && !e.a.pinned){ e.a.vx += fx; e.a.vy += fy; }
+      if (!e.b.isCore && !e.b.pinned){ e.b.vx -= fx; e.b.vy -= fy; }
+    });
+    for (let i = 1; i < nodes.length; i++){
+      const n = nodes[i];
+      if (!n.pinned){
+        n.vx += (n.anchorX - n.x) * ANCHOR_PULL;
+        n.vy += (n.anchorY - n.y) * ANCHOR_PULL;
+        n.vx -= n.x * CENTER_PULL;
+        n.vy -= n.y * CENTER_PULL;
+        n.vx *= DAMPING; n.vy *= DAMPING;
+        n.x += n.vx; n.y += n.vy;
+      }
+      n.twinkle += n.twinkleSpeed;
+    }
+    if (!core.pinned){
+      core.vx += (core.anchorX - core.x) * CORE_ANCHOR_PULL;
+      core.vy += (core.anchorY - core.y) * CORE_ANCHOR_PULL;
+      core.vx *= CORE_DAMPING; core.vy *= CORE_DAMPING;
+      core.x += core.vx; core.y += core.vy;
+    }
+    core.pulse += 0.04;
+  }
+
+  function hexToRgba(hex, a){
+    const h = hex.replace('#','');
+    const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.translate(W/2 + panX, H/2 + panY);
+    ctx.scale(zoom, zoom);
+
+    const ringR = 230 + Math.sin(core.pulse*0.3)*4;
+    ctx.beginPath(); ctx.arc(0,0,ringR,0,Math.PI*2);
+    ctx.strokeStyle = 'rgba(160,180,255,0.05)'; ctx.lineWidth = 1/zoom; ctx.stroke();
+
+    // draw shared (cross-cluster) links first, subtler
+    edges.filter(e => e.kind.startsWith('shared')).forEach(e => {
+      ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y);
+      ctx.strokeStyle = hexToRgba('#ffffff', e.kind === 'shared-hub' ? 0.14 : 0.16);
+      ctx.setLineDash([2/zoom, 4/zoom]);
+      ctx.lineWidth = e.w/zoom; ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // cluster-internal edges
+    edges.filter(e => !e.kind.startsWith('shared')).forEach(e => {
+      ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y);
+      ctx.strokeStyle = hexToRgba(e.color, e.kind === 'core' ? 0.35 : 0.22);
+      ctx.lineWidth = e.w/zoom; ctx.stroke();
+    });
+
+    for (let i = 1; i < nodes.length; i++){
+      const n = nodes[i];
+      const tw = 0.55 + Math.sin(n.twinkle)*0.35;
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2);
+      ctx.fillStyle = hexToRgba(n.color, (n.isHub ? 1 : 0.85*tw + 0.15));
+      ctx.shadowColor = n.color; ctx.shadowBlur = n.isHub ? 14 : 8;
+      ctx.fill();
+      if (n.isHub){
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 3, 0, Math.PI*2);
+        ctx.strokeStyle = hexToRgba(n.color, 0.4); ctx.lineWidth = 1/zoom; ctx.stroke();
+      }
+    }
+    ctx.shadowBlur = 0;
+
+    const pulseR = 14 + (Math.sin(core.pulse)+1)*10;
+    ctx.beginPath(); ctx.arc(core.x,core.y,pulseR,0,Math.PI*2);
+    ctx.strokeStyle = hexToRgba(CORE_COLOR, 0.25); ctx.lineWidth = 1.5/zoom; ctx.stroke();
+
+    const pulseR2 = 14 + ((Math.sin(core.pulse - 1.4)+1)*16);
+    ctx.beginPath(); ctx.arc(core.x,core.y,pulseR2,0,Math.PI*2);
+    ctx.strokeStyle = hexToRgba(CORE_COLOR, 0.12); ctx.lineWidth = 1/zoom; ctx.stroke();
+
+    const grad = ctx.createRadialGradient(core.x,core.y,0,core.x,core.y,16);
+    grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+    grad.addColorStop(0.4, hexToRgba(CORE_COLOR, 0.9));
+    grad.addColorStop(1, hexToRgba(CORE_COLOR, 0));
+    ctx.beginPath(); ctx.arc(core.x,core.y,16,0,Math.PI*2); ctx.fillStyle = grad; ctx.fill();
+
+    ctx.beginPath(); ctx.arc(core.x,core.y,4.5,0,Math.PI*2);
+    ctx.fillStyle = '#ffffff'; ctx.shadowColor = CORE_COLOR; ctx.shadowBlur = 20; ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+  }
+
+  function loop(){ step(); draw(); requestAnimationFrame(loop); }
+  loop();
+})();
+</script>
+
+</body>
+</html>

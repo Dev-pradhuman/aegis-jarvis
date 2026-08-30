@@ -1,0 +1,70 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: radial-gradient(ellipse at 20% 0%, rgba(255, 157, 0, 0.05), transparent 45%),
+    radial-gradient(ellipse at 90% 100%, rgba(31, 216, 234, 0.04), transparent 40%), var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font-family: inherit;
+  cursor: pointer;
+  background: none;
+  color: inherit;
+  border: none;
+}
+input {
+  font-family: inherit;
+  background: none;
+  color: inherit;
+  border: none;
+  outline: none;
+}
+select {
+  font-family: inherit;
+  color: inherit;
+  color-scheme: dark;
+}
+select option {
+  background: #101719;
+  color: #e8ebec;
+}
+:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: 2px;
+}
+::selection {
+  background: var(--orange-faint);
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--orange-dim);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

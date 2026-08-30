@@ -1,0 +1,107 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.brand {
+  width: 100%;
+  text-align: left;
+  padding: 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-orange-soft);
+}
+.brand-emblem {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1.5px solid var(--orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--glow-orange);
+  position: relative;
+  animation: emblem-spin 12s linear infinite;
+}
+.brand-emblem::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid var(--orange-dim);
+  border-radius: 50%;
+}
+@keyframes emblem-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.brand-text .name {
+  font-family: var(--font-display);
+  font-size: 19px;
+  letter-spacing: 0.28em;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.brand-text .sub {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-top: 5px;
+  line-height: 1.3;
+  max-width: 130px;
+}
+
+.navlist {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+}
+.navitem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--border-orange-soft);
+  color: var(--text-muted);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+.navitem svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.navitem:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.02);
+}
+.navitem.active {
+  color: var(--orange-bright);
+  background: var(--orange-faint);
+  border: 1px solid var(--border-orange);
+  box-shadow: 0 0 0 1px rgba(255,157,0,.08), 0 8px 22px rgba(255,157,0,.08);
+}
+.navitem.active svg {
+  opacity: 1;
+}

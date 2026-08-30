@@ -1,0 +1,110 @@
+.hud-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-orange-soft);
+  position: relative;
+  clip-path: polygon(
+    var(--chamfer) 0,
+    100% 0,
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    0 100%,
+    0 var(--chamfer)
+  );
+}
+.hud-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(255, 157, 0, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 157, 0, 0.025) 1px, transparent 1px);
+  background-size: 22px 22px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.hud-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--orange);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hud-subtitle {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.hud-divider {
+  width: 1px;
+  background: var(--border-orange-soft);
+  align-self: stretch;
+}
+.hud-divider-h {
+  height: 1px;
+  background: var(--border-orange-soft);
+  width: 100%;
+}
+.hud-status {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.hud-status.green {
+  color: var(--green);
+}
+.hud-status.orange {
+  color: var(--orange);
+}
+.hud-status.cyan {
+  color: var(--cyan);
+}
+.hud-status.red {
+  color: var(--red);
+}
+.hud-button {
+  border: 1px solid var(--border-orange);
+  background: rgba(255, 157, 0, 0.03);
+  transition: all 0.18s ease;
+}
+.hud-button:hover {
+  background: var(--orange-faint);
+  box-shadow: var(--glow-orange);
+  border-color: var(--orange);
+}
+.hud-button:active {
+  transform: scale(0.98);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Unified console surface: calm glass panels with one precise amber signal. */
+.hud-panel, .workspace-panel, .metric-strip, .chat-input, .skill-toolbar {
+  clip-path: none;
+  border-radius: 12px;
+  border-color: rgba(255, 157, 0, .16);
+  box-shadow: 0 12px 40px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.025);
+}
+.hud-panel::before { opacity: .18; border-radius: inherit; }
+.hud-panel:hover { border-color: rgba(255,157,0,.3); }
+.dot.green {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
