@@ -38,4 +38,9 @@ test('offline gesture runtime and model assets are present', async () => {
       `${relativePath} is unexpectedly small (${asset.size} bytes)`,
     );
   }
+  const bridge = await readFile(bridgeUrl, 'utf8');
+  const tracker = await readFile(new URL('../public/vendor/handTracker.js', import.meta.url), 'utf8');
+  assert.match(bridge, /new URL\('\.\.\/vendor\/mediapipe\/vision_bundle\.cjs', import\.meta\.url\)/);
+  assert.match(tracker, /new URL\('\.\/mediapipe\/hand_landmarker\.task', import\.meta\.url\)/);
+  for (const relativePath of ['../dist/vendor/mediapipe/vision_bundle.cjs', '../dist/vendor/mediapipe/hand_landmarker.task', '../dist/vendor/mediapipe/wasm/vision_wasm_internal.wasm']) assert.ok((await stat(new URL(relativePath, import.meta.url))).size > 100_000, `${relativePath} missing from production build`);
 });

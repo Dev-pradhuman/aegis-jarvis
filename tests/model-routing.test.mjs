@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executeModelPool, failureClass, normalizeModality } from '../server/modelPool.js';
+import { defaultPools, executeModelPool, failureClass, normalizeModality } from '../server/modelPool.js';
 import { selectLogicalModel } from '../server/modelRouting.js';
 import { routeRequest } from '../server/router.js';
 
@@ -9,6 +9,12 @@ const providers = (model, count, prefix = model) => Array.from({ length: count }
 function setup(deepseek = 3, glm = 2, extra = {}) { process.env.TEST_KEY_1 = 'a'; process.env.TEST_KEY_2 = 'b'; process.env.TEST_KEY_3 = 'c'; process.env.MODEL_PROVIDER_POOLS = JSON.stringify({ 'deepseek-v4-flash': providers('deepseek-v4-flash', deepseek, 'deepseek'), 'glm-5.2': providers('glm-5.2', glm, 'glm'), ...extra }); return { modelRouting: { providerHealth: {} } }; }
 function response(status, body = {}, headers = {}) { return { ok: status >= 200 && status < 300, status, headers: new Headers(headers), json: async () => body }; }
 const success = (text = 'ok') => response(200, { choices: [{ message: { content: text } }], usage: { total_tokens: 3 } });
+
+test('default OpenRouter model IDs match the live provider catalog', () => {
+  const pools = defaultPools();
+  assert.equal(pools['muse-spark-1.2'][0].modelId, 'meta/muse-spark-1.2');
+  assert.equal(pools['nemotron-3-nano-omni'][0].modelId, 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free');
+});
 
 test.after(() => { if (originalPools === undefined) delete process.env.MODEL_PROVIDER_POOLS; else process.env.MODEL_PROVIDER_POOLS = originalPools; delete process.env.TEST_KEY_1; delete process.env.TEST_KEY_2; delete process.env.TEST_KEY_3; });
 
@@ -27,6 +33,14 @@ test('manual Laguna exhausts its pool then falls back to GLM', async () => { con
 test('unsupported GLM modality returns capability unavailable after Nano pool exhaustion', async () => { const state = setup(0, 1, { 'nemotron-3-nano-omni': providers('nano', 1, 'nano') }); await assert.rejects(() => executeModelPool({ logicalModel: 'nemotron-3-nano-omni', request: 'see image', requiredModality: 'image', state, fetchImpl: async () => response(429, { error: { message: 'quota exhausted' } }) }), (error) => error.code === 'CAPABILITY_UNAVAILABLE'); });
 test('Lightning outage does not block deterministic or Normal-mode routing', () => { assert.equal(routeRequest('show my tasks').route, 'TOOL_CALL'); assert.equal(selectLogicalModel('hello', { modelMode: 'auto', jarvisMode: 'normal' }).primaryModel, 'muse-spark-1.2'); });
 test('three JARVIS modes select their requested default model', () => { assert.equal(selectLogicalModel('hello', { jarvisMode: 'normal' }).primaryModel, 'muse-spark-1.2'); assert.equal(selectLogicalModel('hello', { jarvisMode: 'coding' }).primaryModel, 'laguna-s-2.1'); assert.equal(selectLogicalModel('hello', { jarvisMode: 'deepthinking' }).primaryModel, 'glm-5.2'); });
+test('enabled ChatGPT Web can become the general brain without replacing specialist routes', () => { const settings = { jarvisMode: 'normal', chatgptWeb: { enabled: true, useAsDefault: true } }; assert.equal(selectLogicalModel('hello', settings).primaryModel, 'chatgpt-web'); assert.equal(selectLogicalModel('implement this repository feature', settings).primaryModel, 'laguna-s-2.1'); });
+test('manual ChatGPT Web override takes priority', () => assert.equal(selectLogicalModel('hello', { modelMode: 'manual', manualModel: 'chatgpt-web' }).primaryModel, 'chatgpt-web'));
+test('manual ChatGPT Web preserves tool intent for arbitrary app and RAM requests', () => {
+  const route = selectLogicalModel('Open Notepad and inspect the running processes by RAM usage', { modelMode: 'manual', manualModel: 'chatgpt-web' });
+  assert.equal(route.primaryModel, 'chatgpt-web');
+  assert.equal(route.requiresTools, true);
+  assert.equal(route.taskType, 'computer_use');
+});
 test('image and video creation route directly to Gemini media generation', () => { assert.deepEqual(routeRequest('create an image of a gold neural brain').args.kind, 'image'); assert.deepEqual(routeRequest('make a video of a flying robot').args.kind, 'video'); });
 test('concurrent requests distribute across equally healthy providers', async () => { const state = setup(2, 1); let release; const gate = new Promise((resolve) => { release = resolve; }); const seen = []; const fetchImpl = async (url) => { seen.push(url); if (url.includes('deepseek-1')) await gate; return success(); }; const first = executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'one', state, fetchImpl }); await new Promise((resolve) => setTimeout(resolve, 0)); const second = executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'two', state, fetchImpl }); release(); await Promise.all([first, second]); assert.ok(seen.some((url) => url.includes('deepseek-1'))); assert.ok(seen.some((url) => url.includes('deepseek-2'))); });
 test('provider becomes eligible after cooldown expires', async () => { const state = setup(2, 1); state.modelRouting.providerHealth['deepseek-1'] = { status: 'RATE_LIMITED', retryAfter: new Date(2_000).toISOString() }; const result = await executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'hello', state, now: () => 3_000, fetchImpl: async () => success() }); assert.equal(result.provider, 'deepseek-1'); });

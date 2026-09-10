@@ -2,9 +2,11 @@ import crypto from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataDirectory } from './platform/paths.js';
 import { fetchWithCredentialRotation } from './credentialPool.js';
 
-const generatedRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data', 'generated');
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
+const generatedRoot = path.join(dataDirectory(path.dirname(serverDir)), 'generated');
 const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
 function imageData(payload) {

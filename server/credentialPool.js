@@ -1,9 +1,11 @@
+export function credentialEnabled(credentialRef) { return !String(process.env.JARVIS_DISABLED_CREDENTIALS || '').split(',').map((value) => value.trim()).filter(Boolean).includes(credentialRef); }
+
 export function credentialEntries(baseName, max = 4) {
   const refs = [baseName, ...Array.from({ length: max }, (_, index) => `${baseName}_${index + 1}`)];
   const seen = new Set();
   return refs.flatMap((credentialRef) => {
     const key = process.env[credentialRef];
-    if (!key || seen.has(key)) return [];
+    if (!key || !credentialEnabled(credentialRef) || seen.has(key)) return [];
     seen.add(key);
     return [{ credentialRef, key }];
   });

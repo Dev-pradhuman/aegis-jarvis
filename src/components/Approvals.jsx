@@ -2,28 +2,17 @@ import { useEffect, useState } from 'react';
 import Icon from './Icon.jsx';
 import '../styles/approvals.css';
 
-const FALLBACK_APPROVALS = [
-  { icon: 'shield', risk: 'med', title: 'Access external API', sub: 'Service: OpenAI API' },
-  { icon: 'circleCheck', risk: 'high', title: 'Install dependencies', sub: 'Project: agi-sr-core' },
-  { icon: 'terminal', risk: 'high', title: 'Execute shell command', sub: 'Command: system update' },
-  { icon: 'mail', risk: 'med', title: 'Send email to team', sub: 'From: Jarvis' },
-];
-
 export default function Approvals() {
-  const [approvals, setApprovals] = useState(FALLBACK_APPROVALS);
-  useEffect(() => {
-    let mounted = true;
-    fetch('/api/approvals').then((response) => response.ok ? response.json() : null).then((data) => {
-      if (mounted && data?.approvals) setApprovals(data.approvals);
-    }).catch(() => {});
-    return () => { mounted = false; };
-  }, []);
+  const [approvals, setApprovals] = useState([]);
+  const [error, setError] = useState('');
+  useEffect(() => { let mounted=true;let timer;const refresh=()=>fetch('/api/approvals').then(response=>response.ok?response.json():Promise.reject()).then(data=>{if(mounted){setApprovals(data.approvals||[]);setError('');}}).catch(()=>{if(mounted)setError('Approval state is unavailable.');});void refresh();timer=setInterval(refresh,2000);return()=>{mounted=false;clearInterval(timer);};}, []);
 
   async function resolve(id, outcome) {
     try {
-      await fetch(`/api/approvals/${id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outcome }) });
-      setApprovals((items) => items.filter((item) => item.id !== id));
-    } catch {}
+      const response=await fetch(`/api/approvals/${id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outcome }) });
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'Approval could not be resolved.');
+      setApprovals((items) => items.filter((item) => item.id !== id));setError(data.synthesis?.reply||data.reply||'Action resolved.');
+    } catch(error) {setError(error.message);}
   }
 
   return (
@@ -32,6 +21,7 @@ export default function Approvals() {
         <div className="hud-title">Pending Approvals</div>
         <div className="view-all">View All &rsaquo;</div>
       </div>
+      {!approvals.length && <div className="empty-state">{error || 'No approvals are waiting.'}</div>}
       {approvals.map((a, i) => (
         <div className="appr-item" key={a.id || i}>
           <div className={`appr-icon ${a.risk}`}>
@@ -39,10 +29,11 @@ export default function Approvals() {
           </div>
           <div className="appr-meta">
             <div className="appr-title">{a.title}</div>
-            <div className="appr-sub">{a.sub}</div>
+            <div className="appr-sub">{a.toolName} · expires {new Date(a.expiresAt).toLocaleTimeString()}</div>
           </div>
           <div className={`risk-tag ${a.risk}`}>{a.risk === 'high' ? 'HIGH RISK' : 'MEDIUM RISK'}</div>
           <button className="review-btn" onClick={() => resolve(a.id, 'approved')}>APPROVE</button>
+          <button className="review-btn" onClick={() => resolve(a.id, 'rejected')}>REJECT</button>
         </div>
       ))}
     </section>

@@ -2,21 +2,88 @@
   "name": "jarvis-command-console",
   "private": true,
   "version": "1.0.0",
+  "description": "Local-first cross-platform A.E.G.I.S. JARVIS voice and execution runtime",
+  "author": {
+    "name": "Pradhuman",
+    "email": "dev-pradhuman@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/Dev-pradhuman/aegis-jarvis",
+  "desktopName": "aegis-jarvis.desktop",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite",
     "dev:server": "node server/start.js",
     "start": "node server/start.js",
     "build": "vite build",
+    "check:portability": "node scripts/check-portability.mjs",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "desktop": "electron .",
+    "chatgpt:login": "node scripts/chatgpt-web-login.mjs",
+    "setup:linux": "bash scripts/setup-linux.sh",
+    "dev:linux": "bash scripts/dev-linux.sh",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
+    "pdf-parse": "^1.1.1",
+    "playwright-core": "^1.55.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.0"
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.0.12",
+    "vite": "^8.2.2"
+  },
+  "build": {
+    "appId": "dev.pradhuman.aegis.jarvis",
+    "productName": "A.E.G.I.S. JARVIS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "server/**/*",
+      "!server/data/**",
+      "windows/**/*",
+      "requirements-needle.txt",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "windows/**/*",
+      "server/needle_worker.py"
+    ],
+    "win": {
+      "icon": "public/jarvis-icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "public/jarvis-icon.png",
+      "category": "Utility",
+      "maintainer": "Pradhuman <dev-pradhuman@users.noreply.github.com>",
+      "synopsis": "Local-first JARVIS desktop assistant",
+      "syncDesktopName": true,
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

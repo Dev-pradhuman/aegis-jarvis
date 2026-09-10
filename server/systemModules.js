@@ -2,12 +2,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toolFilterSettings } from './toolFilter.js';
+import { platformInfo } from './platform/index.js';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 export function diagnostics(state) {
   const lastContext = state.runtime?.lastModelRoute || {};
-  return { service: 'ok', persistence: 'ok', provider: state.provider?.configured ? 'configured' : 'not configured', integrations: integrationStatus(state).filter((item) => item.status === 'configured').length, latency: state.runtime?.latency || {}, context: { ...toolFilterSettings(), maxChars: Number(process.env.CONTEXT_MAX_CHARS || 6000), recentTurns: Number(process.env.CONTEXT_RECENT_TURNS || 2), lastEstimatedTokens: Number(lastContext.estimatedContextTokens || 0), lastSelectedTools: lastContext.selectedToolIds || [] }, checkedAt: new Date().toISOString() };
+  return { service: 'ok', persistence: 'ok', platform: platformInfo(), provider: state.provider?.configured ? 'configured' : 'not configured', integrations: integrationStatus(state).filter((item) => item.status === 'configured').length, latency: state.runtime?.latency || {}, context: { ...toolFilterSettings(), maxChars: Number(process.env.CONTEXT_MAX_CHARS || 6000), recentTurns: Number(process.env.CONTEXT_RECENT_TURNS || 2), lastEstimatedTokens: Number(lastContext.estimatedContextTokens || 0), lastSelectedTools: lastContext.selectedToolIds || [] }, checkedAt: new Date().toISOString() };
 }
 
 export function integrationStatus(state) {

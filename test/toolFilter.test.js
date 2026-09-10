@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { selectRelevantTools } from '../server/toolFilter.js';
+import { listTools } from '../server/registry.js';
 
 function tool(id, description, module = 'misc') {
   return { id, name: id, description, module, inputSchema: { type: 'object', properties: {} }, enabled: true };
@@ -30,6 +31,13 @@ test('tool filter uses two bounded history messages to anchor a follow-up', () =
   const history = [{ role: 'user', content: 'Please generate a video showing a neural brain.' }, { role: 'assistant', content: 'What style?' }];
   const result = selectRelevantTools('make it cinematic', tools, history, { enabled: true, topK: 3 });
   assert.ok(result.tools.some((item) => item.id === 'media.generate'));
+});
+
+test('explicit command intent cannot lose command.execute to embedding top-k',()=>{
+  const tools=listTools({includeDisabled:false});
+  const result=selectRelevantTools('Execute command node --version and show tasks',tools,[],{topK:4});
+  assert.ok(result.tools.some(tool=>tool.id==='command.execute'));
+  assert.ok(result.tools.some(tool=>tool.id==='tasks.list'));
 });
 
 test('tool filter is a no-op when the registry is already under budget', () => {

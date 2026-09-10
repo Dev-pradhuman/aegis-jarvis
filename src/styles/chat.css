@@ -10,6 +10,7 @@
   justify-content: space-between;
   align-items: center;
 }
+.session-select{margin-left:auto;max-width:190px;height:28px;border:1px solid var(--accent-border);background:var(--surface-control);color:var(--text-secondary);font:10px var(--font-ui);padding:0 7px}
 .chat-head .status {
   font-size: 10px;
   display: flex;
@@ -125,3 +126,9 @@
 }
 .voice-btn { color: var(--cyan); }
 .voice-btn.listening { color: var(--red); background: rgba(255,59,47,.12); border-radius: 50%; animation: pulse-dot 1s ease-in-out infinite; }
+.stream-live{margin-left:8px;color:var(--accent);font:8px var(--font-mono);letter-spacing:.12em;animation:pulse-dot 1.2s ease-in-out infinite}
+.streaming-message{position:relative;padding:9px 10px;border-left:1px solid var(--accent-border);background:var(--accent-soft)}
+.streaming-body{white-space:pre-wrap;overflow-wrap:anywhere}
+.tool-activity-list{display:grid;gap:4px;margin-top:8px;font:10px/1.45 var(--font-mono);color:var(--text-secondary)}
+.tool-activity{display:flex;gap:7px;align-items:center}.tool-activity.running{color:var(--accent)}.tool-activity.completed{color:var(--green)}.tool-activity.failed{color:var(--red)}
+.stream-stop{margin-top:8px;border:1px solid color-mix(in srgb,var(--red) 55%,transparent);padding:4px 9px;color:var(--red);font:9px var(--font-mono);text-transform:uppercase;letter-spacing:.08em}

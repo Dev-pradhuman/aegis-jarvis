@@ -14,9 +14,16 @@ export function buildPlan(text, intent) {
 }
 
 export async function beginRun(state, input) {
-  const intent = classifyRequest(input.request);
-  const run = createRun({ ...input, type: input.type || intent, plan: buildPlan(input.request, intent), provider: state.provider?.id, model: state.provider?.model });
-  run.plan.steps.forEach((step) => addRunStep(run, step.description, step.capability, step.requiresApproval));
+  const intent = input.toolName ? 'tool' : classifyRequest(input.request);
+  const plan = input.toolName
+    ? { goal: input.request, intent: 'tool', steps: [{ id: 'plan-step-1', index: 0, description: input.description || input.toolName, capability: input.toolName, requiresApproval: Boolean(input.requiresApproval) }] }
+    : buildPlan(input.request, intent);
+  const run = createRun({ ...input, type: input.type || intent, plan, provider: state.provider?.id, model: state.provider?.model });
+  // Plans describe intent; Run steps are execution evidence. Model-driven Runs
+  // materialize steps only when the canonical executor actually invokes a tool.
+  if (input.toolName || input.materializePlanSteps === true) {
+    run.plan.steps.forEach((step) => addRunStep(run, step.description, step.capability, step.requiresApproval));
+  }
   transitionRun(run, 'planning');
   state.runs ??= []; state.runs.unshift(run); state.runs = state.runs.slice(0, 500);
   return run;

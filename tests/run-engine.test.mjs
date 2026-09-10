@@ -9,7 +9,8 @@ test('orchestrator creates a structured run and plan for execution requests', as
   assert.equal(classifyRequest(run.request), 'development');
   assert.equal(run.status, 'planning');
   assert.equal(run.plan.steps.length, 3);
-  assert.equal(run.steps[1].requiresApproval, true);
+  assert.equal(run.plan.steps[1].requiresApproval, true);
+  assert.equal(run.steps.length, 0, 'planned steps must not masquerade as executed Run steps');
 });
 
 test('run lifecycle records steps and terminal completion', () => {

@@ -16,9 +16,16 @@ test('ambiguous requests use the model route instead of guessing a tool', () => 
 
 test('known browser destinations route deterministically', () => {
   const route = routeRequest('open youtube');
-  assert.equal(route.capability, 'browser.open');
+  assert.equal(route.capability, 'browser.external.open');
   assert.equal(route.args.url, 'https://www.youtube.com');
   assert.equal(route.confidence, 1);
+  assert.deepEqual(routeRequest('JARVIS can you open YouTube in Zen Browser?'), {
+    route: 'TOOL_CALL',
+    capability: 'browser.external.open',
+    args: { url: 'https://www.youtube.com', label: 'YouTube', browser: 'Zen' },
+    confidence: 0.99,
+  });
+  assert.equal(routeRequest('open Zen Browser').capability, 'system.app.open');
 });
 
 test('latest email requests route directly to grounded Gmail', () => {

@@ -2,9 +2,9 @@ import { createOrbScene } from '../vendor/orbScene.js';
 import { HandTracker } from '../vendor/handTracker.js';
 
 const REQUIRED_GESTURE_ASSETS = [
-  '/vendor/mediapipe/vision_bundle.cjs',
-  '/vendor/mediapipe/hand_landmarker.task',
-  '/vendor/mediapipe/wasm/vision_wasm_internal.wasm',
+  new URL('../vendor/mediapipe/vision_bundle.cjs', import.meta.url).href,
+  new URL('../vendor/mediapipe/hand_landmarker.task', import.meta.url).href,
+  new URL('../vendor/mediapipe/wasm/vision_wasm_internal.wasm', import.meta.url).href,
 ];
 
 async function assertGestureAssets() {
