@@ -1,4 +1,8 @@
 const MODEL_REGISTRY = {
+  'chatgpt-web': { label: 'ChatGPT Web (experimental)', role: 'web_brain', fallbackModel: null, capabilities: ['text', 'tools'], experimental: true },
+  'gemini-web': { label: 'Gemini Web (experimental)', role: 'web_brain', fallbackModel: null, capabilities: ['text', 'tools'], experimental: true },
+  'gemini-best': { label: 'Gemini (configured best)', role: 'general', fallbackModel: 'openai-best', capabilities: ['text', 'tools'] },
+  'openai-best': { label: 'ChatGPT / OpenAI (configured best)', role: 'general', fallbackModel: 'glm-5.2', capabilities: ['text', 'tools'] },
   'muse-spark-1.2': { label: 'Muse Spark 1.2', role: 'agent_brain', fallbackModel: 'glm-5.2', capabilities: ['text', 'tools'] },
   'deepseek-v4-flash': { label: 'DeepSeek V4 Flash', role: 'general', fallbackModel: 'glm-5.2', capabilities: ['text', 'tools'] },
   'glm-5.2': { label: 'GLM-5.2', role: 'deep_reasoning_global_fallback', fallbackModel: null, capabilities: ['text', 'tools'] },
@@ -12,7 +16,7 @@ const MODEL_REGISTRY = {
 export function classifyForModel(request, input = {}) {
   const text = String(request || '');
   const coding = /\b(repository|repo|codebase|implement|refactor|debug|failing tests?|typescript|javascript|python|git|dependency)\b/i.test(text);
-  const computer = /\b(click|open (chrome|browser|app)|fill (the )?form|navigate|desktop|spreadsheet|presentation)\b/i.test(text);
+  const computer = /\b(click|open\s+(?:an?\s+)?[\w.-]+|launch\s+(?:an?\s+)?[\w.-]+|fill (the )?form|navigate|desktop|spreadsheet|presentation|running processes?|process(?:es)?\s+by\s+(?:ram|memory)|ram usage|memory usage)\b/i.test(text);
   const deep = /\b(prove|theorem|derive|difficult math|algorithm design|distributed architecture|compare .+ approaches|scientific reasoning)\b/i.test(text);
   if (input.hasMedia) return { taskType: 'perception', complexity: coding || computer ? 'high' : 'medium', primaryModel: 'nemotron-3-nano-omni', supportModels: coding ? ['mimo-v2.5', 'laguna-s-2.1'] : computer ? ['mimo-v2.5', 'minimax-m3'] : ['mimo-v2.5'], requiresTools: coding || computer, requiresMultimodal: true, confidence: 0.99, reason: 'Nano Omni perceives the media before MiMo multimodal reasoning and any execution specialist.' };
   if (coding && deep) return { taskType: 'coding', complexity: 'high', primaryModel: 'glm-5.2', supportModels: ['laguna-s-2.1'], requiresTools: true, requiresMultimodal: false, confidence: 0.96, reason: 'Deep architecture or algorithm reasoning is required before repository implementation.' };
@@ -20,6 +24,7 @@ export function classifyForModel(request, input = {}) {
   if (coding) return { taskType: 'coding', complexity: 'medium', primaryModel: 'laguna-s-2.1', supportModels: [], requiresTools: true, requiresMultimodal: false, confidence: 0.94, reason: 'Repository-level software engineering work.' };
   if (computer) return { taskType: 'computer_use', complexity: 'medium', primaryModel: 'minimax-m3', supportModels: [], requiresTools: true, requiresMultimodal: false, confidence: 0.92, reason: 'The task primarily requires computer or GUI operation.' };
   if (deep) return { taskType: 'deep_reasoning', complexity: 'high', primaryModel: 'glm-5.2', supportModels: [], requiresTools: false, requiresMultimodal: false, confidence: 0.91, reason: 'Deep deliberate reasoning materially improves reliability.' };
+  if (/\b(email|gmail|mail|inbox|task|memory|workflow|calendar|instagram|whatsapp|discord|slack|message|contact|youtube|song|music|file|readme|system health|provider|telemetry)\b/i.test(text)) return { taskType: 'grounded_tool_use', complexity: 'medium', primaryModel: 'deepseek-v4-flash', supportModels: [], requiresTools: true, requiresMultimodal: false, confidence: 0.93, reason: 'The request may require grounded system state or one or more canonical tools.' };
   if (/\b(agentic|multi-step|workflow|automation|plan and execute|use tools?)\b/i.test(text)) return { taskType: 'agentic', complexity: 'medium', primaryModel: 'deepseek-v4-flash', supportModels: [], requiresTools: true, requiresMultimodal: false, confidence: 0.92, reason: 'DeepSeek V4 Flash is the fast agentic specialist.' };
   return { taskType: 'general', complexity: 'normal', primaryModel: 'muse-spark-1.2', supportModels: [], requiresTools: false, requiresMultimodal: false, confidence: 0.88, reason: 'Muse Spark 1.2 is the Normal-mode JARVIS agent brain.' };
 }
@@ -29,6 +34,10 @@ export function selectLogicalModel(request, settings = {}, input = {}) {
   if (settings.modelMode === 'manual' && MODEL_REGISTRY[settings.manualModel]) return { ...automatic, routingMode: 'manual', requestedModel: settings.manualModel, primaryModel: settings.manualModel, supportModels: [], reason: 'User manual model override.' };
   if (settings.jarvisMode === 'coding') return { ...automatic, routingMode: 'coding', requestedModel: 'laguna-s-2.1', primaryModel: 'laguna-s-2.1', supportModels: [], reason: 'Coding mode explicitly selects Laguna S 2.1.' };
   if (settings.jarvisMode === 'deepthinking') return { ...automatic, routingMode: 'deepthinking', requestedModel: 'glm-5.2', primaryModel: 'glm-5.2', supportModels: [], reason: 'Deep Thinking mode explicitly selects GLM-5.2.' };
+  const headlessSetting = settings.brainBackends?.defaultBackend ?? 'auto';
+  const configuredHeadless = headlessSetting === 'auto' ? (settings.chatgptWeb?.useAsDefault ? 'chatgpt-web' : null) : headlessSetting;
+  const headlessEnabled = configuredHeadless === 'chatgpt-web' ? settings.chatgptWeb?.enabled : configuredHeadless === 'gemini-web' ? settings.geminiWeb?.enabled : false;
+  if (headlessEnabled && !automatic.requiresMultimodal && !['coding', 'computer_use', 'deep_reasoning'].includes(automatic.taskType)) return { ...automatic, routingMode: 'auto', requestedModel: 'auto', primaryModel: configuredHeadless, supportModels: [], reason: `${MODEL_REGISTRY[configuredHeadless].label} is configured as the default general JARVIS brain.` };
   return { ...automatic, routingMode: 'auto', requestedModel: 'auto' };
 }
 

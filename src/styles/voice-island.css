@@ -1,0 +1,40 @@
+.voice-island {
+  position: fixed; z-index: 1000; top: 10px; left: 50%; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 28px)); min-height: 54px; padding: 7px 9px 7px 14px;
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 20px;
+  color: #f4f4f2; background: rgba(10,10,11,.94);
+  box-shadow: 0 14px 42px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.035);
+  backdrop-filter: blur(22px) saturate(1.15);
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+.voice-island.desktop-overlay { position: absolute; inset: 0; transform: none; width: auto; min-height: 0; height: 100%; border-radius: 24px; background: rgba(7,7,8,.97); }
+.voice-island.listening, .voice-island.dictating { border-color: rgba(244,182,91,.42); box-shadow: 0 12px 38px rgba(0,0,0,.56), 0 0 22px rgba(244,182,91,.08), inset 0 1px rgba(255,255,255,.045); }
+.voice-island.thinking, .voice-island.replying { border-color: rgba(255,255,255,.18); }
+.voice-island.result { border-color: rgba(255,255,255,.13); }
+.voice-island-signal { height: 28px; display: flex; align-items: center; justify-content: center; gap: 3px; }
+.voice-island-signal i { width: 2px; height: 4px; border-radius: 999px; background: #707277; transition: height 200ms ease, background 200ms ease; }
+.voice-island-signal i:nth-child(2), .voice-island-signal i:nth-child(4) { height: 9px; }
+.voice-island-signal i:nth-child(3) { height: 15px; }
+.voice-island.listening .voice-island-signal i, .voice-island.dictating .voice-island-signal i { background: #f4b65b; animation: island-wave .62s cubic-bezier(.4,0,.2,1) infinite alternate; }
+.voice-island.thinking .voice-island-signal, .voice-island.replying .voice-island-signal { animation: island-breathe 1.15s ease-in-out infinite; }
+.voice-island.thinking .voice-island-signal i, .voice-island.replying .voice-island-signal i { height: 5px; background: #dadbd8; }
+.voice-island-signal i:nth-child(2) { animation-delay: -.38s !important; }
+.voice-island-signal i:nth-child(3) { animation-delay: -.18s !important; }
+.voice-island-signal i:nth-child(4) { animation-delay: -.48s !important; }
+.voice-island-signal i:nth-child(5) { animation-delay: -.28s !important; }
+.voice-island-copy { min-width: 0; display: grid; gap: 2px; }
+.voice-island-copy strong { overflow: hidden; color: #f4f4f2; font: 600 11px/1.25 Inter, system-ui, sans-serif; letter-spacing: .015em; white-space: nowrap; text-overflow: ellipsis; }
+.voice-island-copy span { overflow: hidden; color: #8b8d91; font: 450 9px/1.3 Inter, system-ui, sans-serif; white-space: nowrap; text-overflow: ellipsis; }
+.voice-island.desktop-overlay .voice-island-copy strong { font-size: 12px; }
+.voice-island.desktop-overlay .voice-island-copy span { font-size: 10px; }
+.island-actions { display: flex; gap: 5px; }
+.island-actions button { min-height: 31px; padding: 0 10px; border: 1px solid rgba(255,255,255,.11); border-radius: 11px; color: #c9cac7; background: rgba(255,255,255,.045); font: 600 9px Inter, system-ui, sans-serif; }
+.island-actions button.active { color: #171108; border-color: #f4b65b; background: #f4b65b; }
+.island-actions .answer { color: #07150d; border-color: #65d996; background: #65d996; }
+.island-actions .decline { color: #fff; border-color: #c44943; background: #9f302c; }
+.jarvis-island-document, .jarvis-island-document body, .jarvis-island-document #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent !important; }
+@keyframes island-wave { to { height: 23px; } }
+@keyframes island-breathe { 50% { opacity: .42; transform: scaleX(.72); } }
+@media (max-width: 620px) { .voice-island { top: 6px; grid-template-columns: 26px minmax(0,1fr) auto; }.island-actions button { padding: 0 8px; } }
+@media (prefers-reduced-motion: reduce) { .voice-island, .voice-island-signal i, .voice-island.thinking .voice-island-signal { animation: none !important; transition: none !important; } }

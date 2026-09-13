@@ -2,7 +2,7 @@ import { executeModelPool } from './modelPool.js';
 import { modelRegistry, selectLogicalModel } from './modelRouting.js';
 
 function needsLightning(request, route) {
-  return route.routingMode === 'auto' && route.taskType === 'general' && /\b(handle (this|it)|deal with (this|it)|figure (this|it) out|take care of (this|it)|what should i do)\b/i.test(String(request));
+  return !['chatgpt-web', 'gemini-web'].includes(route.primaryModel) && route.routingMode === 'auto' && route.taskType === 'general' && /\b(handle (this|it)|deal with (this|it)|figure (this|it) out|take care of (this|it)|what should i do)\b/i.test(String(request));
 }
 
 function parseClassification(reply) {
@@ -25,7 +25,7 @@ function parseClassification(reply) {
 export async function selectLogicalModelWithClassifier(request, settings = {}, input = {}, state = {}, execute = executeModelPool) {
   const deterministic = selectLogicalModel(request, settings, input);
   if (!needsLightning(request, deterministic)) return deterministic;
-  const prompt = `Classify this JARVIS request. Return JSON only with taskType, complexity, primaryModel, supportModels, requiresTools, requiresMultimodal, confidence, and reason. Allowed models: muse-spark-1.2, deepseek-v4-flash, glm-5.2, laguna-s-2.1, minimax-m3, nemotron-3-nano-omni, mimo-v2.5. Request: ${request}`;
+  const prompt = `Classify this JARVIS request. Return JSON only with taskType, complexity, primaryModel, supportModels, requiresTools, requiresMultimodal, confidence, and reason. Allowed models: muse-spark-1.2, gemini-best, openai-best, deepseek-v4-flash, glm-5.2, laguna-s-2.1, minimax-m3, nemotron-3-nano-omni, mimo-v2.5. Request: ${request}`;
   try {
     const routed = await execute({ logicalModel: 'nemotron-3.5-lightning', request: prompt, state, allowFallback: true });
     return { ...parseClassification(routed.reply), routingMode: 'auto', requestedModel: 'auto', classifierModel: routed.logicalModel, classifierTelemetry: routed.routingTelemetry };

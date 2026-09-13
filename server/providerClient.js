@@ -1,5 +1,7 @@
-const keyFor = { openrouter: 'OPENROUTER_API_KEY', 'opencode-zen': 'OPENCODE_ZEN_API_KEY', '9router': 'NINEROUTER_API_KEY', custom: 'CUSTOM_API_KEY', groq: 'GROQ_API_KEY' };
-const defaults = { groq: ['Groq', 'https://api.groq.com/openai/v1', 'GROQ_CHAT_MODEL', 'openai/gpt-oss-20b'], openrouter: ['OpenRouter', 'https://openrouter.ai/api/v1', 'OPENROUTER_MODEL', 'openai/gpt-oss-20b'], 'opencode-zen': ['OpenCode Zen', 'https://opencode.ai/zen/v1', 'OPENCODE_ZEN_MODEL', 'openai/gpt-oss-20b'], '9router': ['9router', 'https://9router.com/v1', 'NINEROUTER_MODEL', 'openai/gpt-oss-20b'] };
+import { credentialEnabled } from './credentialPool.js';
+
+const keyFor = { openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', openrouter: 'OPENROUTER_API_KEY', 'opencode-zen': 'OPENCODE_ZEN_API_KEY', '9router': 'NINEROUTER_API_KEY', custom: 'CUSTOM_API_KEY', groq: 'GROQ_API_KEY' };
+const defaults = { openai: ['OpenAI', 'https://api.openai.com/v1', 'OPENAI_CHAT_MODEL', 'gpt-5'], gemini: ['Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'GEMINI_CHAT_MODEL', 'gemini-2.5-pro'], groq: ['Groq', 'https://api.groq.com/openai/v1', 'GROQ_CHAT_MODEL', 'openai/gpt-oss-20b'], openrouter: ['OpenRouter', 'https://openrouter.ai/api/v1', 'OPENROUTER_MODEL', 'openai/gpt-oss-20b'], 'opencode-zen': ['OpenCode Zen', 'https://opencode.ai/zen/v1', 'OPENCODE_ZEN_MODEL', 'openai/gpt-oss-20b'], '9router': ['9router', 'https://9router.com/v1', 'NINEROUTER_MODEL', 'openai/gpt-oss-20b'] };
 
 const opencodeLogicalModels = {
   'muse-spark-1.2': 'muse-spark-1.2',
@@ -30,7 +32,9 @@ export function providerForLogicalModel(provider = {}, logicalModel) {
 
 async function completeOne(provider, message, context = []) {
   if (!provider.baseUrl || !provider.model) return null;
-  const key = provider.id === 'local' ? '' : process.env[keyFor[provider.id] || 'CUSTOM_API_KEY']; if (provider.id !== 'local' && !key) return null;
+  const credentialRef = keyFor[provider.id] || 'CUSTOM_API_KEY';
+  const key = provider.id === 'local' ? '' : process.env[credentialRef];
+  if (provider.id !== 'local' && (!key || !credentialEnabled(credentialRef))) return null;
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 12_000);
   try { const response = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify({ model: provider.model, messages: [{ role: 'system', content: 'You are JARVIS, the single assistant for A.E.G.I.S. Be concise and honest about tool availability.' }, ...context, { role: 'user', content: message }], temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))) }) }); if (!response.ok) throw new Error(`${provider.id} returned HTTP ${response.status}`); const data = await response.json(); const reply = data.choices?.[0]?.message?.content; return reply ? { reply: String(reply), tokens: Number(data.usage?.total_tokens || message.length + reply.length), cost: Number(data.usage?.cost || 0), provider: provider.id, model: provider.model } : null; } finally { clearTimeout(timer); }
 }

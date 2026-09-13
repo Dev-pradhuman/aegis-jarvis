@@ -1,0 +1,14 @@
+[Unit]
+Description=A.E.G.I.S. JARVIS desktop assistant
+After=graphical-session.target network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=/usr/bin/env npm run desktop
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target

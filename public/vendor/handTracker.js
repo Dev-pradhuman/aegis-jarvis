@@ -21,10 +21,10 @@
  * Asset URLs point at our own backend so the HUD works without a CDN.
  */
 
-const WASM_PATH = "/vendor/mediapipe/wasm";
-const MODEL_PATH = "/vendor/mediapipe/hand_landmarker.task";
-const BUNDLE_PATH = "/vendor/mediapipe/vision_bundle.cjs";
-const WORKER_PATH = "/vendor/handWorker.js";
+const WASM_PATH = new URL('./mediapipe/wasm', import.meta.url).href;
+const MODEL_PATH = new URL('./mediapipe/hand_landmarker.task', import.meta.url).href;
+const BUNDLE_PATH = new URL('./mediapipe/vision_bundle.cjs', import.meta.url).href;
+const WORKER_PATH = new URL('./handWorker.js', import.meta.url).href;
 
 // Landmark indices (MediaPipe hand model)
 const WRIST = 0;
@@ -140,7 +140,7 @@ class HandTracker {
   /* Fallback: stuttery gestures beat no gestures. */
   async startMainThread() {
     const { FilesetResolver, HandLandmarker } = await import(
-      "/vendor/mediapipe/vision_bundle.mjs"
+      new URL('./mediapipe/vision_bundle.mjs', import.meta.url).href
     );
     const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
     const base = {

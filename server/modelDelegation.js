@@ -10,12 +10,13 @@ const assignments = {
   'deepseek-v4-flash': 'Act as the primary JARVIS brain. Synthesize the grounded specialist result into a concise answer.',
 };
 
-export async function executeModelDelegation({ route, request, context = [], continuationState = null, state, attachments = [], allowFallback = true, execute = executeModelPool }) {
+export async function executeModelDelegation({ route, request, context = [], continuationState = null, state, attachments = [], allowFallback = true, execute = executeModelPool, signal = null, onEvent = null }) {
   const sequence = [...new Set([route.primaryModel, ...(route.supportModels || [])])];
   const stages = [];
   let latest = null;
 
   for (let index = 0; index < sequence.length; index += 1) {
+    if (signal?.aborted) throw Object.assign(new Error('Generation was cancelled.'), { code: 'EXECUTION_FAILED' });
     const logicalModel = sequence[index];
     const prior = stages.map((stage) => ({ logicalModel: stage.logicalModel, output: stage.reply }));
     const stageRequest = `${assignments[logicalModel] || 'Complete the assigned JARVIS stage.'}\n\nUser request: ${request}${prior.length ? `\n\nCompleted specialist outputs:\n${JSON.stringify(prior)}` : ''}`;
@@ -29,6 +30,8 @@ export async function executeModelDelegation({ route, request, context = [], con
       attachments: index === 0 ? attachments : [],
       requiredModality: index === 0 && attachments.length ? attachments[0].type || 'text' : 'text',
       requiredCapability: logicalModel === 'minimax-m3' ? 'computer_use' : logicalModel === 'laguna-s-2.1' ? 'tools' : 'text',
+      signal,
+      onEvent,
     });
     stages.push({ logicalModel, finalModel: latest.logicalModel, provider: latest.provider, reply: latest.reply, tokens: latest.tokens || 0, inputTokens: latest.inputTokens || 0, outputTokens: latest.outputTokens || 0, cost: latest.cost || 0, routingTelemetry: latest.routingTelemetry });
   }

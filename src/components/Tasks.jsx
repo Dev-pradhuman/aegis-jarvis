@@ -12,13 +12,14 @@ const FALLBACK_TASKS = [
 ];
 
 export default function Tasks() {
-  const [tasks, setTasks] = useState(FALLBACK_TASKS);
+  const [tasks, setTasks] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let mounted = true;
     fetch('/api/tasks').then((response) => response.ok ? response.json() : null).then((data) => {
-      if (mounted && data?.tasks?.length) setTasks(data.tasks);
-    }).catch(() => {});
+      if (mounted && data?.tasks) setTasks(data.tasks);
+    }).catch(() => { if (mounted) setError('Task state is unavailable.'); });
     return () => { mounted = false; };
   }, []);
 
@@ -29,6 +30,7 @@ export default function Tasks() {
         <div className="view-all">View All &rsaquo;</div>
       </div>
       <div className="task-list">
+        {!tasks.length && <div className="empty-state">{error || 'No durable tasks.'}</div>}
         {tasks.map((t, i) => (
           <div className="task-item" key={t.id || i}>
             <div className={`task-icon ${t.icon}`}>

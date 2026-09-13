@@ -1,13 +1,17 @@
 import { modelRegistry } from './modelRouting.js';
+import { credentialEnabled } from './credentialPool.js';
 
 const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Array.from({ length: 4 }, (_, index) => `OPENROUTER_API_KEY_${index + 1}`)].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, ...extra }));
+const compatiblePool = (prefix, provider, baseUrl, credentialPrefix, modelId, extra = {}) => [`${credentialPrefix}_API_KEY`, ...Array.from({ length: 4 }, (_, index) => `${credentialPrefix}_API_KEY_${index + 1}`)].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider, baseUrl, modelId, credentialRef, capabilities: ['tools'], ...extra }));
 const DEFAULT_POOLS = {
-  'muse-spark-1.2': openRouterPool('muse', 'muse/spark-1.2'),
+  'gemini-best': compatiblePool('gemini', 'gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'GEMINI', process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-pro'),
+  'openai-best': compatiblePool('openai', 'openai', 'https://api.openai.com/v1', 'OPENAI', process.env.OPENAI_CHAT_MODEL || 'gpt-5'),
+  'muse-spark-1.2': openRouterPool('muse', 'meta/muse-spark-1.2'),
   'deepseek-v4-flash': openRouterPool('deepseek', 'deepseek/deepseek-v4-flash'),
   'glm-5.2': openRouterPool('glm', 'z-ai/glm-5.2'),
   'laguna-s-2.1': openRouterPool('laguna', 'laguna-s-2.1'),
   'minimax-m3': openRouterPool('minimax', 'minimax/minimax-m3'),
-  'nemotron-3-nano-omni': openRouterPool('nano-omni', 'nvidia/nemotron-3-nano-omni', { modalities: ['text', 'image', 'audio', 'video'] }),
+  'nemotron-3-nano-omni': openRouterPool('nano-omni', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', { modalities: ['text', 'image', 'audio', 'video'] }),
   'mimo-v2.5': openRouterPool('mimo', 'xiaomi/mimo-v2.5', { modalities: ['text', 'image', 'audio', 'video'] }),
   'nemotron-3.5-lightning': openRouterPool('lightning', 'nvidia/nemotron-3.5-lightning'),
 };
@@ -35,11 +39,14 @@ export function normalizeModality(value = 'text') {
 }
 
 export function configuredPools() {
+  const defaults = structuredClone(DEFAULT_POOLS);
+  for (const provider of defaults['openai-best']) provider.modelId = process.env.OPENAI_CHAT_MODEL || 'gpt-5';
+  for (const provider of defaults['gemini-best']) provider.modelId = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-pro';
   try {
     const parsed = JSON.parse(process.env.MODEL_PROVIDER_POOLS || '{}');
-    return { ...DEFAULT_POOLS, ...parsed };
+    return { ...defaults, ...parsed };
   } catch {
-    return structuredClone(DEFAULT_POOLS);
+    return defaults;
   }
 }
 
@@ -50,7 +57,7 @@ export function publicPools() {
     baseUrl: provider.baseUrl,
     modelId: provider.modelId,
     credentialRef: provider.credentialRef,
-    credentialConfigured: Boolean(process.env[provider.credentialRef]),
+    credentialConfigured: Boolean(process.env[provider.credentialRef]) && credentialEnabled(provider.credentialRef),
     modalities: provider.modalities || ['text'],
     capabilities: provider.capabilities || [],
   }))]));
@@ -78,7 +85,7 @@ function cooldownMs(response, kind) {
   return kind === 'RATE_LIMITED' ? 60_000 : 15_000;
 }
 
-async function callProvider(provider, messages, fetchImpl, timeoutMs) {
+async function callProvider(provider, messages, fetchImpl, timeoutMs, tools = []) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -86,7 +93,7 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs) {
       method: 'POST',
       signal: controller.signal,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env[provider.credentialRef]}` },
-      body: JSON.stringify({ model: provider.modelId, messages, temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))) }),
+      body: JSON.stringify({ model: provider.modelId, messages, temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))), ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
     });
   } catch (error) {
     return { ok: false, status: 0, headers: new Headers(), json: async () => ({ error: { message: error.name === 'AbortError' ? 'Provider request timed out' : error.message } }) };
@@ -114,7 +121,7 @@ function userContent(request, attachments, modality) {
   return content;
 }
 
-export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000 }) {
+export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], tools = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000 }) {
   const registry = modelRegistry();
   const pools = configuredPools();
   const routing = state.modelRouting ??= {};
@@ -129,7 +136,7 @@ export async function executeModelPool({ logicalModel, request, context = [], co
     if (visited.has(model)) return null;
     visited.add(model);
     const available = (pools[model] || [])
-      .filter((provider) => process.env[provider.credentialRef] && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)))
+      .filter((provider) => process.env[provider.credentialRef] && credentialEnabled(provider.credentialRef) && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)))
       .sort((a, b) => (inFlight.get(a.id) || 0) - (inFlight.get(b.id) || 0));
 
     for (const provider of available) {
@@ -139,16 +146,18 @@ export async function executeModelPool({ logicalModel, request, context = [], co
         while (true) {
           const startedAt = new Date(now()).toISOString();
           const started = performance.now();
-          const response = await callProvider(provider, messages, fetchImpl, timeoutMs);
+          const response = await callProvider(provider, messages, fetchImpl, timeoutMs, tools);
           const payload = await response.json().catch(() => ({}));
           const attempt = telemetry.providerAttempts.length + 1;
-          const reply = payload.choices?.[0]?.message?.content;
-          if (response.ok && typeof reply === 'string' && reply.trim()) {
+          const messageObject = payload.choices?.[0]?.message || {};
+          const reply = typeof messageObject.content === 'string' ? messageObject.content : '';
+          const toolCalls = Array.isArray(messageObject.tool_calls) ? messageObject.tool_calls : [];
+          if (response.ok && (reply.trim() || toolCalls.length)) {
             health[provider.id] = { status: 'HEALTHY', consecutiveFailures: 0, lastSuccessAt: new Date(now()).toISOString() };
             telemetry.providerAttempts.push({ providerId: provider.id, modelId: provider.modelId, attempt, startedAt, latencyMs: Math.round(performance.now() - started), success: true, statusCode: response.status || 200 });
             telemetry.finalModel = model;
             telemetry.apiRotationCount = new Set(telemetry.providerAttempts.map((item) => item.providerId)).size - 1;
-            return { reply, tokens: Number(payload.usage?.total_tokens || 0), inputTokens: Number(payload.usage?.prompt_tokens || 0), outputTokens: Number(payload.usage?.completion_tokens || 0), cost: Number(payload.usage?.cost || 0), provider: provider.id, model: provider.modelId, logicalModel: model, routingTelemetry: telemetry };
+            return { reply, toolCalls, message: messageObject, tokens: Number(payload.usage?.total_tokens || 0), inputTokens: Number(payload.usage?.prompt_tokens || 0), outputTokens: Number(payload.usage?.completion_tokens || 0), cost: Number(payload.usage?.cost || 0), provider: provider.id, model: provider.modelId, logicalModel: model, routingTelemetry: telemetry };
           }
 
           const message = response.ok ? 'Provider returned a successful response without model output' : payload.error?.message || payload.message || '';
