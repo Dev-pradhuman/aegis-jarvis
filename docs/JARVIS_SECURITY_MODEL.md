@@ -23,3 +23,7 @@ Secrets stay in `server/data/credentials.env`, never frontend state. Registry me
 The optional bearer token is local shared-secret authentication, not multi-user identity. The phone protocol adds AES-256-GCM payloads, HMAC-SHA256 request authentication, expiry, nonces, and replay receipts, but requires a compatible companion. Native input must obey Windows foreground restrictions; the implementation does not reset physical modifier/lock state.
 
 Dependency verification on 2026-09-06 after upgrading Electron 44.2.0, Vite 8.2.2, and fflate 0.8.3 reported zero known npm vulnerabilities.
+
+## Auto MCP Security Boundary
+
+Auto MCP is treated as an untrusted external tool provider. Models never execute Auto MCP directly. Imported tools enter the canonical registry and are subject to schema validation, permission modes, exact approvals, idempotency, timeout, result normalization, verification, Runs, and telemetry. Tool descriptions/results must not override JARVIS system instructions. Secrets, cookies, OAuth tokens, passwords, OTPs, and private credentials must not be logged.

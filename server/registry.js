@@ -1,3 +1,5 @@
+import { autoMcpStatus, listAutoMcpToolDefinitions } from './autoMcpAdapter.js';
+
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const outputObject = (properties = {}) => ({ type: 'object', properties, additionalProperties: true });
 const retry = (maxAttempts = 1, retryOn = []) => ({ maxAttempts, retryOn });
@@ -7,6 +9,8 @@ const retry = (maxAttempts = 1, retryOn = []) => ({ maxAttempts, retryOn });
 // metadata from these same records.
 const definitions = [
   { id:'tools.discover',name:'Discover JARVIS tools',description:'Discover enabled canonical tools in a capability category when the initially filtered tool set is insufficient.',module:'system',provider:'local-registry',riskLevel:'READ_ONLY',sideEffects:false,reversible:true,timeout:5000,enabled:true,exposeMcp:true,handler:'tools.discover',verifier:'object',retry:retry(),inputSchema:objectSchema({category:{type:'string',minLength:1,maxLength:80},query:{type:'string',maxLength:300},limit:{type:'integer',minimum:1,maximum:30}},['category']),outputSchema:outputObject({tools:{type:'array'}})},
+  { id:'auto_mcp.status',name:'Auto MCP status',description:'Read Auto MCP provider configuration, connection state, imported tool count, and last discovery error without exposing secrets.',module:'integrations',provider:'auto_mcp',riskLevel:'READ_ONLY',sideEffects:false,reversible:true,timeout:5000,enabled:true,exposeMcp:true,handler:'auto_mcp.status',verifier:'object',retry:retry(),inputSchema:objectSchema(),outputSchema:outputObject()},
+  { id:'auto_mcp.refresh',name:'Refresh Auto MCP tools',description:'Connect to Auto MCP and import available tools into the canonical JARVIS registry. No external tool is executed.',module:'integrations',provider:'auto_mcp',riskLevel:'READ_ONLY',sideEffects:false,reversible:true,timeout:15000,enabled:true,configurationRequirements:['AUTO_MCP_ENABLED=true','AUTO_MCP_COMMAND or AUTO_MCP_URL'],exposeMcp:true,handler:'auto_mcp.refresh',verifier:'object',retry:retry(2,['TIMEOUT','CONNECTION_UNAVAILABLE']),inputSchema:objectSchema(),outputSchema:outputObject({toolCount:{type:'integer'},tools:{type:'array'}})},
   {id:'phone.status',name:'Phone bridge status',description:'Read the truthful PC-side phone bridge configuration and pending-command state.',module:'phone',provider:'local-phone-bridge',riskLevel:'READ_ONLY',sideEffects:false,reversible:true,timeout:5000,enabled:true,exposeMcp:true,handler:'phone.status',verifier:'phone.action',retry:retry(),inputSchema:objectSchema(),outputSchema:outputObject()},
   {id:'phone.devices',name:'Paired phone devices',description:'List paired/revoked phone companion records without credentials.',module:'phone',provider:'local-phone-bridge',riskLevel:'READ_ONLY',sideEffects:false,reversible:true,timeout:5000,enabled:true,exposeMcp:true,handler:'phone.devices',verifier:'phone.action',retry:retry(),inputSchema:objectSchema(),outputSchema:outputObject()},
   {id:'phone.command',name:'Queue phone command',description:'Queue an approved command for a paired phone capability; queued is not reported as device execution.',module:'phone',provider:'local-phone-bridge',riskLevel:'EXTERNAL_ACTION',sideEffects:true,reversible:false,timeout:5000,enabled:true,requiresApproval:true,exposeMcp:false,handler:'phone.command',verifier:'phone.action',retry:retry(),sensitiveInput:true,inputSchema:objectSchema({deviceId:{type:'string',minLength:3,maxLength:100},capability:{type:'string',enum:['notifications','sms','calls','contacts','clipboard','files','battery','media','screen']},action:{type:'string',minLength:1,maxLength:100},payload:{type:'object'}},['deviceId','capability','action']),outputSchema:outputObject()},
@@ -126,6 +130,7 @@ function availability(definition) {
     case 'calendar-read': return { enabled: Boolean(process.env.CALENDAR_API_URL || String(process.env.COMPOSIO_API_KEY || '').startsWith('ak_')), reason: 'CALENDAR_API_URL or a Composio project connection is required for calendar reads' };
     case 'calendar-write': return { enabled: Boolean(process.env.CALENDAR_API_URL || String(process.env.COMPOSIO_API_KEY || '').startsWith('ak_')), reason: 'A real calendar provider is required' };
     case 'hardware': return { enabled: Boolean(process.env.HARDWARE_ENDPOINT), reason: 'HARDWARE_ENDPOINT is required' };
+    case 'auto-mcp': { const status = autoMcpStatus(); return { enabled: status.enabled && !status.lastError, reason: status.enabled ? (status.lastError?.message || 'Auto MCP discovery has not succeeded yet') : 'AUTO_MCP_ENABLED=true is required' }; }
     default: return { enabled: definition.enabled !== false, reason: null };
   }
 }
@@ -136,13 +141,13 @@ function resolved(definition) {
 }
 
 export function getToolDefinition(id) {
-  const definition = definitions.find((item) => item.id === id);
+  const definition = [...definitions, ...listAutoMcpToolDefinitions()].find((item) => item.id === id);
   return definition ? resolved(definition) : null;
 }
 
 export function listTools(options = {}) {
   const includeDisabled = options.includeDisabled !== false;
-  return definitions.map(resolved).filter((tool) => includeDisabled || tool.enabled).map((tool) => ({ ...tool }));
+  return [...definitions, ...listAutoMcpToolDefinitions()].map(resolved).filter((tool) => includeDisabled || tool.enabled).map((tool) => ({ ...tool }));
 }
 
 export function listMcpTools() {

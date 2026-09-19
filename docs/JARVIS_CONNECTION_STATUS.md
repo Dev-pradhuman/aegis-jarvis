@@ -59,3 +59,9 @@ The active credentials file is `server/data/credentials.env`; `.env.local` is on
 | WhatsApp Web | Profile-dependent | AUTH_REQUIRED (live) | PARTIALLY_WORKING | Missing saved endpoints now fall back to platform search. Search/send/ambiguity/exact-text verification pass controlled tests; no real message was sent. |
 | YouTube | No account required for public playback | Live verified | N/A | Normal YouTube opened the official Seven Nation Army watch page and verified advancing playback; YouTube Music separately selected the exact track and verified playback. |
 | AutoMCP | Not installed | N/A | N/A | Deliberately omitted because it duplicates the existing canonical MCP server boundary and does not add browser automation or approval enforcement. |
+
+## Auto MCP
+
+Status: CONFIGURATION_REQUIRED unless `AUTO_MCP_ENABLED=true` and either `AUTO_MCP_COMMAND` for stdio or `AUTO_MCP_URL` for HTTP JSON-RPC is configured.
+
+Implementation: optional external MCP provider imported into the canonical JARVIS registry as `auto_mcp.*` tools. Mock verification passed through canonical executor, approval, idempotency, Runs, telemetry, and model filtering. Live verification requires a real Auto MCP server and should use read-only tools first.

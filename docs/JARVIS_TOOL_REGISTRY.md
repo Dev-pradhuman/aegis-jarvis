@@ -193,3 +193,7 @@ All assistant, deterministic-router, workflow, HTTP tool, model-tool, and MCP ex
 - `instagram.messages.latest` accepts `unreadOnly`, hydrates conversation-only provider responses, and emits normalized message/thread/sender/content metadata.
 
 All additions use the existing canonical registry/executor. The registry contains 167 tools (62 MCP-exposed read/policy-safe tools) in the live runtime after this change.
+
+## Auto MCP Provider
+
+Auto MCP tools are dynamically imported after `auto_mcp.refresh`. Imported tools are namespaced as `auto_mcp.<original_tool_name>` and preserve `provider: auto_mcp`, `originalMcpName`, schema, risk classification, approval policy, timeout, and verification metadata. Native canonical tools remain preferred when equivalent functionality exists.

@@ -314,3 +314,7 @@ Live keyboard/clipboard/mouse effect tests are still UNVERIFIED. See JARVIS_DESK
 - Initialized the idempotent default vault at `%USERPROFILE%/Documents/JARVIS-Vault` with the documented folder hierarchy and stable memory IDs/frontmatter.
 - AutoMCP was evaluated and deliberately not installed: it exports Python framework agents as MCP servers, while JARVIS already generates HTTP/stdio MCP adapters directly from its canonical JavaScript registry and executor. Adding it would duplicate the server boundary without improving browser automation, permissions, approval resumption, or MCP consumption.
 - Verification: 265 tests pass; the post-refactor approval/Instagram focused suite also passes (19/19), production build passes, JavaScript syntax passes, and `git diff --check` has no errors. Live read-only checks verified Gmail, hydrated 10 Instagram messages with zero unknown senders, and the default vault path.
+
+## Auto MCP Canonical Provider Integration
+
+Added an optional Auto MCP adapter that imports external MCP tools into the canonical registry, executes them through the central executor, applies conservative risk mapping, preserves approval/idempotency behavior for side effects, and exposes imported tools to model capability filtering. Verification: `npm.cmd test` passed with 299 tests; `npm.cmd run build` passed. Live Auto MCP verification remains configuration-required.

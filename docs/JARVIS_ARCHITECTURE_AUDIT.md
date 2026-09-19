@@ -93,7 +93,7 @@ The authoritative capability boundary is `server/registry.js` plus `server/toolE
 
 The `Available tools: []` defect came from `server/index.js`: only routes classified with `requiresTools` entered `modelToolLoop`; other headless requests entered plain model delegation, which supplied no schemas. All ChatGPT/Gemini headless routes now enter the bounded model tool loop, while deterministic commands still bypass the model entirely. `tools.discover` is a canonical read-only registry tool and the existing filter always retains it, so a low-confidence filter can expand the allowed catalog without creating a shadow registry.
 
-Live verification used the configured stable `jarvis-chat` Project URL, validated its HTTPS origin/project slug, and completed ChatGPT â†’ `tasks.list` â†’ verified result â†’ ChatGPT synthesis in one Run. A second live Run completed ChatGPT â†’ `gmail.latest` (Composio) â†’ verified result â†’ synthesis. Gemini launched its separate persistent Chrome profile headlessly and completed Gemini â†’ `tasks.list` â†’ verified result â†’ Gemini synthesis. Normalized delta/tool events were observed for the Gemini Run. External sends were deliberately not performed.
+Live verification used the configured stable `jarvis-chat` Project URL, validated its HTTPS origin/project slug, and completed ChatGPT -> `tasks.list` -> verified result -> ChatGPT synthesis in one Run. A second live Run completed ChatGPT -> `gmail.latest` (Composio) -> verified result -> synthesis. Gemini launched its separate persistent Chrome profile headlessly and completed Gemini -> `tasks.list` -> verified result -> Gemini synthesis. Normalized delta/tool events were observed for the Gemini Run. External sends were deliberately not performed.
 ## Approval and permission runtime update (2026-09-08)
 
 Before, exact approvals existed but natural-language approval replies entered model routing as new prompts. Contact resolution also occurred inside the messaging handler, after approval.
@@ -105,3 +105,7 @@ After:
 Pending action state remains owned by JARVIS and is independent of ChatGPT/Gemini availability. `normal`, `skip_permissions`, and `full_permissions` change only approval policy; they do not disable validation, authentication, verification, idempotency, telemetry, or the canonical executor.
 
 AutoMCP is not part of the runtime. JARVIS's existing MCP HTTP/stdio adapters already expose allowlisted canonical definitions and invoke the same executor, whereas AutoMCP targets exporting Python framework agents as separate MCP servers.
+
+## Auto MCP Runtime Addition
+
+Auto MCP is now an optional provider below the canonical execution layer. The flow is: Auto MCP `tools/list` -> normalized `auto_mcp.*` canonical tool definitions -> tool filtering/model loop -> canonical executor -> Auto MCP `tools/call` -> result normalization/verification. This preserves the existing registry/executor/approval architecture and avoids a parallel tool system.

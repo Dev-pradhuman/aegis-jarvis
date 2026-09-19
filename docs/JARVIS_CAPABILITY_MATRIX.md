@@ -98,3 +98,5 @@ Verified 2026-09-10. Statuses: WORKING, PARTIALLY_WORKING, BROKEN, NOT_IMPLEMENT
 | Instagram inbox normalization | WORKING | `server/connectedMessages.js` | Fixtures + repeated live read-only checks | Self/outgoing filtering uses authenticated account identity; content is grouped/humanized; first check establishes a cursor and later checks report new-since-JARVIS-check without fabricating unread state. |
 | Explicit YouTube playback | WORKING | `server/youtubeAutomation.js`, `server/router.js` | Unit tests + live browser playback | Normal YouTube selected the official video and verified advancing playback. YouTube Music is separate and completed in 5.6s after batched DOM extraction. |
 | Default JARVIS Obsidian vault | WORKING | `server/memoryGraph.js` | Idempotency test + live initialization | Uses `%USERPROFILE%/Documents/JARVIS-Vault`; watcher and graph use the same path. |
+
+| Auto MCP external tools | CONFIGURATION_REQUIRED | `server/autoMcpAdapter.js`, `server/registry.js`, `server/toolExecutor.js` | Auto MCP server config | Mocked canonical runtime tests | PASS | Live server credentials/config | Configure Auto MCP and run read-only live verification |

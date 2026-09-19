@@ -44,6 +44,7 @@ import { readSystemResources } from './systemResources.js';
 import { permissionDecision } from './permissionPolicy.js';
 import { sendWhatsAppWeb } from './whatsappWeb.js';
 import { youtubeAction } from './youtubeAutomation.js';
+import { autoMcpStatus, executeAutoMcpTool, refreshAutoMcpTools } from './autoMcpAdapter.js';
 import { sendInstagramWeb } from './instagramWeb.js';
 import { createPendingMessagingIntent, resolveMessagingRecipient, searchMessagingRecipients } from './recipientResolver.js';
 
@@ -82,7 +83,7 @@ async function inspectDirectory(relative = '.', depth = 0) {
 
 function sanitize(value, depth = 0) {
   if (depth > 5) return '[TRUNCATED]';
-  if (typeof value === 'string') return value.length > 2000 ? `${value.slice(0, 2000)}…` : value;
+  if (typeof value === 'string') return value.length > 2000 ? `${value.slice(0, 2000)}...` : value;
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitize(item, depth + 1));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).slice(0, 100).map(([key, item]) => [key, secretKey.test(key) ? '[REDACTED]' : sanitize(item, depth + 1)]));
@@ -149,7 +150,7 @@ async function resolveToolArguments(definition, args, state, context = {}) {
   }
   const contact = resolveContact(state, args.contactId || args.contact);
   const endpoint = String(args.endpoint || contact.endpoints?.[args.platform] || '').trim();
-  if (!endpoint) throw new ToolRuntimeError('CONTACT_DESTINATION_MISSING', `${contact.name} has no saved ${args.platform} address. Add it in Settings → Contact library.`);
+  if (!endpoint) throw new ToolRuntimeError('CONTACT_DESTINATION_MISSING', `${contact.name} has no saved ${args.platform} address. Add it in Settings -> Contact library.`);
   return { ...args, contact: contact.name, contactId: contact.id, endpoint };
 }
 
@@ -180,6 +181,8 @@ async function providerCall(operation) {
 async function executeHandler(definition, args, context, state) {
   const fetchImpl = context.fetchImpl || fetch;
   switch (definition.handler) {
+    case 'auto_mcp.status': return { output: autoMcpStatus(), provider: 'auto_mcp' };
+    case 'auto_mcp.refresh': return { output: await refreshAutoMcpTools(), provider: 'auto_mcp' };
     case 'tools.discover': {
       const category = String(args.category || '').toLowerCase();
       const query = String(args.query || '').toLowerCase();
@@ -423,6 +426,7 @@ async function executeHandler(definition, args, context, state) {
       return { output: {...response,verified:true}, provider: response.provider || 'configured-calendar' };
     }
     case 'calendar.search': case 'calendar.update': case 'calendar.delete': case 'calendar.availability': {const action=definition.id.slice(9);const response=await providerCall(()=>executeConnectedOperation({toolkit:'googlecalendar',operation:action,arguments:args},{fetchImpl}));return{output:response,provider:'composio:googlecalendar',meta:{toolSlug:response.toolSlug,logId:response.logId}};}
+    case 'auto_mcp.execute': return { output: await providerCall(() => executeAutoMcpTool(definition, args)), provider: 'auto_mcp' };
     case 'composio.execute': {
       const response = await providerCall(() => executeComposioTool(args, fetchImpl));
       if (!response.successful) throw new ToolRuntimeError('PROVIDER_ERROR', response.error || 'Composio execution failed', { retryable: true });
@@ -489,6 +493,7 @@ async function verify(definition, output, state) {
     case 'connected.operation': verified=output.verified===true&&output.data!==undefined;evidence={toolkit:output.toolkit,operation:output.operation,toolSlug:output.toolSlug,logId:output.logId||null};break;
     case 'slack.operation': verified=output.verified===true;evidence={method:output.method||'auth.test',acknowledged:verified};break;
     case 'composio.execute': verified = output !== undefined; evidence = { outputPresent: output !== undefined }; break;
+    case 'auto_mcp.result': verified = output?.success === true && output.result !== undefined; evidence = { provider: output?.provider, tool: output?.tool, resultPresent: output?.result !== undefined }; break;
     case 'voice-os.action': verified = output.success === true && Boolean(output.state); evidence = { state: output.state, provider: output.provider }; break;
     case 'workflows.list': verified = Array.isArray(output.workflows); evidence = { count: output.workflows?.length || 0 }; break;
     case 'workflows.run': verified = ['completed', 'waiting_for_approval'].includes(output.run?.status || output.run?.state); evidence = { runId: output.run?.id, status: output.run?.status || output.run?.state }; break;
@@ -509,7 +514,7 @@ export async function executeToolCall(rawCall = {}, context = {}) {
     if (!definition) throw new ToolRuntimeError('TOOL_NOT_FOUND', `Unknown tool: ${name || '(missing)'}`);
     validatedArgs = validateToolArguments(definition.inputSchema, rawCall.arguments ?? rawCall.input ?? {});
     const args = await resolveToolArguments(definition, validatedArgs, state, context);
-    if (state.runtime?.emergencyStop === true && definition.sideEffects) throw new ToolRuntimeError('PERMISSION_DENIED', 'JARVIS emergency stop is active. Resume execution in Settings → Security before running side effects.');
+    if (state.runtime?.emergencyStop === true && definition.sideEffects) throw new ToolRuntimeError('PERMISSION_DENIED', 'JARVIS emergency stop is active. Resume execution in Settings -> Security before running side effects.');
     const permissionContext = rawCall.permissionContext || context.permissionContext || {};
     enforcePermission(definition, args, permissionContext);
     approval = (rawCall.approvalId ? (state.approvals || []).find((item) => item.id === rawCall.approvalId) : null) || context.approval;
