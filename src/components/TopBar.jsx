@@ -3,7 +3,8 @@ import '../styles/topbar.css';
 
 export default function TopBar() {
   const telemetry = useTelemetry();
-  const { provider = {}, usage = {} } = telemetry;
+  const provider = telemetry.provider || {};
+  const usage = telemetry.usage || {};
   const modelLabels = { 'muse-spark-1.2': 'Muse Spark 1.2', 'deepseek-v4-flash': 'DeepSeek V4 Flash', 'glm-5.2': 'GLM-5.2', 'laguna-s-2.1': 'Laguna S 2.1', 'minimax-m3': 'MiniMax M3', 'nemotron-3-nano-omni': 'Nemotron 3 Nano Omni', 'mimo-v2.5': 'MiMo V2.5', 'nemotron-3.5-lightning': 'Nemotron 3.5 Lightning' };
   const modeDefault = telemetry.modelRouting?.jarvisMode === 'coding' ? 'laguna-s-2.1' : telemetry.modelRouting?.jarvisMode === 'deepthinking' ? 'glm-5.2' : 'muse-spark-1.2';
   const routedModel = telemetry.modelRouting?.last?.finalModel || (telemetry.modelRouting?.mode === 'manual' ? telemetry.modelRouting?.manualModel : modeDefault);
@@ -45,8 +46,8 @@ export default function TopBar() {
         <div className="eyebrow" style={{ textAlign: 'right' }}>
           Jarvis Core
         </div>
-        <div className="hud-status green">
-          ACTIVE <span className="dot green"></span>
+        <div className={`hud-status ${telemetry.online ? 'green' : ''}`}>
+          {telemetry.online ? 'ACTIVE' : 'OFFLINE'} <span className={`dot ${telemetry.online ? 'green' : ''}`}></span>
         </div>
       </div>
     </header>

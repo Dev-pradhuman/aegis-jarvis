@@ -27,7 +27,8 @@ test('the neural brain bridge binds every gesture and cleans up resources', asyn
 
   assert.match(html, /"three": "\/vendor\/three\/three\.module\.min\.js"/);
   assert.match(html, /"three\/addons\/": "\/vendor\/three\/addons\/"/);
-  assert.match(html, /type="module" src="\/brain\/main\.js"/);
+  assert.match(html, /location\.pathname === '\/legacy'/);
+  assert.match(html, /brainScript\.src = '\/brain\/main\.js'/);
 });
 
 test('offline gesture runtime and model assets are present', async () => {

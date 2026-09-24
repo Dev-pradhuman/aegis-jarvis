@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { pollWithBackoff } from '../hooks/pollWithBackoff.js';
 import Icon from './Icon.jsx';
 import '../styles/chat.css';
 
 const MODEL_LABELS = { 'muse-spark-1.2': 'Muse Spark 1.2', 'deepseek-v4-flash': 'DeepSeek V4 Flash', 'glm-5.2': 'GLM-5.2', 'laguna-s-2.1': 'Laguna S 2.1', 'minimax-m3': 'MiniMax M3', 'nemotron-3-nano-omni': 'Nemotron 3 Nano Omni', 'mimo-v2.5': 'MiMo V2.5', 'nemotron-3.5-lightning': 'Nemotron 3.5 Lightning' };
+const visual = (phase) => window.dispatchEvent(new CustomEvent('jarvis:visual', { detail: { phase } }));
 
 function nowTime() {
   const d = new Date();
@@ -18,6 +20,8 @@ export default function Chat() {
   const recorderRef = useRef(null);
   const logRef = useRef(null);
 
+  useEffect(() => () => { try { recorderRef.current?.stop(); } catch {} recorderRef.current = null; }, []);
+
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -25,18 +29,17 @@ export default function Chat() {
   }, [messages, isTyping]);
 
   useEffect(() => {
-    let mounted = true;
-    const refresh = () => fetch('/api/chats').then((response) => {
-      setServiceOnline(response.ok);
-      return response.ok ? response.json() : null;
-    }).then((data) => { if (mounted) setMessages(Array.isArray(data?.messages) ? data.messages : []); }).catch(() => { if (mounted) setServiceOnline(false); });
-    refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => { mounted = false; clearInterval(timer); };
+    return pollWithBackoff(async (signal) => {
+      const response = await fetch('/api/chats', { signal });
+      if (!response.ok) throw new Error(`Chat ${response.status}`);
+      const data = await response.json();
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      setServiceOnline(true);
+    }, { connectedMs: 5000, onError: () => setServiceOnline(false) });
   }, []);
 
   async function speakReply(text) {
-    try { const response = await fetch('/api/voice/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }); if (!response.ok) throw new Error(); const url = URL.createObjectURL(await response.blob()); const audio = new Audio(url); audio.onended = () => URL.revokeObjectURL(url); await audio.play(); } catch { window.speechSynthesis?.speak(new SpeechSynthesisUtterance(text)); }
+    try { const response = await fetch('/api/voice/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }); if (!response.ok) throw new Error(); const url = URL.createObjectURL(await response.blob()); const audio = new Audio(url); audio.onended = () => { URL.revokeObjectURL(url); visual('idle'); }; audio.onerror = () => { URL.revokeObjectURL(url); visual('idle'); }; visual('speaking'); await audio.play(); } catch { if (window.speechSynthesis) { const utterance = new SpeechSynthesisUtterance(text); utterance.onstart = () => visual('speaking'); utterance.onend = () => visual('idle'); utterance.onerror = () => visual('idle'); window.speechSynthesis.speak(utterance); } else visual('idle'); }
   }
 
   async function sendMessage(value = input, speak = false) {
@@ -49,6 +52,7 @@ export default function Chat() {
     setMessages((prev) => [...prev, { who: 'YOU', time: nowTime(), lines: [val] }]);
     setInput('');
     setIsTyping(true);
+    visual('thinking');
 
     try {
       const response = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: val }) });
@@ -62,6 +66,7 @@ export default function Chat() {
       setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: ['Local service unavailable. I retained your request in this session.'] }]);
     } finally {
       setIsTyping(false);
+      if (!speak) visual('idle');
     }
   }
 
@@ -69,12 +74,12 @@ export default function Chat() {
     if (recorderRef.current) { recorderRef.current.stop(); return; }
     try {
       const voiceStatus = await fetch('/api/voice/tts').then((response) => response.ok ? response.json() : ({})).catch(() => ({}));
-      if (voiceStatus.sttProvider === 'browser') { const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition; if (!Recognition) throw new Error('Browser speech recognition is unavailable'); const recognition = new Recognition(); recognition.lang = 'en-IN'; recognition.interimResults = false; recognition.onstart = () => setListening(true); recognition.onend = () => { setListening(false); recorderRef.current = null; }; recognition.onerror = () => setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: ['Browser speech recognition failed. Check microphone permission.'] }]); recognition.onresult = (event) => { const text = event.results[0][0].transcript; setInput(text); void sendMessage(text, true); }; recognition.start(); recorderRef.current = { stop: () => recognition.stop() }; return; }
+      if (voiceStatus.sttProvider === 'browser') { const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition; if (!Recognition) throw new Error('Browser speech recognition is unavailable'); const recognition = new Recognition(); let submitted = false; recognition.lang = 'en-IN'; recognition.interimResults = false; recognition.onstart = () => { setListening(true); visual('listening'); }; recognition.onend = () => { setListening(false); recorderRef.current = null; if (!submitted) visual('idle'); }; recognition.onerror = () => setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: ['Browser speech recognition failed. Check microphone permission.'] }]); recognition.onresult = (event) => { submitted = true; const text = event.results[0][0].transcript; setInput(text); void sendMessage(text, true); }; recognition.start(); recorderRef.current = { stop: () => recognition.stop() }; return; }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
       const chunks = []; const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : undefined }); recorderRef.current = recorder;
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      recorder.onstop = async () => { setListening(false); recorderRef.current = null; stream.getTracks().forEach((track) => track.stop()); const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }); const reader = new FileReader(); reader.onloadend = async () => { try { setIsTyping(true); const response = await fetch('/api/voice/transcribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: String(reader.result).split(',')[1], mimeType: blob.type, fileName: 'speech.webm' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Transcription failed'); setInput(data.text); await sendMessage(data.text, true); } catch (error) { setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: [error.message] }]); setIsTyping(false); } }; reader.readAsDataURL(blob); };
-      recorder.start(); setListening(true);
+      recorder.onstop = async () => { setListening(false); visual('thinking'); recorderRef.current = null; stream.getTracks().forEach((track) => track.stop()); const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }); const reader = new FileReader(); reader.onloadend = async () => { try { setIsTyping(true); const response = await fetch('/api/voice/transcribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: String(reader.result).split(',')[1], mimeType: blob.type, fileName: 'speech.webm' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Transcription failed'); setInput(data.text); await sendMessage(data.text, true); } catch (error) { setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: [error.message] }]); setIsTyping(false); visual('idle'); } }; reader.readAsDataURL(blob); };
+      recorder.start(); setListening(true); visual('listening');
     } catch { setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: ['Microphone access is unavailable. Check browser permission and Groq configuration.'] }]); }
   }
 

@@ -1,8 +1,17 @@
 export function routeRequest(text) {
   const value = String(text).trim();
+  if (/^(?:which|what|list|show).{0,35}\bmodels?\b.{0,30}(?:available|configured|connected)?\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'models.list', args: {}, confidence: 0.99 };
+  if (/\b(?:mcp servers?|connected mcp|mcp tools?)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'mcp.servers', args: {}, confidence: 0.99 };
+  if (/\b(?:project status|what changed in (?:the )?project|what is happening in (?:the )?project|status of (?:the )?project)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'projects.status', args: {}, confidence: 0.98 };
+  const projectQuestion = value.match(/^(?:what(?:'s| is) happening in|what changed in|status of)\s+(.+?)\??$/i);
+  if (projectQuestion) return { route: 'TOOL_CALL', capability: 'projects.status', args: { name: projectQuestion[1].replace(/\?$/, '').trim() }, confidence: 0.96 };
+  const research = value.match(/^(?:please\s+)?research\s+(.+?)\??$/i);
+  if (research) return { route: 'TOOL_CALL', capability: 'research.plan', args: { topic: research[1].replace(/\?$/, '').trim() }, confidence: 0.97 };
   const media = value.match(/^(?:please\s+)?(?:make|generate|create)\s+(?:me\s+)?(?:an?\s+)?(image|picture|video|clip)\b[\s:,-]*(.*)$/i);
   if (media) return { route: 'TOOL_CALL', capability: 'media.generate', args: { kind: /video|clip/i.test(media[1]) ? 'video' : 'image', prompt: media[2] || value }, confidence: 0.99 };
   if (/^(open|launch|go to)\s+(youtube|youtube\.com)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: 'https://www.youtube.com', label: 'YouTube' }, confidence: 1 };
+  const application = value.match(/^(?:please\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application))?[.!]?$/i);
+  if (application && application[1].length <= 120) return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: application[1] }, confidence: 0.99 };
   const latestEmail = value.match(/\b(?:latest|last|recent|newest)\s*(\d{1,2})?\s*(?:e-?mails?|mails?)\b/i);
   if (latestEmail) return { route: 'TOOL_CALL', capability: 'gmail.latest', args: { limit: Math.min(20, Math.max(1, Number(latestEmail[1] || 4))) }, confidence: 0.99 };
   if (/^(show|list|what are)\s+(my\s+)?tasks\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'tasks.list', args: {}, confidence: 0.99 };

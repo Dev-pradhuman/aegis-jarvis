@@ -9,6 +9,11 @@ export function createSession(user = 'local-operator') {
 }
 export function validSession(token) { const item = sessions.get(token); return item && Date.now() - item.createdAt < 86_400_000; }
 
+export function messageActionHash(payload = {}) {
+  const platform = process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID ? 'slack' : 'generic';
+  return crypto.createHash('sha256').update(JSON.stringify([platform, payload.recipient || null, payload.channel || null, messageWithAttribution(payload, platform), Boolean(payload.assistantAuthored)])).digest('hex');
+}
+
 export async function calendarRequest(method, payload = {}) {
   const endpoint = process.env.CALENDAR_API_URL;
   if (!endpoint && process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID && method === 'POST') {
@@ -24,17 +29,31 @@ export async function calendarRequest(method, payload = {}) {
 }
 
 export async function sendMessage(payload = {}) {
+  const platform = process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID ? 'slack' : 'generic';
+  const authoredText = messageWithAttribution(payload, platform);
   if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID) {
-    const response = await fetch('https://slack.com/api/chat.postMessage', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }, body: JSON.stringify({ channel: payload.channel || process.env.SLACK_CHANNEL_ID, text: payload.text || payload.message }) });
+    const response = await fetch('https://slack.com/api/chat.postMessage', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }, body: JSON.stringify({ channel: payload.channel || process.env.SLACK_CHANNEL_ID, text: authoredText }) });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(`Slack message failed: ${data.error || response.status}`);
     return { configured: true, provider: 'slack', delivered: true, ts: data.ts };
   }
   const endpoint = process.env.MESSAGING_API_URL || process.env.SLACK_WEBHOOK_URL;
   if (!endpoint) return { configured: false, message: 'MESSAGING_API_URL or SLACK_WEBHOOK_URL is not configured' };
-  const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', ...(process.env.MESSAGING_TOKEN ? { authorization: `Bearer ${process.env.MESSAGING_TOKEN}` } : {}) }, body: JSON.stringify(process.env.SLACK_WEBHOOK_URL ? { text: payload.text || payload.message } : payload) });
+  const outgoing = { ...payload };
+  if (authoredText !== String(payload.text || payload.message || '')) { if ('text' in outgoing) outgoing.text = authoredText; if ('message' in outgoing) outgoing.message = authoredText; }
+  const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', ...(process.env.MESSAGING_TOKEN ? { authorization: `Bearer ${process.env.MESSAGING_TOKEN}` } : {}) }, body: JSON.stringify(process.env.SLACK_WEBHOOK_URL ? { text: authoredText } : outgoing) });
   if (!response.ok) throw new Error(`Messaging provider returned HTTP ${response.status}`);
   return { configured: true, delivered: true, status: response.status };
+}
+
+export function messageWithAttribution(payload = {}, platform = 'generic', raw = process.env.COMMUNICATION_SIGNATURES) {
+  const text = String(payload.text || payload.message || '');
+  if (!payload.assistantAuthored || !raw) return text;
+  try {
+    const configured = JSON.parse(raw);
+    const signature = configured && typeof configured === 'object' ? configured[platform] : null;
+    return typeof signature === 'string' && signature.trim() ? `${text}\n\n${signature.trim().slice(0, 160)}` : text;
+  } catch { return text; }
 }
 
 export async function hardwareCommand(payload = {}) {

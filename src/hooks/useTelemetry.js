@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
+import { pollWithBackoff } from './pollWithBackoff.js';
 
-const empty = { uptimeSeconds: 0, usage: { requests: 0, tokens: 0, cost: 0 }, provider: { label: 'Local model', model: 'Not configured' } };
+const empty = { uptimeSeconds: null, usage: null, provider: null, online: false };
 
 export default function useTelemetry(interval = 1000) {
   const [telemetry, setTelemetry] = useState(empty);
-  useEffect(() => {
-    let mounted = true;
-    const refresh = () => fetch('/api/telemetry').then((response) => response.ok ? response.json() : null).then((data) => { if (mounted && data) setTelemetry(data); }).catch(() => {});
-    refresh();
-    const timer = setInterval(refresh, interval);
-    return () => { mounted = false; clearInterval(timer); };
-  }, [interval]);
+  useEffect(() => pollWithBackoff(async (signal) => {
+    const response = await fetch('/api/telemetry', { signal });
+    if (!response.ok) throw new Error(`Telemetry ${response.status}`);
+    setTelemetry({ ...await response.json(), online: true });
+  }, { connectedMs: interval, onError: () => setTelemetry(empty) }), [interval]);
   return telemetry;
 }
 

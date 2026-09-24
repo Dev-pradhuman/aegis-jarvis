@@ -6,3 +6,7 @@ server/graphify-out/
 server/data/credentials.env
 server/data/state.json
 server/data/generated/
+server/data/browser/
+.playwright-cli/
+# Local visual reference; the app renders its Galaxy procedurally.
+frontend-glaxy-ideas/Video-73210.mp4

@@ -21,6 +21,10 @@ test('known browser destinations route deterministically', () => {
   assert.equal(route.confidence, 1);
 });
 
+test('application launch requests route through the canonical tool path', () => {
+  assert.deepEqual(routeRequest('Open Spotify'), { route: 'TOOL_CALL', capability: 'apps.open', args: { name: 'Spotify' }, confidence: 0.99 });
+});
+
 test('latest email requests route directly to grounded Gmail', () => {
   assert.deepEqual(routeRequest('can you tell me latest 4 mails?'), { route: 'TOOL_CALL', capability: 'gmail.latest', args: { limit: 4 }, confidence: 0.99 });
   assert.equal(routeRequest('show my latest 99 emails').args.limit, 20);

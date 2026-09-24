@@ -12,7 +12,7 @@ import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchM
 import { tick } from './scheduler.js';
 import crypto from 'node:crypto';
 import { adapterStatus, embed, extractDocument, mcpError, mcpResponse, vectorSearch } from './extendedAdapters.js';
-import { calendarRequest, createSession, hardwareCommand, sendMessage, validSession } from './liveAdapters.js';
+import { calendarRequest, createSession, hardwareCommand, messageActionHash, validSession } from './liveAdapters.js';
 import { beginRun, errorRun, finishRun } from './orchestrator.js';
 import { routeRequest } from './router.js';
 import { publicConfig, saveConfig } from './config.js';
@@ -21,6 +21,13 @@ import { findToolReplay, rememberToolResult } from './idempotency.js';
 import { downloadVideoJob, generateMedia, readGeneratedMedia, refreshVideoJob } from './mediaGeneration.js';
 import { composioActionHash, composioStatus, composioToolRisk, createComposioConnectLink, executeComposioTool, listComposioAccounts, listComposioTools, validateComposioProjectKey } from './composioAdapter.js';
 import { complete as completeConfiguredProvider, providerForLogicalModel } from './providerClient.js';
+import { systemMetrics } from './systemMetrics.js';
+import { browserManager } from './browser/index.js';
+import { listProjectStatus } from './projectIntelligence.js';
+import { discoverMcpServers } from './mcpDiscovery.js';
+import { deviceStatus, ingestDeviceEvent, pairDevice, revokeDevice } from './deviceBridge.js';
+import { planGroundedResearch } from './researchWorkflow.js';
+import { mcpActionHash } from './mcpDiscovery.js';
 
 const port = Number(process.env.JARVIS_PORT || 8787);
 const processStartedAt = Date.now();
@@ -54,8 +61,37 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (req.method === 'POST' && url.pathname === '/api/auth/login') { const input = await body(req); if (process.env.JARVIS_AUTH_TOKEN && input.token !== process.env.JARVIS_AUTH_TOKEN) return json(res, 401, { error: 'Invalid credentials' }); return json(res, 200, createSession(input.user || 'local-operator')); }
-    if (process.env.JARVIS_AUTH_TOKEN && !authorized(req)) return json(res, 401, { error: 'Authentication required' });
+    const companionEndpoint = req.method === 'POST' && ['/api/device/pair', '/api/device/events'].includes(url.pathname);
+    if (process.env.JARVIS_AUTH_TOKEN && !companionEndpoint && !authorized(req)) return json(res, 401, { error: 'Authentication required' });
     const state = await getState();
+    if (req.method === 'GET' && url.pathname === '/api/projects') return json(res, 200, { projects: await listProjectStatus() });
+    if (req.method === 'GET' && url.pathname === '/api/mcp/servers') return json(res, 200, { servers: await discoverMcpServers() });
+    if (req.method === 'GET' && url.pathname === '/api/device/status') return json(res, 200, deviceStatus(state));
+    if (req.method === 'GET' && url.pathname === '/api/agents') return json(res, 200, { agents: (state.modelRouting?.telemetry || []).flatMap((route) => (route.delegations || []).map((stage, index) => ({ id: `${route.runId || route.requestId}-${index}`, name: stage.logicalModel, status: route.success === false ? 'failed' : 'completed', provider: stage.provider, runId: route.runId || route.requestId, at: route.timestamp }))).slice(0, 50), dynamicAgentsAvailable: false });
+    if (req.method === 'GET' && url.pathname === '/api/research/status') return json(res, 200, { configured: Boolean(process.env.SEARCH_PROVIDER_URL), provider: process.env.SEARCH_PROVIDER_URL ? 'configured search provider' : null, message: process.env.SEARCH_PROVIDER_URL ? 'Source search is available' : 'SEARCH_PROVIDER_URL is not configured' });
+    if (req.method === 'POST' && url.pathname === '/api/research/plan') {
+      const result = await planGroundedResearch(await body(req));
+      return json(res, result.status === 'configuration_required' ? 503 : 200, result);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/media/jobs') return json(res, 200, { jobs: (state.mediaJobs || []).map(({ operationName, credentialSlot, downloadUri, ...job }) => ({ ...job, downloadUri: downloadUri ? `/api/media/jobs/${job.id}/download` : null })), configured: Boolean(process.env.GEMINI_API_KEY) });
+    if (req.method === 'GET' && url.pathname === '/api/messaging/status') return json(res, 200, { configured: Boolean(process.env.MESSAGING_API_URL || process.env.SLACK_WEBHOOK_URL || process.env.SLACK_BOT_TOKEN), whatsappConnected: false, message: 'WhatsApp provider is not connected' });
+    if (req.method === 'POST' && url.pathname === '/api/device/pair') {
+      const input = await body(req); let result;
+      try { await updateState((draft) => { result = pairDevice(draft, input); return draft; }); }
+      catch (error) { return json(res, 403, { error: error.message, code: error.code || 'DEVICE_PAIRING_DENIED' }); }
+      return json(res, 201, result);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/device/events') {
+      const input = await body(req); let result;
+      try { await updateState((draft) => { result = ingestDeviceEvent(draft, req.headers.authorization?.replace(/^Bearer\s+/i, ''), input); return draft; }); }
+      catch (error) { return json(res, error.code === 'DEVICE_UNAUTHORIZED' ? 401 : 400, { error: error.message, code: error.code || 'DEVICE_EVENT_INVALID' }); }
+      return json(res, 202, result);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/device/revoke') {
+      const input = await body(req); let revoked = false;
+      await updateState((draft) => { revoked = revokeDevice(draft, String(input.deviceId || '')); return draft; });
+      return revoked ? json(res, 200, { revoked: true }) : json(res, 404, { error: 'Device not found' });
+    }
     if (req.method === 'GET' && url.pathname.startsWith('/api/generated/')) { const fileName = url.pathname.split('/').pop(); const media = await readGeneratedMedia(fileName); res.writeHead(200, { 'content-type': media.contentType, 'content-length': media.content.length, 'cache-control': 'private, max-age=3600', 'access-control-allow-origin': '*' }); return res.end(media.content); }
     if (req.method === 'GET' && url.pathname.match(/^\/api\/media\/jobs\/[^/]+\/download$/)) { const id = url.pathname.split('/')[4]; const job = (state.mediaJobs || []).find((item) => item.id === id); if (!job) return json(res, 404, { error: 'Media job not found' }); const media = await downloadVideoJob(job); res.writeHead(200, { 'content-type': media.contentType, 'content-length': media.content.length, 'cache-control': 'private, max-age=3600', 'access-control-allow-origin': '*' }); return res.end(media.content); }
     if (req.method === 'GET' && url.pathname.startsWith('/api/media/jobs/')) { const id = url.pathname.split('/').pop(); const existing = (state.mediaJobs || []).find((job) => job.id === id); if (!existing) return json(res, 404, { error: 'Media job not found' }); const job = await refreshVideoJob(existing); await updateState((draft) => { const index = (draft.mediaJobs || []).findIndex((item) => item.id === id); if (index >= 0) draft.mediaJobs[index] = job; return draft; }); return json(res, 200, { job: { ...job, operationName: undefined, credentialSlot: undefined, downloadUri: job.downloadUri ? `/api/media/jobs/${job.id}/download` : null } }); }
@@ -69,6 +105,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/voice/transcribe') return json(res, 200, await transcribeAudio(await body(req)));
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, service: 'jarvis', assistant: 'JARVIS', mode: 'local', uptimeSeconds: uptimeSeconds(), at: new Date().toISOString() });
+    if (req.method === 'GET' && url.pathname === '/api/system/metrics') return json(res, 200, systemMetrics());
+    if (req.method === 'GET' && url.pathname === '/api/browser/status') return json(res, 200, browserManager.getStatus());
     if (req.method === 'GET' && url.pathname === '/api/runs') return json(res, 200, { runs: state.runs || [] });
     if (req.method === 'GET' && url.pathname.startsWith('/api/runs/')) { const run = (state.runs || []).find((item) => item.id === url.pathname.split('/').pop()); return run ? json(res, 200, { run }) : json(res, 404, { error: 'Run not found' }); }
     if (req.method === 'POST' && url.pathname.match(/^\/api\/runs\/[^/]+\/(cancel|resume)$/)) { const id = url.pathname.split('/')[3]; const action = url.pathname.split('/')[4]; let run; await updateState((draft) => { run = (draft.runs || []).find((item) => item.id === id); if (run) { run.status = action === 'cancel' ? 'cancelled' : 'running'; run.events.push({ type: `run.${action}`, at: new Date().toISOString() }); } return draft; }); return run ? json(res, 200, { run }) : json(res, 404, { error: 'Run not found' }); }
@@ -172,9 +210,21 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/calendar/events') return json(res, 200, await calendarRequest('GET'));
     if (req.method === 'POST' && url.pathname === '/api/calendar/events') return json(res, 200, await calendarRequest('POST', await body(req)));
     if (req.method === 'POST' && url.pathname === '/api/messages/send') {
-      const input = await body(req); const approval = state.approvals.find((item) => item.id === input.approvalId);
-      if (!approval || approval.status !== 'approved') return json(res, 403, { error: 'Approved approvalId is required to send a message' });
-      return json(res, 200, await sendMessage(input));
+      const input = await body(req);
+      if (!process.env.MESSAGING_API_URL && !process.env.SLACK_WEBHOOK_URL && !process.env.SLACK_BOT_TOKEN) return json(res, 503, { configured: false, error: 'No messaging provider is configured' });
+      if (!String(input.text || input.message || '').trim()) return json(res, 400, { error: 'Message text is required' });
+      const approval = input.approvalId ? state.approvals.find((item) => item.id === input.approvalId) : null;
+      if (!approval) {
+        const pending = { id: `approval-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, icon: 'shield', risk: 'high', title: 'Approve message send', sub: 'External communication', status: 'pending', toolName: 'messages.send', actionHash: messageActionHash(input), createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), consumedAt: null };
+        await updateState((draft) => { draft.approvals ??= []; draft.approvals.unshift(pending); recordActivity(draft, activityEntry('approval.requested', pending.title, { approvalId: pending.id })); return draft; });
+        return json(res, 202, { approvalRequired: true, approval: pending });
+      }
+      const approvalForExecution = { ...approval };
+      let claimed = false;
+      await updateState((draft) => { const current = (draft.approvals || []).find((item) => item.id === approval.id); if (current?.status === 'approved' && current.toolName === 'messages.send' && !current.consumedAt && Date.parse(current.expiresAt || 0) > Date.now() && current.actionHash === messageActionHash(input)) { current.status = 'consumed'; current.consumedAt = new Date().toISOString(); claimed = true; } return draft; });
+      if (!claimed) return json(res, 403, { error: 'A current approval bound to this exact message is required' });
+      const result = (await executeTool('messages.send', input, { approval: approvalForExecution })).data;
+      return json(res, 200, result);
     }
     if (req.method === 'POST' && url.pathname === '/api/hardware/command') return json(res, 200, await hardwareCommand(await body(req)));
     if (req.method === 'POST' && url.pathname === '/api/mcp') {
@@ -231,8 +281,24 @@ const server = http.createServer(async (req, res) => {
       const toolInput = input.input || {};
       const replay = findToolReplay(state, input.idempotencyKey, toolId, toolInput);
       if (replay) return json(res, 200, { ...replay.result, replayed: true, idempotencyKey: replay.idempotencyKey });
+      if (toolId === 'messages.send' && !process.env.MESSAGING_API_URL && !process.env.SLACK_WEBHOOK_URL && !process.env.SLACK_BOT_TOKEN) return json(res, 503, { configured: false, error: 'No messaging provider is configured' });
       const approval = input.approvalId ? state.approvals.find((item) => item.id === input.approvalId) : null;
-      const result = await executeTool(toolId, toolInput, { approval });
+      const exactAction = toolId === 'mcp.call' || toolId === 'messages.send';
+      const exactHash = toolId === 'mcp.call' ? mcpActionHash(toolInput) : toolId === 'messages.send' ? messageActionHash(toolInput) : null;
+      if (exactAction && !approval) {
+        if (toolId === 'mcp.call' && (!toolInput.server || !toolInput.tool || typeof toolInput.arguments !== 'object' && toolInput.arguments !== undefined)) return json(res, 400, { error: 'server, tool and object arguments are required' });
+        if (toolId === 'messages.send' && !String(toolInput.text || toolInput.message || '').trim()) return json(res, 400, { error: 'Message text is required' });
+        const pending = { id: `approval-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, icon: 'shield', risk: 'high', title: toolId === 'mcp.call' ? `Approve MCP ${toolInput.server}/${toolInput.tool}` : 'Approve message send', sub: toolId === 'mcp.call' ? 'External MCP action' : 'External communication', status: 'pending', toolName: toolId, actionHash: exactHash, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), consumedAt: null };
+        await updateState((draft) => { draft.approvals ??= []; draft.approvals.unshift(pending); recordActivity(draft, activityEntry('approval.requested', pending.title, { approvalId: pending.id })); return draft; });
+        return json(res, 202, { approvalRequired: true, approval: pending });
+      }
+      const approvalForExecution = approval ? { ...approval } : null;
+      if (exactAction && approval) {
+        let claimed = false;
+        await updateState((draft) => { const current = (draft.approvals || []).find((item) => item.id === approval.id); if (current?.status === 'approved' && current.toolName === toolId && !current.consumedAt && Date.parse(current.expiresAt || 0) > Date.now() && current.actionHash === exactHash) { current.status = 'consumed'; current.consumedAt = new Date().toISOString(); claimed = true; } return draft; });
+        if (!claimed) return json(res, 403, { error: 'A current approval bound to this exact action is required' });
+      }
+      const result = await executeTool(toolId, toolInput, { approval: approvalForExecution });
       await updateState((draft) => { rememberToolResult(draft, { idempotencyKey: input.idempotencyKey, runId: input.runId, toolId, input: toolInput, result }); recordActivity(draft, activityEntry('tool.executed', toolId, { toolId, runId: input.runId || null })); return draft; });
       return json(res, 200, result);
     }
@@ -265,6 +331,13 @@ const server = http.createServer(async (req, res) => {
         const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.status = 'running';
         const toolStarted = performance.now(); let data; let reply;
         if (route.capability === 'browser.open') { data = { action: 'open_url', url: route.args.url, label: route.args.label }; reply = `Opening ${route.args.label}.`; }
+        else if (route.capability === 'apps.open') {
+          const result = await executeTool('apps.open', route.args);
+          data = result.data;
+          reply = data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
+            : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
+              : `I could not find an installed application named ${route.args.name}.`;
+        }
         else if (route.capability === 'tasks.list') { data = { tasks: state.tasks }; reply = state.tasks.length ? `You have ${state.tasks.length} tasks.` : 'You have no tasks.'; }
         else if (route.capability === 'gmail.latest') {
           const tool = await executeTool('composio.execute', { toolSlug: 'GMAIL_FETCH_EMAILS', arguments: { user_id: 'me', max_results: route.args.limit, verbose: false, include_payload: false, label_ids: ['INBOX'] } });
@@ -273,6 +346,10 @@ const server = http.createServer(async (req, res) => {
           reply = emails.length ? `Your latest ${emails.length} inbox emails:\n${emails.map((email, index) => `${index + 1}. ${email.subject || '(no subject)'} — ${email.sender || 'Unknown sender'} (${email.messageTimestamp ? new Date(email.messageTimestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown time'})`).join('\n')}` : 'Your Gmail inbox has no matching emails.';
         }
         else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
+        else if (route.capability === 'models.list') { const result = await executeTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }
+        else if (route.capability === 'mcp.servers') { const result = await executeTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }
+        else if (route.capability === 'projects.status') { const result = await executeTool('projects.status'); data = result.data; const selected = route.args.name ? data.projects.filter((project) => project.name.toLowerCase() === route.args.name.toLowerCase() || project.name.toLowerCase().includes(route.args.name.toLowerCase())) : data.projects; reply = selected.length ? selected.map((project) => `${project.name}: ${project.status}${project.branch ? ` on ${project.branch}` : ''}${project.changedFiles === null ? '' : `, ${project.changedFiles} changed files`}`).join('\n') : `No connected project matches ${route.args.name}.`; }
+        else if (route.capability === 'research.plan') { const result = await executeTool('research.plan', route.args); data = result.data; reply = data.status === 'sources_collected' ? `Collected ${data.sources.length} attributable sources for ${data.topic}. Source verification and synthesis remain next steps.` : data.message; }
         else if (route.capability === 'diagnostics') { data = diagnostics(state); reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
         else if (route.capability === 'memory.search') { data = { memories: searchMemory(state.memories || [], route.args.q) }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
         else if (route.capability === 'media.generate') { const media = await generateMedia(route.args.kind, route.args.prompt); data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
@@ -327,7 +404,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: true, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
     }
     return json(res, 404, { error: 'Not found' });
-  } catch (error) { console.error(error); return json(res, 500, { error: 'Internal JARVIS service error', detail: error.message }); }
+  } catch (error) { console.error(error); return json(res, error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500, { error: 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }
 });
 
 server.on('error', (error) => {
@@ -335,6 +412,14 @@ server.on('error', (error) => {
   console.error(`JARVIS server error: ${error.message}`); process.exitCode = 1;
 });
 server.listen(port, '127.0.0.1', () => console.log(`JARVIS service listening on http://127.0.0.1:${port}`));
+
+async function shutdownBrowser() {
+  server.close();
+  await browserManager.close().catch((error) => console.warn(`[browser] shutdown: ${error.message}`));
+  process.exit(0);
+}
+process.once('SIGINT', shutdownBrowser);
+process.once('SIGTERM', shutdownBrowser);
 
 const schedulerTimer = setInterval(async () => {
   if (!schedulerEnabled) return;

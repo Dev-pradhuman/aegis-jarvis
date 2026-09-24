@@ -1,0 +1,21 @@
+.galaxy-topline { right: clamp(76px, 7vw, 105px); }
+.galaxy-fullscreen-toggle { position: absolute; z-index: 60; top: 22px; right: 20px; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(95,155,239,.2); border-radius: 6px; background: rgba(8,20,48,.5); color: #8cb9e8; cursor: pointer; transition: opacity .35s, border-color .2s, color .2s; }
+.galaxy-fullscreen-toggle:hover, .galaxy-fullscreen-toggle:focus-visible { color: #e5f5ff; border-color: rgba(113,183,255,.62); outline: none; }
+.galaxy-home:fullscreen { width: 100vw; height: 100vh; min-height: 0; }
+.is-immersive .galaxy-sidebar, .is-immersive .galaxy-topline, .is-immersive .galaxy-left-card, .is-immersive .galaxy-telemetry, .is-immersive .galaxy-task-cards, .is-immersive .galaxy-voice, .is-immersive .galaxy-bottomline, .is-immersive .galaxy-browser-chip, .is-immersive .galaxy-handoff, .is-immersive .galaxy-call-notice, .is-immersive .visual-preview, .is-immersive .jarvis-window, .is-immersive .window-dock { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .55s ease, visibility 0s .55s; }
+.is-immersive.show-immersive-hud .galaxy-sidebar, .is-immersive.show-immersive-hud .galaxy-topline, .is-immersive.show-immersive-hud .galaxy-voice { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .55s ease; }
+.is-immersive .galaxy-fullscreen-toggle { opacity: .16; }
+.is-immersive.show-immersive-hud .galaxy-fullscreen-toggle, .is-immersive .galaxy-fullscreen-toggle:hover, .is-immersive .galaxy-fullscreen-toggle:focus-visible { opacity: 1; }
+.galaxy-gesture-hint { position: absolute; z-index: 15; left: 50%; bottom: 20px; transform: translateX(-50%); white-space: nowrap; color: #87aedb; font: 10px 'Share Tech Mono', monospace; letter-spacing: .05em; pointer-events: none; text-shadow: 0 1px 12px #000; }
+@media(max-width:620px) { .galaxy-fullscreen-toggle { top: 56px; right: 8px; } .galaxy-gesture-hint { max-width: 88vw; white-space: normal; text-align: center; font-size: 9px; } }
+@media(prefers-reduced-motion:reduce) { .is-immersive .galaxy-sidebar, .is-immersive .galaxy-topline, .is-immersive .galaxy-voice { transition: none; } }
+
+/* Independent, small translations keep the functional HUD suspended in space. */
+.galaxy-left-card { animation: activity-float 15s ease-in-out infinite; }
+.galaxy-telemetry { animation: telemetry-float 12.5s ease-in-out infinite; }
+.galaxy-voice { animation: voice-float 17s ease-in-out infinite; }
+@keyframes activity-float { 0%,100% { transform: translate3d(0,0,0) rotate(.45deg); } 52% { transform: translate3d(2px,-5px,0) rotate(.25deg); } }
+@keyframes telemetry-float { 0%,100% { transform: translate3d(0,0,0); } 48% { transform: translate3d(-2px,5px,0); } }
+@keyframes voice-float { 0%,100% { transform: translate3d(-50%,0,0); } 55% { transform: translate3d(calc(-50% + 3px),-4px,0); } }
+.phase-sleeping .galaxy-left-card, .phase-sleeping .galaxy-telemetry, .phase-sleeping .galaxy-voice { animation-play-state: paused; }
+@media(prefers-reduced-motion:reduce) { .galaxy-left-card, .galaxy-telemetry, .galaxy-voice { animation: none; } }
