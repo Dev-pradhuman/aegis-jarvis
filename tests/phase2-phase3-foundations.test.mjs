@@ -46,8 +46,8 @@ test('MCP calls only target advertised tools and action hash binds arguments', a
   assert.notEqual(mcpActionHash(input), mcpActionHash({ ...input, arguments: { q: 'two' } }));
   assert.equal((await callMcpTool(input, { raw, fetchImpl })).content[0].text, 'fixture result');
   await assert.rejects(callMcpTool({ ...input, tool: 'delete' }, { raw, fetchImpl }), /not advertised/);
-  await assert.rejects(executeTool('mcp.call', input), /require current approval/);
-  await assert.rejects(executeTool('mcp.call', input, { approval: { status: 'approved', toolName: 'mcp.call', actionHash: mcpActionHash({ ...input, arguments: { q: 'other' } }), expiresAt: new Date(Date.now() + 60_000).toISOString() } }), /require current approval/);
+  await assert.rejects(executeTool('mcp.call', input), /approved approvalId/);
+  await assert.rejects(executeTool('mcp.call', input, { approval: { status: 'approved', toolName: 'mcp.call', actionHash: mcpActionHash({ ...input, arguments: { q: 'other' } }), expiresAt: new Date(Date.now() + 60_000).toISOString() } }), /approved approvalId/);
 });
 
 test('device pairing, event ingestion and revocation require a valid secret', () => {

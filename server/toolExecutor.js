@@ -66,7 +66,7 @@ function requireExactApproval(toolId, input, approval, runId = null, hash = acti
   if (!approval || approval.status !== 'approved' || approval.toolName !== toolId ||
       approval.actionHash !== hash || approval.consumedAt ||
       Date.parse(approval.expiresAt || 0) <= Date.now() ||
-      (approval.runId && approval.runId !== runId)) {
+      (approval.runId || null) !== (runId || null)) {
     throw new Error(`This tool requires an approved approvalId bound to the exact ${toolId} action`);
   }
 }
@@ -125,14 +125,12 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'research.plan') { const data = await planGroundedResearch(input); return { ok: data.status === 'sources_collected', toolId, data }; }
   if (toolId === 'mcp.servers') return { ok: true, toolId, data: { servers: await discoverMcpServers() } };
   if (toolId === 'mcp.call') {
-    const approval = context.approval;
-    if (!approval || approval.status !== 'approved' || approval.toolName !== 'mcp.call' || approval.actionHash !== mcpActionHash(input) || approval.consumedAt || Date.parse(approval.expiresAt || 0) <= Date.now()) throw new Error('MCP calls require current approval bound to the exact server, tool and arguments');
+    requireExactApproval(toolId, input, context.approval, context.runId, mcpActionHash(input));
     const data = await callMcpTool(input, { fetchImpl: context.fetchImpl || fetch });
     return { ok: !data.isError, toolId, data };
   }
   if (toolId === 'messages.send') {
-    const approval = context.approval;
-    if (!approval || approval.status !== 'approved' || approval.toolName !== 'messages.send' || approval.actionHash !== messageActionHash(input) || approval.consumedAt || Date.parse(approval.expiresAt || 0) <= Date.now()) throw new Error('Message sending requires current approval bound to the exact recipient and content');
+    requireExactApproval(toolId, input, context.approval, context.runId, messageActionHash(input));
     const data = await sendMessage(input);
     return { ok: Boolean(data.delivered), toolId, data };
   }
@@ -186,8 +184,7 @@ async function runTool(toolId, input = {}, context = {}) {
   }
   if (toolId === 'composio.execute') {
     if (composioToolRisk(input.toolSlug) !== 'READ_ONLY') {
-      const approval = context.approval;
-      if (!approval || approval.status !== 'approved' || approval.toolName !== 'composio.execute' || approval.actionHash !== composioActionHash(input) || approval.consumedAt || Date.parse(approval.expiresAt || 0) <= Date.now()) throw new Error('This external Composio action requires a current approval bound to its exact arguments');
+      requireExactApproval(toolId, input, context.approval, context.runId, composioActionHash(input));
     }
     const result = await executeComposioTool(input, context.fetchImpl || fetch);
     if (!result.successful) throw new Error(result.error || 'Composio tool execution failed');
