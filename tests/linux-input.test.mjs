@@ -37,16 +37,17 @@ test('desktop input provider reuses a single helper and cleans up', async () => 
     child.stdin.on('data', (chunk) => {
       const request = JSON.parse(chunk.toString());
       requests.push(request);
-      child.stdout.write(`${JSON.stringify({ id: request.id, ok: true, sent: request.action === 'type' ? request.text.length : request.symbols.length })}\n`);
+      child.stdout.write(`${JSON.stringify({ id: request.id, ok: true, devices: 1, sent: request.action === 'type' ? request.text.length : request.action === 'keypress' ? request.symbols.length : 0 })}\n`);
     });
     return child;
   };
   const input = createLinuxInput({ spawnImpl, idleTimeoutMs: 1000 });
+  assert.equal((await input.startSession()).devices, 1);
   assert.equal((await input.keypress('Ctrl+J')).sent, 2);
   assert.equal((await input.type('hello')).sent, 5);
   assert.throws(() => input.type('hello\n'), /Use computer.keypress/);
   assert.equal(launches, 1);
-  assert.deepEqual(requests.map((request) => request.action), ['keypress', 'type']);
+  assert.deepEqual(requests.map((request) => request.action), ['start', 'keypress', 'type']);
   input.close();
   assert.equal(killed, 1);
 });

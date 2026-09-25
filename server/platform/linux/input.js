@@ -62,7 +62,7 @@ export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000 } 
       const current = pending;
       pending = null;
       clearTimeout(current.timer);
-      if (reply.ok) current.resolve({ sent: reply.sent, backend: 'xdg-desktop-portal', requiresUserConsent: true });
+      if (reply.ok) current.resolve({ sent: reply.sent, devices: reply.devices, backend: 'xdg-desktop-portal', requiresUserConsent: true });
       else current.reject(Object.assign(new Error(reply.message || 'Desktop input failed'), { code: reply.code || 'INPUT_FAILED' }));
     });
     child.on('error', stop);
@@ -92,6 +92,7 @@ export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000 } 
   }
 
   return {
+    startSession: () => request('start', {}),
     keypress: (keys) => request('keypress', { symbols: parseKeypress(keys) }),
     type: (text) => {
       if (typeof text !== 'string' || text.length > 500) throw new Error('Text must contain at most 500 characters');

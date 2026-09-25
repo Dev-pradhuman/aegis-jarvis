@@ -143,6 +143,8 @@ def main():
             if action == 'close':
                 portal.close()
                 emit({'id': request.get('id'), 'ok': True, 'devices': 0})
+            elif action == 'start':
+                emit({'id': request.get('id'), 'ok': True, 'devices': portal.start(), 'sent': 0})
             elif action in ('keypress', 'type'):
                 devices = portal.start()
                 if action == 'keypress':
