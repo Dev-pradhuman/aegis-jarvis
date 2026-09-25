@@ -19,7 +19,8 @@ Verified on 2026-09-25 on Ubuntu 26.04.1, KDE Plasma Wayland. This record distin
 | Linux media | WORKING | MPRIS SimpMusic status live; player control has mocked readback tests | Live control mutation not exercised |
 | Linux clipboard | PARTIAL | KDE Klipper read live; write and fallback providers tested | Live write not exercised to avoid changing clipboard |
 | Desktop screenshot | WORKING for full desktop | KDE Wayland XDG screenshot portal captured a real 1920×1200 image; private temp copy; cancellation test | Window/monitor targets unavailable with current portal v2; user consent may be requested |
-| Keyboard and mouse | NOT_IMPLEMENTED | Capability probe reports unavailable | User-consented RemoteDesktop portal input session or supported desktop adapter with safe cleanup |
+| Linux keyboard input | PARTIAL | XDG RemoteDesktop portal helper, single-session Node provider, key parsing, modifier cleanup, opt-in auth gate, exact approval, and idempotency tests pass | Live consent and focused-app typing have not been verified; portal dispatch cannot prove final app effect |
+| Mouse input | NOT_IMPLEMENTED | Capability probe reports unavailable | Portal pointer methods, bounded coordinates, focused-app verification, and live QA |
 | Window control | NOT_IMPLEMENTED | Capability probe reports unavailable | KWin Wayland adapter with state readback; separate X11 adapter |
 | Global hotkeys | NOT_IMPLEMENTED | No reliable Linux registration exists | GlobalShortcuts portal integration and conflict tests |
 | Screen/camera vision | NOT_IMPLEMENTED | Desktop capture exists but no vision analysis path | Vision model adapter, grounded context and permission UX |
@@ -31,4 +32,4 @@ Verified on 2026-09-25 on Ubuntu 26.04.1, KDE Plasma Wayland. This record distin
 | Android/SIM calls/WhatsApp | NOT_IMPLEMENTED | Device event/pairing foundation and UI status exist; no phone companion or real control | Android app, user-granted roles, supported WhatsApp integration |
 | Smart room/robot | NOT_IMPLEMENTED | Generic hardware endpoint deliberately cannot execute arbitrary commands through API | Capability-scoped authenticated device protocol and safe mock hardware tests |
 
-**Daily-use readiness:** PARTIAL. Local UI, browser, task, application discovery, audio/media status, clipboard read, and screen capture work. The requested open → type → Enter → second laptop → grounded screen-understanding acceptance path does not yet pass: input, window verification, remote host, and vision are missing. No phone or hardware action is claimed as working.
+**Daily-use readiness:** PARTIAL. Local UI, browser, task, application discovery, audio/media status, clipboard read, and screen capture work. Opt-in keyboard input is implemented but not live verified. The requested open → type → Enter → second laptop → grounded screen-understanding acceptance path does not yet pass: window/action verification, remote host, and vision are missing. No phone or hardware action is claimed as working.

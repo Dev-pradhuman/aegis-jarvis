@@ -59,7 +59,7 @@ export const implementedToolIds = [
   'media.generate', 'research.search', 'calendar.create', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
-  'clipboard.read', 'clipboard.write', 'computer.capabilities', 'screen.capture',
+  'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'screen.capture',
 ];
 
 function requireExactApproval(toolId, input, approval, runId = null, hash = actionFingerprint(toolId, input)) {
@@ -113,6 +113,12 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'clipboard.read') return { ok: true, toolId, data: await osPlatform.clipboard.read() };
   if (toolId === 'clipboard.write') return { ok: true, toolId, data: await osPlatform.clipboard.write(input.text) };
   if (toolId === 'computer.capabilities') return { ok: true, toolId, data: await computerCapabilities() };
+  if (toolId === 'computer.keypress' || toolId === 'computer.type') {
+    if (!getTool(toolId)?.enabled) throw new Error('Desktop input requires JARVIS_DESKTOP_INPUT=1 and JARVIS_AUTH_TOKEN');
+    requireExactApproval(toolId, input, context.approval, context.runId);
+    const data = toolId === 'computer.keypress' ? await osPlatform.input.keypress(input.keys) : await osPlatform.input.type(input.text);
+    return { ok: data.sent > 0, toolId, data };
+  }
   if (toolId === 'screen.capture') return { ok: true, toolId, data: await osPlatform.screen.capture(input) };
   if (toolId === 'media.status') return { ok: true, toolId, data: await osPlatform.media.status(input.player) };
   if (toolId.startsWith('media.') && toolId !== 'media.generate') {

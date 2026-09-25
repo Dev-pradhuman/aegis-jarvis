@@ -29,6 +29,7 @@ async function perform(state, request, dependencies = {}) {
   catch (error) { return { status: 400, body: { error: error.code, details: error.details } }; }
   if (toolId === 'messages.send' && !String(args.text || args.message || '').trim()) return { status: 400, body: { error: 'Message text is required' } };
   if (toolId === 'mcp.call' && (!args.server || !args.tool)) return { status: 400, body: { error: 'MCP server and tool are required' } };
+  if ((toolId === 'computer.keypress' || toolId === 'computer.type') && !request.idempotencyKey) return { status: 400, body: { code: 'IDEMPOTENCY_KEY_REQUIRED', error: 'Desktop input requires an idempotency key' } };
   const replay = findToolReplay(state, request.idempotencyKey, toolId, args, request.runId || null);
   if (replay) return replay.state === 'in_progress' ? { status: 409, body: { code: 'ACTION_OUTCOME_UNKNOWN', error: 'Action was started; verify its outcome before retrying' } } : { status: 200, body: { ...replay.result, replayed: true, idempotencyKey: replay.idempotencyKey } };
 
@@ -40,7 +41,7 @@ async function perform(state, request, dependencies = {}) {
   if (approvalRequired && !approval) {
     const pending = {
       id: `approval-${crypto.randomUUID()}`, icon: 'shield', risk: 'high',
-      title: `Approve ${tool.name}`, sub: tool.description, status: 'pending',
+      title: `Approve ${tool.name}`, sub: toolId === 'computer.keypress' ? `Keys: ${args.keys}` : toolId === 'computer.type' ? `Type into the currently focused desktop application: ${args.text}` : tool.description, status: 'pending',
       toolName: toolId, actionHash: hash, runId,
       createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600_000).toISOString(), consumedAt: null,
     };
