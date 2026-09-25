@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addRunStep, createRun, transitionRun } from '../server/runEngine.js';
+import { addRunStep, completeRun, createRun, transitionRun } from '../server/runEngine.js';
 import { beginRun, classifyRequest, errorRun } from '../server/orchestrator.js';
 
 test('orchestrator creates a structured run and plan for execution requests', async () => {
@@ -16,8 +16,9 @@ test('run lifecycle records steps and terminal completion', () => {
   const run = createRun({ request: 'hello' });
   addRunStep(run, 'Answer', null);
   transitionRun(run, 'running');
-  transitionRun(run, 'completed', { result: { text: 'ok' } });
+  completeRun(run, { text: 'ok' });
   assert.equal(run.status, 'completed');
+  assert.equal(run.steps[0].status, 'skipped');
   assert.ok(run.completedAt);
   assert.equal(run.events.length, 2);
 });
@@ -40,4 +41,5 @@ test('terminal model-capacity failure remains serializable in the same persisted
   assert.equal(restored.status, 'failed');
   assert.equal(restored.routing.fallbackTo, 'glm-5.2');
   assert.match(restored.errors[0].message, /providers exhausted/);
+  assert.equal(restored.steps[0].status, 'failed');
 });

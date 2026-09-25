@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import { adapterStatus, embed, extractDocument, mcpError, mcpResponse, vectorSearch } from './extendedAdapters.js';
 import { calendarRequest, createSession, validSession } from './liveAdapters.js';
 import { beginRun, errorRun, finishRun } from './orchestrator.js';
+import { transitionRun } from './runEngine.js';
 import { routeRequest } from './router.js';
 import { publicConfig, saveConfig } from './config.js';
 import { synthesizeSpeech, transcribeAudio, ttsStatus } from './tts.js';
@@ -316,11 +317,25 @@ const server = http.createServer(async (req, res) => {
       if (!text) return json(res, 400, { error: 'message is required' });
       const routeStarted = performance.now(); const route = routeRequest(text);
       if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
-        const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.status = 'running';
+        const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); transitionRun(run, 'running');
         const toolStarted = performance.now(); let data; let reply;
+        const invokeChatTool = async (toolId, args = {}) => {
+          const step = run.steps[0];
+          step.type = 'tool'; step.capability = toolId; step.status = 'running'; step.startedAt ||= new Date().toISOString();
+          let response;
+          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, idempotencyKey: `${run.id}:${toolId}` }); }
+          catch (error) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); throw error; }
+          const succeeded = response.status === 200 && response.body?.ok === true;
+          step.status = succeeded ? 'completed' : 'failed'; step.completedAt = new Date().toISOString();
+          step.result = { ok: succeeded, code: response.body?.code || null };
+          run.toolCalls.push({ id: `tool-call-${crypto.randomUUID()}`, tool: toolId, status: step.status, input: args, resultId: `${run.id}:${toolId}` });
+          if (response.status !== 200) throw Object.assign(new Error(response.body?.error || response.body?.code || `${toolId} failed`), { code: response.body?.code || 'TOOL_UNAVAILABLE', httpStatus: response.status });
+          return response.body;
+        };
+        try {
         if (route.capability === 'browser.open') { data = { action: 'open_url', url: route.args.url, label: route.args.label }; reply = `Opening ${route.args.label}.`; }
         else if (route.capability.startsWith('audio.')) {
-          const response = await invokeToolRequest(state, { toolId: route.capability, input: route.args, runId: run.id, idempotencyKey: `${run.id}:audio` });
+          const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
           if (response.status !== 200 || !response.body.ok) {
             errorRun(run, Object.assign(new Error(response.body.error || 'Audio action failed'), { code: response.body.code || 'AUDIO_ACTION_FAILED' }));
             await updateState((draft) => draft);
@@ -330,7 +345,7 @@ const server = http.createServer(async (req, res) => {
           reply = route.capability === 'audio.get_volume' ? `System volume is ${data.volume} percent${data.muted ? ' and muted' : ''}.` : `System volume is now ${data.volume} percent${data.muted ? ' and muted' : ''}.`;
         }
         else if (route.capability.startsWith('media.') && route.capability !== 'media.generate') {
-          const response = await invokeToolRequest(state, { toolId: route.capability, input: route.args, runId: run.id, idempotencyKey: `${run.id}:media` });
+          const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
           data = response.body.data || response.body;
           if (response.status !== 200 || !response.body.ok || route.capability === 'media.status' && data.status !== 'available') {
             const message = data.status === 'ambiguous' ? `Multiple media players are available: ${data.players.map((item) => item.application).join(', ')}. Specify a player.` : data.status === 'unavailable' ? 'No MPRIS media player is available.' : 'The media action could not be verified.';
@@ -341,34 +356,40 @@ const server = http.createServer(async (req, res) => {
           reply = route.capability === 'media.status' ? `${data.application} is ${data.state}${data.title ? `: ${data.title}` : ''}.` : `${data.player.application} is now ${data.player.state}${data.player.title ? `: ${data.player.title}` : ''}.`;
         }
         else if (route.capability === 'apps.open') {
-          const result = await executeTool('apps.open', route.args);
+          const result = await invokeChatTool('apps.open', route.args);
           data = result.data;
           reply = data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
             : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
               : `I could not find an installed application named ${route.args.name}.`;
         }
-        else if (route.capability === 'tasks.list') { data = (await executeTool('tasks.list', {}, { state })).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
+        else if (route.capability === 'tasks.list') { data = (await invokeChatTool('tasks.list')).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
         else if (route.capability === 'gmail.latest') {
-          const tool = await executeTool('gmail.latest', { limit: route.args.limit });
+          const tool = await invokeChatTool('gmail.latest', { limit: route.args.limit });
           const emails = (Array.isArray(tool.data?.messages) ? tool.data.messages : []).sort((a, b) => Date.parse(b.messageTimestamp || 0) - Date.parse(a.messageTimestamp || 0)).slice(0, route.args.limit);
           data = { emails };
           reply = emails.length ? `Your latest ${emails.length} inbox emails:\n${emails.map((email, index) => `${index + 1}. ${email.subject || '(no subject)'} — ${email.sender || 'Unknown sender'} (${email.messageTimestamp ? new Date(email.messageTimestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown time'})`).join('\n')}` : 'Your Gmail inbox has no matching emails.';
         }
         else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
-        else if (route.capability === 'models.list') { const result = await executeTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }
-        else if (route.capability === 'mcp.servers') { const result = await executeTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }
-        else if (route.capability === 'projects.status') { const result = await executeTool('projects.status'); data = result.data; const selected = route.args.name ? data.projects.filter((project) => project.name.toLowerCase() === route.args.name.toLowerCase() || project.name.toLowerCase().includes(route.args.name.toLowerCase())) : data.projects; reply = selected.length ? selected.map((project) => `${project.name}: ${project.status}${project.branch ? ` on ${project.branch}` : ''}${project.changedFiles === null ? '' : `, ${project.changedFiles} changed files`}`).join('\n') : `No connected project matches ${route.args.name}.`; }
-        else if (route.capability === 'research.plan') { const result = await executeTool('research.plan', route.args); data = result.data; reply = data.status === 'sources_collected' ? `Collected ${data.sources.length} attributable sources for ${data.topic}. Source verification and synthesis remain next steps.` : data.message; }
-        else if (route.capability === 'diagnostics') { data = (await executeTool('diagnostics', {}, { state })).data; reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
-        else if (route.capability === 'memory.search') { const result = await executeTool('memory.search', { query: route.args.q }, { state }); data = { memories: result.data.results }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
-        else if (route.capability === 'media.generate') { const media = (await executeTool('media.generate', { kind: route.args.kind, prompt: route.args.prompt })).data; data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
-        else { const result = await executeTool('files.read', route.args); data = result.data; reply = `README.md is ${data.bytes} bytes and is available in the project workspace.`; }
+        else if (route.capability === 'models.list') { const result = await invokeChatTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }
+        else if (route.capability === 'mcp.servers') { const result = await invokeChatTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }
+        else if (route.capability === 'projects.status') { const result = await invokeChatTool('projects.status'); data = result.data; const selected = route.args.name ? data.projects.filter((project) => project.name.toLowerCase() === route.args.name.toLowerCase() || project.name.toLowerCase().includes(route.args.name.toLowerCase())) : data.projects; reply = selected.length ? selected.map((project) => `${project.name}: ${project.status}${project.branch ? ` on ${project.branch}` : ''}${project.changedFiles === null ? '' : `, ${project.changedFiles} changed files`}`).join('\n') : `No connected project matches ${route.args.name}.`; }
+        else if (route.capability === 'research.plan') { const result = await invokeChatTool('research.plan', route.args); data = result.data; reply = data.status === 'sources_collected' ? `Collected ${data.sources.length} attributable sources for ${data.topic}. Source verification and synthesis remain next steps.` : data.message; }
+        else if (route.capability === 'diagnostics') { data = (await invokeChatTool('diagnostics')).data; reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
+        else if (route.capability === 'memory.search') { const result = await invokeChatTool('memory.search', { query: route.args.q }); data = { memories: result.data.results }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
+        else if (route.capability === 'media.generate') { const media = (await invokeChatTool('media.generate', { kind: route.args.kind, prompt: route.args.prompt })).data; data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
+        else { const result = await invokeChatTool('files.read', route.args); data = result.data; reply = `README.md is ${data.bytes} bytes and is available in the project workspace.`; }
+        } catch (error) {
+          errorRun(run, error);
+          await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+          return json(res, error.httpStatus || 502, { reply: error.message, runId: run.id, code: error.code || 'TOOL_ERROR' });
+        }
+        if (run.steps[0]?.status === 'queued') { run.steps[0].status = 'completed'; run.steps[0].startedAt = run.steps[0].startedAt || new Date().toISOString(); run.steps[0].completedAt = new Date().toISOString(); }
         finishRun(run, data, { total: 0 });
         await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); Object.assign(stored, run); if (data?.media?.kind === 'video') { draft.mediaJobs ??= []; draft.mediaJobs.unshift(data.media); draft.mediaJobs = draft.mediaJobs.slice(0, 100); } draft.runtime ??= { usage: {}, latency: {} }; draft.runtime.usage ??= { requests: 0, tokens: 0, cost: 0 }; draft.runtime.usage.requests += 1; draft.runtime.latency ??= { samples: 0 }; draft.runtime.latency.routerMs = routeStarted ? Math.round(performance.now() - routeStarted) : 0; draft.runtime.latency.toolMs = Math.round(performance.now() - toolStarted); draft.runtime.latency.totalMs = Math.round(performance.now() - routeStarted); draft.runtime.latency.samples = Number(draft.runtime.latency.samples || 0) + 1; draft.conversations ??= []; draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply], media: data?.media || null }); draft.conversations = draft.conversations.slice(-100); return draft; });
         return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, runId: run.id, route, action: data?.action ? data : null, media: data?.media || null });
       }
       const run = await beginRun(state, { request: text, type: 'chat', conversationId: input.conversationId || null });
-      run.status = 'running';
+      transitionRun(run, 'running');
       const taskIntent = /^(create|add|remember)\s+(a\s+)?task\b/i.test(text);
       let createdTask = null;
       if (taskIntent) {
@@ -376,6 +397,8 @@ const server = http.createServer(async (req, res) => {
         const result = await invokeToolRequest(state, { toolId: 'tasks.manage', input: { title }, runId: run.id });
         if (result.status !== 200) throw new Error(result.body?.error || 'Task creation failed');
         createdTask = result.body.data.task;
+        if (run.steps[0]) { run.steps[0].capability = 'tasks.manage'; run.steps[0].status = 'completed'; run.steps[0].startedAt = run.startedAt; run.steps[0].completedAt = new Date().toISOString(); run.steps[0].result = { taskId: createdTask.id }; }
+        run.toolCalls.push({ id: `tool-call-${crypto.randomUUID()}`, tool: 'tasks.manage', input: { title }, status: 'completed', resultId: createdTask.id });
         await updateState((draft) => { recordActivity(draft, activityEntry('task.created', createdTask.title, { taskId: createdTask.id, source: 'chat' })); return draft; });
       }
       let reply = createdTask ? `Task created: ${createdTask.title}` : '';
@@ -413,7 +436,10 @@ const server = http.createServer(async (req, res) => {
         }
       }
       await updateState((draft) => { draft.runtime ??= { startedAt: new Date().toISOString(), usage: { requests: 0, tokens: 0, cost: 0 } }; draft.runtime.usage ??= { requests: 0, tokens: 0, cost: 0 }; draft.runtime.usage.requests += 1; draft.runtime.usage.tokens += providerResult?.tokens || 0; draft.runtime.usage.cost += providerResult?.cost || 0; if (run.routing) { draft.modelRouting ??= { telemetry: [], providerHealth: {} }; draft.modelRouting.providerHealth = state.modelRouting?.providerHealth || {}; draft.modelRouting.telemetry = [{ requestId: run.id, runId: run.id, timestamp: new Date().toISOString(), ...run.routing, success: !modelFailure }, ...(draft.modelRouting.telemetry || [])].slice(0, 200); draft.runtime.lastModelRoute = run.routing; draft.runtime.latency ??= {}; Object.assign(draft.runtime.latency, { routerMs: run.routing.routerMs || 0, modelMs: run.routing.modelMs || 0, toolMs: run.routing.toolMs || 0, policyMs: run.routing.policyMs || 0, databaseMs: run.routing.databaseMs || 0, totalMs: run.routing.totalMs || 0, samples: Number(draft.runtime.latency.samples || 0) + 1 }); } draft.conversations ??= []; const modelIndicator = run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null; const routingDebug = process.env.JARVIS_ROUTER_DEBUG === 'true' && run.routing ? { taskType: run.routing.taskType, confidence: run.routing.routingConfidence, apiRotationCount: run.routing.apiRotationCount, modelFallbackUsed: run.routing.modelFallbackUsed, totalMs: run.routing.totalMs } : null; draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply], modelIndicator, routingDebug }); draft.conversations = draft.conversations.slice(-100); return draft; });
-      if (!modelFailure) finishRun(run, { reply, task: createdTask }, providerResult ? { input: providerResult.inputTokens, output: providerResult.outputTokens, total: providerResult.tokens } : { total: 0 });
+      if (!modelFailure) {
+        if (run.plan.intent === 'direct' && run.steps[0]?.status === 'queued') { run.steps[0].status = 'completed'; run.steps[0].startedAt = run.startedAt; run.steps[0].completedAt = new Date().toISOString(); }
+        finishRun(run, { reply, task: createdTask }, providerResult ? { input: providerResult.inputTokens, output: providerResult.outputTokens, total: providerResult.tokens } : { total: 0 });
+      }
       await updateState((draft) => { const stored = draft.runs?.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
       return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: true, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
     }

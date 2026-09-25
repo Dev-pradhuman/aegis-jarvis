@@ -24,7 +24,17 @@ export function addRunStep(run, description, capability, requiresApproval = fals
 
 export function completeRun(run, result, usage = {}) {
   const input = Number(usage.input || 0); const output = Number(usage.output || 0); const total = usage.total === undefined ? input + output : Number(usage.total || 0);
-  run.result = result; run.tokenUsage = { input, output, total }; return transitionRun(run, 'completed');
+  run.result = result; run.tokenUsage = { input, output, total };
+  for (const step of run.steps || []) if (step.status === 'queued') { step.status = 'skipped'; step.completedAt = new Date().toISOString(); }
+  return transitionRun(run, 'completed');
 }
 
-export function failRun(run, error) { run.errors.push({ message: String(error?.message || error), at: new Date().toISOString() }); return transitionRun(run, 'failed'); }
+export function failRun(run, error) {
+  const at = new Date().toISOString();
+  const message = String(error?.message || error);
+  run.errors.push({ message, at });
+  const current = run.steps?.find((step) => step.status === 'running') || run.steps?.find((step) => step.status === 'queued');
+  if (current) { current.status = 'failed'; current.error = message; current.completedAt = at; }
+  for (const step of run.steps || []) if (step.status === 'queued') { step.status = 'skipped'; step.completedAt = at; }
+  return transitionRun(run, 'failed');
+}
