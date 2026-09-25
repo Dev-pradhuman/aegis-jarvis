@@ -72,7 +72,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': req.headers.origin || '', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type,authorization', vary: 'Origin' }); return res.end(); }
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (req.method === 'POST' && url.pathname === '/api/auth/login') { const input = await body(req); if (process.env.JARVIS_AUTH_TOKEN && input.token !== process.env.JARVIS_AUTH_TOKEN) return json(res, 401, { error: 'Invalid credentials' }); return json(res, 200, createSession(input.user || 'local-operator')); }
+    if (req.method === 'GET' && url.pathname === '/api/auth/status') return json(res, 200, { required: Boolean(process.env.JARVIS_AUTH_TOKEN), authenticated: !process.env.JARVIS_AUTH_TOKEN || authorized(req) });
+    if (req.method === 'POST' && url.pathname === '/api/auth/login') {
+      const input = await body(req);
+      const expected = process.env.JARVIS_AUTH_TOKEN || '';
+      const supplied = String(input.token || '');
+      if (expected && (supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)))) return json(res, 401, { error: 'Invalid credentials' });
+      const session = createSession(input.user || 'local-operator');
+      res.setHeader('set-cookie', `jarvis_session=${session.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400`);
+      return json(res, 200, session);
+    }
     const companionEndpoint = req.method === 'POST' && ['/api/device/pair', '/api/device/events'].includes(url.pathname);
     if (process.env.JARVIS_AUTH_TOKEN && !companionEndpoint && !authorized(req)) return json(res, 401, { error: 'Authentication required' });
     const state = await getState();
@@ -307,8 +316,42 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/approvals') return json(res, 200, { approvals: state.approvals.filter((item) => item.status === 'pending') });
     if (req.method === 'POST' && url.pathname.startsWith('/api/approvals/')) {
       const id = url.pathname.split('/').pop(); const input = await body(req); let approval;
-      await updateState((draft) => { approval = draft.approvals.find((item) => item.id === id); if (approval) { approval.status = input.outcome === 'approved' ? 'approved' : 'rejected'; recordActivity(draft, activityEntry(`approval.${approval.status}`, approval.title, { approvalId: id })); } return draft; });
-      return approval ? json(res, 200, { approval }) : json(res, 404, { error: 'Approval not found' });
+      await updateState((draft) => {
+        const current = draft.approvals.find((item) => item.id === id);
+        if (!current || current.status !== 'pending' || Date.parse(current.expiresAt || 0) <= Date.now()) return draft;
+        current.status = input.outcome === 'approved' ? 'approved' : 'rejected';
+        approval = current;
+        recordActivity(draft, activityEntry(`approval.${current.status}`, current.title, { approvalId: id }));
+        if (current.status === 'rejected' && current.pendingRequest?.runId) {
+          const run = draft.runs.find((item) => item.id === current.pendingRequest.runId);
+          if (run && run.status === 'waiting_for_approval') {
+            const step = run.steps.find((item) => item.status === 'waiting_for_approval');
+            if (step) { step.status = 'cancelled'; step.completedAt = new Date().toISOString(); }
+            transitionRun(run, 'cancelled');
+          }
+        }
+        return draft;
+      });
+      if (!approval) return json(res, 404, { error: 'Approval is unavailable, expired, or already resolved' });
+      if (approval.status !== 'approved' || !approval.pendingRequest) return json(res, 200, { approval });
+      try {
+        const result = await invokeToolRequest(await getState(), { ...approval.pendingRequest, approvalId: id });
+        await updateState((draft) => {
+          const run = draft.runs.find((item) => item.id === approval.pendingRequest.runId);
+          if (run) {
+            const step = run.steps.find((item) => item.status === 'waiting_for_approval');
+            if (step) { step.status = result.status === 200 && result.body?.ok ? 'completed' : 'failed'; step.result = result.body; step.completedAt = new Date().toISOString(); }
+            run.toolCalls.push({ id: `tool-call-${crypto.randomUUID()}`, tool: approval.pendingRequest.toolId, status: result.status === 200 && result.body?.ok ? 'completed' : 'failed', resultId: approval.pendingRequest.idempotencyKey });
+            if (result.status === 200 && result.body?.ok) finishRun(run, { toolId: approval.pendingRequest.toolId, dispatch: result.body.data });
+            else errorRun(run, new Error(result.body?.error || 'Approved desktop action failed'));
+          }
+          return draft;
+        });
+        return json(res, result.status, { approval, result: result.body });
+      } catch (error) {
+        await updateState((draft) => { const run = draft.runs.find((item) => item.id === approval.pendingRequest.runId); if (run) { const step = run.steps.find((item) => item.status === 'waiting_for_approval'); if (step) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); } errorRun(run, error); } return draft; });
+        return json(res, 502, { approval, error: error.message, code: error.code || 'INPUT_FAILED' });
+      }
     }
     if (req.method === 'GET' && url.pathname === '/api/activity') return json(res, 200, { activity: state.activity || [] });
     if (req.method === 'GET' && url.pathname === '/api/chats') return json(res, 200, { messages: state.conversations || [] });
@@ -323,8 +366,14 @@ const server = http.createServer(async (req, res) => {
           const step = run.steps[0];
           step.type = 'tool'; step.capability = toolId; step.status = 'running'; step.startedAt ||= new Date().toISOString();
           let response;
-          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, idempotencyKey: `${run.id}:${toolId}` }); }
+          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, idempotencyKey: `${run.id}:${toolId}`, resumeOnApproval: toolId === 'computer.keypress' || toolId === 'computer.type' }); }
           catch (error) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); throw error; }
+          if (response.status === 202 && response.body?.approvalRequired) {
+            step.status = 'waiting_for_approval';
+            run.approvals.push(response.body.approval.id);
+            transitionRun(run, 'waiting_for_approval');
+            return response.body;
+          }
           const succeeded = response.status === 200 && response.body?.ok === true;
           step.status = succeeded ? 'completed' : 'failed'; step.completedAt = new Date().toISOString();
           step.result = { ok: succeeded, code: response.body?.code || null };
@@ -361,6 +410,15 @@ const server = http.createServer(async (req, res) => {
           reply = data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
             : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
               : `I could not find an installed application named ${route.args.name}.`;
+        }
+        else if (route.capability === 'computer.keypress' || route.capability === 'computer.type') {
+          const result = await invokeChatTool(route.capability, route.args);
+          if (result.approvalRequired) {
+            await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+            return json(res, 202, { reply: 'Desktop input is waiting for your exact-action approval and desktop portal consent.', runId: run.id, approvalRequired: true, approval: result.approval });
+          }
+          data = result.data;
+          reply = 'The desktop portal accepted the input. The focused application result has not been verified.';
         }
         else if (route.capability === 'tasks.list') { data = (await invokeChatTool('tasks.list')).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
         else if (route.capability === 'gmail.latest') {
@@ -486,7 +544,7 @@ function connectionStatus(provider = {}) {
 }
 
 function authorized(req) {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || req.headers.cookie?.match(/(?:^|;\s*)jarvis_session=([a-f0-9]{64})(?:;|$)/)?.[1];
   const expected = process.env.JARVIS_AUTH_TOKEN || '';
   if (validSession(token)) return true;
   return Boolean(token && token.length === expected.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected)));

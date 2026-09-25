@@ -11,7 +11,7 @@ async function healthy() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 800);
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: controller.signal });
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: controller.signal, headers: process.env.JARVIS_AUTH_TOKEN ? { authorization: `Bearer ${process.env.JARVIS_AUTH_TOKEN}` } : {} });
     const data = await response.json();
     return response.ok && data.ok === true && data.service === 'jarvis';
   } catch { return false; }

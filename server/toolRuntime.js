@@ -43,6 +43,7 @@ async function perform(state, request, dependencies = {}) {
       id: `approval-${crypto.randomUUID()}`, icon: 'shield', risk: 'high',
       title: `Approve ${tool.name}`, sub: toolId === 'computer.keypress' ? `Keys: ${args.keys}` : toolId === 'computer.type' ? `Type into the currently focused desktop application: ${args.text}` : tool.description, status: 'pending',
       toolName: toolId, actionHash: hash, runId,
+      ...(request.resumeOnApproval && (toolId === 'computer.keypress' || toolId === 'computer.type') ? { pendingRequest: { toolId, input: args, runId, idempotencyKey: request.idempotencyKey } } : {}),
       createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600_000).toISOString(), consumedAt: null,
     };
     await persist((draft) => { draft.approvals ??= []; draft.approvals.unshift(pending); draft.activity = [activityEntry('approval.requested', pending.title, { approvalId: pending.id }), ...(draft.activity || [])].slice(0, 200); return draft; });

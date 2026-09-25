@@ -1,5 +1,9 @@
 export function routeRequest(text) {
   const value = String(text).trim();
+  const typeText = value.match(/^(?:jarvis[, ]+)?type\s*:\s*([^\r\n]+)$/i);
+  if (typeText && typeText[1].length <= 500) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: typeText[1] }, confidence: 1 };
+  const pressKey = value.match(/^(?:jarvis[, ]+)?press\s+(?:(?:the\s+)?(?:key|keys)\s+)?([A-Za-z0-9+ ]{1,60})[.!]?$/i);
+  if (pressKey) return { route: 'TOOL_CALL', capability: 'computer.keypress', args: { keys: pressKey[1].trim() }, confidence: 0.99 };
   const setVolume = value.match(/^(?:set\s+(?:the\s+)?volume\s+(?:to\s+)?|volume\s+)(\d{1,3})%?\s*[.!]?$/i);
   if (setVolume && Number(setVolume[1]) <= 100) return { route: 'TOOL_CALL', capability: 'audio.set_volume', args: { volume: Number(setVolume[1]) }, confidence: 0.99 };
   if (/^(?:mute|mute audio|mute volume)[.!]?$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };

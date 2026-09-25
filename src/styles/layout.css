@@ -55,3 +55,13 @@
 .workspace-page {
   scrollbar-width: thin;
 }
+.jarvis-auth { min-height: 100vh; display: grid; place-items: center; background: #020713; color: #c8dffa; font: 500 12px/1.5 Arial, sans-serif; letter-spacing: .14em; }
+.jarvis-auth-card { width: min(390px, calc(100vw - 40px)); display: grid; gap: 14px; padding: 30px; border: 1px solid rgba(93, 161, 242, .26); border-radius: 18px; background: rgba(8, 22, 47, .88); box-shadow: 0 16px 60px rgba(0, 0, 0, .32); letter-spacing: normal; }
+.jarvis-auth-card h1 { margin: 0; color: #f0f8ff; font-size: 24px; font-weight: 600; }
+.jarvis-auth-card p { margin: 0; color: #a2b6d0; font-size: 13px; }
+.jarvis-auth-eyebrow { color: #82baff; font-size: 10px; letter-spacing: .18em; }
+.jarvis-auth-card label { color: #d9eaff; font-size: 12px; }
+.jarvis-auth-card input { min-height: 42px; padding: 10px 12px; color: #fff; border: 1px solid rgba(126, 179, 247, .4); border-radius: 8px; background: #081426; }
+.jarvis-auth-card input:focus-visible, .jarvis-auth-card button:focus-visible { outline: 2px solid #8dcaff; outline-offset: 2px; }
+.jarvis-auth-card button { min-height: 42px; border: 1px solid rgba(135, 193, 255, .4); border-radius: 8px; color: #f4fbff; background: #124483; cursor: pointer; }
+.jarvis-auth-error { color: #ffc0c0 !important; }
