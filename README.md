@@ -23,7 +23,7 @@ The left rail expands with the toggle near its top. Selecting a module opens a f
 
 The nucleus has sleeping, idle, listening, thinking, working, and speaking visual states. Chat request and voice playback events and active backend Runs drive them. The moon/sun control sleeps or wakes the Galaxy; it also sleeps after five minutes without input. During development, `/?visualPreview=1` exposes a **development-only** preview strip for all six states.
 
-CPU and memory percentages come from `GET /api/system/metrics`, sampled on the server. GPU load is shown as unavailable because no cross-platform GPU collector is present. Requests and the selected model come from `/api/telemetry`; service status comes from `/api/health`. This avoids decorative fake percentages on the Galaxy home screen. The service's existing task data may include demo records; these are not displayed on Galaxy home.
+CPU and memory percentages come from `GET /api/system/metrics`, sampled on the server. GPU load is shown as unavailable because no cross-platform GPU collector is present. Requests and the selected model come from `/api/telemetry`; service status comes from `/api/health`. This avoids decorative fake percentages on the Galaxy home screen. Known demo task, approval, and workflow seeds are removed from persisted state once during migration.
 
 See [REFERENCE_ANALYSIS.md](REFERENCE_ANALYSIS.md) for the frame-based video study that guided the visual composition.
 
@@ -72,7 +72,9 @@ Vite proxies `/api` to the local JARVIS service. State is stored in `server/data
 
 External research, messaging, calendar, and hardware adapters are registered as disabled until their provider credentials or device connection is configured. Consequential actions remain approval-gated.
 
-Workspace file reads are constrained to this project directory and limited to 1 MB. Shell execution accepts one executable command, rejects shell operators, has a 30-second timeout, and requires an approval record with `status: approved`. Desktop application launch uses the selected OS provider; Linux discovers XDG desktop entries and Windows discovers Start Menu shortcuts. `apps.list` is read-only. `apps.open` rejects missing or ambiguous names and reports launcher handoff without claiming that a window appeared.
+Workspace file reads are constrained to this project directory, reject protected credential/state paths and symlink escapes, and are limited to 1 MB. Shell execution accepts one executable command, rejects shell operators, has a 30-second timeout, and requires an unexpired one-use approval bound to that exact command and Run. Desktop application launch uses the selected OS provider; Linux discovers XDG desktop entries and Windows discovers Start Menu shortcuts. `apps.list` is read-only. `apps.open` rejects missing or ambiguous names and reports launcher handoff without claiming that a window appeared.
+
+On the current KDE Wayland host, `computer.capabilities` reports real backend availability. Linux audio uses PipeWire with PulseAudio fallback, media control uses MPRIS, and clipboard uses KDE Klipper with optional Wayland/X11 fallbacks. `screen.capture` requests the full desktop through the XDG screenshot portal, which can require a user consent dialog; it copies the image to private temporary storage and returns dimensions and a local path. Desktop keyboard, mouse, and window control are still unavailable. The screenshot helper requires Python 3 with `dbus` and `gi` system bindings. See [CURRENT_CAPABILITIES.md](CURRENT_CAPABILITIES.md) for verified status and gaps.
 
 See [WINDOWS_LINUX_COMPATIBILITY_AUDIT.md](WINDOWS_LINUX_COMPATIBILITY_AUDIT.md) for the current Linux session, cross-platform capability matrix, and unimplemented desktop-control work.
 
@@ -110,7 +112,7 @@ COMPOSIO_AUTH_CONFIGS={"gmail":"ac_your_gmail_config","googlecalendar":"ac_your_
 
 Create each Auth Config in the Composio dashboard, copy its ID into the JSON map, restart JARVIS, and use Settings → Composio app connections → Connect. Use `discordbot` for sending Discord channel messages; `discord` represents user-authorized account actions. Composio holds and refreshes the provider OAuth tokens; JARVIS stores only the Composio project key and Auth Config IDs.
 
-Read-only tools can execute directly. Sends, replies, publishing, deletion, and calendar mutation return a pending approval first. The approval is bound to the exact tool, arguments, connected account, local user, and ten-minute expiry; it is consumed after a successful execution and cannot be replayed for another action. Instagram requires a Business or Creator account, and its messaging remains subject to Meta's messaging-window policies.
+Read-only tools can execute directly. Sends, replies, publishing, deletion, and calendar mutation return a pending approval first. The approval is bound to the exact tool, arguments, connected account, local user, Run, and ten-minute expiry; it is claimed before execution and cannot be replayed after an uncertain external outcome. Instagram requires a Business or Creator account, and its messaging remains subject to Meta's messaging-window policies.
 # Phase 2 and device bridge status
 
 The Galaxy modules now read real project, MCP, agent-run, research, media-job, phone-device, and messaging status. An empty module means there is no live integration or event; it is not simulated data.

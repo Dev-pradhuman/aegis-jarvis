@@ -9,8 +9,8 @@ test('scheduler identifies active interval workflows when due', () => {
 });
 
 test('scheduler tick runs all due workflows', async () => {
-  const state = { activity: [], workflows: [{ id: 'w', name: 'Scheduled', state: 'active', runs: 0, steps: ['one'], schedule: { enabled: true, intervalSeconds: 10 }, lastRun: null }] };
-  const runs = await tick(state, Date.now());
+  const state = { activity: [], workflows: [{ id: 'w', name: 'Scheduled', state: 'active', runs: 0, steps: [{ tool: 'models.list', arguments: {} }], schedule: { enabled: true, intervalSeconds: 10 }, lastRun: null }] };
+  const runs = await tick(state, Date.now(), { invoke: async (_state, request) => ({ status: 200, body: { ok: true, toolId: request.toolId, data: {} } }) });
   assert.equal(runs.length, 1);
   assert.equal(state.workflows[0].runs, 1);
 });

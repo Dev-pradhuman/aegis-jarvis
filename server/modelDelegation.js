@@ -13,6 +13,7 @@ const assignments = {
 export async function executeModelDelegation({ route, request, context = [], continuationState = null, state, attachments = [], allowFallback = true, execute = executeModelPool }) {
   const sequence = [...new Set([route.primaryModel, ...(route.supportModels || [])])];
   const stages = [];
+  const executedToolCalls = [];
   let latest = null;
 
   for (let index = 0; index < sequence.length; index += 1) {
@@ -30,6 +31,7 @@ export async function executeModelDelegation({ route, request, context = [], con
       requiredModality: index === 0 && attachments.length ? attachments[0].type || 'text' : 'text',
       requiredCapability: logicalModel === 'minimax-m3' ? 'computer_use' : logicalModel === 'laguna-s-2.1' ? 'tools' : 'text',
     });
+    executedToolCalls.push(...(latest.executedToolCalls || []));
     stages.push({ logicalModel, finalModel: latest.logicalModel, provider: latest.provider, reply: latest.reply, tokens: latest.tokens || 0, inputTokens: latest.inputTokens || 0, outputTokens: latest.outputTokens || 0, cost: latest.cost || 0, routingTelemetry: latest.routingTelemetry });
   }
 
@@ -37,6 +39,7 @@ export async function executeModelDelegation({ route, request, context = [], con
   const fallbackStage = stages.find((stage) => stage.routingTelemetry.modelFallbackUsed);
   return {
     ...latest,
+    executedToolCalls,
     tokens: stages.reduce((total, stage) => total + stage.tokens, 0),
     inputTokens: stages.reduce((total, stage) => total + stage.inputTokens, 0),
     outputTokens: stages.reduce((total, stage) => total + stage.outputTokens, 0),

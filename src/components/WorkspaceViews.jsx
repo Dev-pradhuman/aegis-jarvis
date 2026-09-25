@@ -28,11 +28,7 @@ const connectionData = [
   ['Notion', 'Knowledge workspace', '—', false],
 ];
 
-const workflowData = [
-  { name: 'Morning intelligence brief', trigger: 'Weekdays · 08:00', runs: 42, state: 'active', steps: ['Collect', 'Verify', 'Summarize', 'Deliver'] },
-  { name: 'Repository health scan', trigger: 'On push · main', runs: 118, state: 'active', steps: ['Inspect', 'Test', 'Score', 'Notify'] },
-  { name: 'Meeting preparation', trigger: '30 min before event', runs: 17, state: 'paused', steps: ['Context', 'People', 'Agenda', 'Brief'] },
-];
+const workflowData = [];
 
 const goalData = [
   { name: 'Ship autonomous research loop', owner: 'Research Agent', progress: 74, due: '12 Sep' },
@@ -266,12 +262,31 @@ function ConnectionsWorkspace() {
 }
 
 function WorkflowsWorkspace() {
-  const [workflows, setWorkflows] = useState(workflowData.map((flow, index) => ({ ...flow, id: `legacy-${index}` })));
-  useEffect(() => { let mounted = true; fetch('/api/workflows').then((response) => response.ok ? response.json() : null).then((data) => { if (mounted && data?.workflows) setWorkflows(data.workflows); }).catch(() => {}); return () => { mounted = false; }; }, []);
-  async function run(id) { const response = await fetch(`/api/workflows/${id}/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }); if (response.ok) setWorkflows((items) => items.map((flow) => flow.id === id ? { ...flow, runs: Number(flow.runs || 0) + 1, lastRun: { state: 'completed' } } : flow)); }
+  const [workflows, setWorkflows] = useState(workflowData);
+  const [summary, setSummary] = useState(null);
+  async function refresh() {
+    const response = await fetch('/api/workflows');
+    if (!response.ok) return;
+    const data = await response.json();
+    setWorkflows(data.workflows || []);
+    setSummary(data.summary || null);
+  }
+  useEffect(() => { refresh().catch(() => {}); }, []);
+  async function run(id) {
+    const response = await fetch(`/api/workflows/${id}/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (response.ok) await refresh();
+  }
   const active = workflows.filter((flow) => flow.state === 'active').length;
   const runs = workflows.reduce((sum, flow) => sum + Number(flow.runs || 0), 0);
-  return <div className="workspace-page"><WorkspaceHeader view="workflows" action={<button className="primary-action">New workflow</button>} /><MetricStrip items={[["Active", String(active).padStart(2, '0'), 'green'], ['Total runs', String(runs), 'cyan'], ['Success rate', '100%', 'green'], ['Paused', String(workflows.filter((flow) => flow.state === 'paused').length).padStart(2, '0')]]} /><div className="workflow-list">{workflows.map((flow) => <article className="workspace-panel workflow-row" key={flow.id || flow.name}><div className="workflow-summary"><span className={`state-mark ${flow.state}`} /><div><h3>{flow.name}</h3><p>{flow.trigger} · {flow.runs} total runs</p></div></div><div className="workflow-steps">{flow.steps.map((step, i) => <div key={step}><span>{i + 1}</span>{step}</div>)}</div><button className="row-menu" onClick={() => run(flow.id)} aria-label={`Run ${flow.name}`}>RUN</button></article>)}</div></div>;
+  return <div className="workspace-page">
+    <WorkspaceHeader view="workflows" />
+    <MetricStrip items={[["Active", String(active).padStart(2, '0'), 'green'], ['Total runs', String(runs), 'cyan'], ['Success rate', summary?.successRate === null || summary?.successRate === undefined ? '—' : `${summary.successRate}%`, 'green'], ['Paused', String(workflows.filter((flow) => flow.state === 'paused').length).padStart(2, '0')]]} />
+    <div className="workflow-list">{workflows.map((flow) => <article className="workspace-panel workflow-row" key={flow.id || flow.name}>
+      <div className="workflow-summary"><span className={`state-mark ${flow.state}`} /><div><h3>{flow.name}</h3><p>{flow.trigger || 'Manual'} · {flow.runs || 0} total runs · {flow.lastRun?.state || 'never run'}</p></div></div>
+      <div className="workflow-steps">{(flow.steps || []).map((step, i) => <div key={step.id || i}><span>{i + 1}</span>{typeof step === 'string' ? step : step.tool}</div>)}</div>
+      <button className="row-menu" onClick={() => run(flow.id)} aria-label={`Run ${flow.name}`}>RUN</button>
+    </article>)}</div>
+  </div>;
 }
 
 function GoalsWorkspace() {

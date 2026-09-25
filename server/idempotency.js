@@ -10,11 +10,11 @@ export function actionFingerprint(toolId, input) {
   return crypto.createHash('sha256').update(JSON.stringify({ toolId, input: stable(input) })).digest('hex');
 }
 
-export function findToolReplay(state, idempotencyKey, toolId, input) {
+export function findToolReplay(state, idempotencyKey, toolId, input, runId = undefined) {
   if (!idempotencyKey) return null;
   const execution = (state.toolExecutions || []).find((item) => item.idempotencyKey === idempotencyKey);
   if (!execution) return null;
-  if (execution.fingerprint !== actionFingerprint(toolId, input)) {
+  if (execution.fingerprint !== actionFingerprint(toolId, input) || runId !== undefined && (execution.runId || null) !== (runId || null)) {
     const error = new Error('Idempotency key was already used for a different tool action');
     error.code = 'IDEMPOTENCY_CONFLICT';
     throw error;
@@ -29,10 +29,22 @@ export function rememberToolResult(state, { idempotencyKey, runId = null, toolId
     runId,
     toolId,
     fingerprint: actionFingerprint(toolId, input),
+    state: 'completed',
     result,
     completedAt: new Date().toISOString(),
   };
   state.toolExecutions ??= [];
   state.toolExecutions = [execution, ...state.toolExecutions.filter((item) => item.idempotencyKey !== idempotencyKey)].slice(0, 500);
+  return execution;
+}
+
+export function reserveToolAction(state, { idempotencyKey, runId = null, toolId, input }) {
+  if (!idempotencyKey) return null;
+  const existing = findToolReplay(state, idempotencyKey, toolId, input, runId);
+  if (existing) return existing;
+  const execution = { idempotencyKey, runId, toolId, fingerprint: actionFingerprint(toolId, input), state: 'in_progress', startedAt: new Date().toISOString() };
+  state.toolExecutions ??= [];
+  state.toolExecutions.unshift(execution);
+  state.toolExecutions = state.toolExecutions.slice(0, 500);
   return execution;
 }

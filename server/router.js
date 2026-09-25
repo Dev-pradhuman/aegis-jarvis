@@ -1,5 +1,15 @@
 export function routeRequest(text) {
   const value = String(text).trim();
+  const setVolume = value.match(/^(?:set\s+(?:the\s+)?volume\s+(?:to\s+)?|volume\s+)(\d{1,3})%?\s*[.!]?$/i);
+  if (setVolume && Number(setVolume[1]) <= 100) return { route: 'TOOL_CALL', capability: 'audio.set_volume', args: { volume: Number(setVolume[1]) }, confidence: 0.99 };
+  if (/^(?:mute|mute audio|mute volume)[.!]?$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };
+  if (/^(?:unmute|unmute audio|unmute volume)[.!]?$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.unmute', args: {}, confidence: 0.99 };
+  const adjustVolume = value.match(/^(?:turn\s+)?volume\s+(up|down)(?:\s+by\s+(\d{1,2}))?\s*[.!]?$/i);
+  if (adjustVolume) return { route: 'TOOL_CALL', capability: `audio.volume_${adjustVolume[1].toLowerCase()}`, args: adjustVolume[2] ? { step: Math.min(25, Number(adjustVolume[2])) } : {}, confidence: 0.99 };
+  if (/^(?:what(?:'s| is) (?:the )?volume|show volume|volume status)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
+  const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?\s*[.!]?$/i);
+  if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
+  if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };
   if (/^(?:which|what|list|show).{0,35}\bmodels?\b.{0,30}(?:available|configured|connected)?\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'models.list', args: {}, confidence: 0.99 };
   if (/\b(?:mcp servers?|connected mcp|mcp tools?)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'mcp.servers', args: {}, confidence: 0.99 };
   if (/\b(?:project status|what changed in (?:the )?project|what is happening in (?:the )?project|status of (?:the )?project)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'projects.status', args: {}, confidence: 0.98 };

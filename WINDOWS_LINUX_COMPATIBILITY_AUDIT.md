@@ -1,5 +1,7 @@
 # Windows → Linux compatibility audit
 
+**Historical baseline:** This document records the 2026-09-21 source audit. The implementation has changed since then. See [CURRENT_CAPABILITIES.md](CURRENT_CAPABILITIES.md) for the verified current status; in particular, browser automation, audio, media, clipboard, and full-desktop screenshot providers now exist.
+
 Audit date: 2026-09-21. Scope: all 131 tracked files, including server, client, tests, package scripts, configuration, documentation, and tracked assets. Generated `dist/`, installed `node_modules/`, and vendored UI/media assets were excluded from source searches. This repository is a Node/React command console, not the earlier Windows desktop controller described in the request. No Win32 native bridge, Python runtime, Electron/Tauri project, Windows installer, service, registry integration, or `.exe`/`.bat`/`.cmd`/`.ps1` script is present in tracked source.
 
 ## Observed environment

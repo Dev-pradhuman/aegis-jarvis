@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { getState, updateState, activityEntry } from './store.js';
-import { listCapabilities, listTools } from './registry.js';
+import { getTool, listCapabilities, listTools } from './registry.js';
+import { validateToolInput } from './toolSchema.js';
 import { publicPools } from './modelPool.js';
 import { executeModelDelegation } from './modelDelegation.js';
 import { assembleModelContext } from './contextAssembler.js';
@@ -12,14 +13,13 @@ import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchM
 import { tick } from './scheduler.js';
 import crypto from 'node:crypto';
 import { adapterStatus, embed, extractDocument, mcpError, mcpResponse, vectorSearch } from './extendedAdapters.js';
-import { calendarRequest, createSession, hardwareCommand, messageActionHash, validSession } from './liveAdapters.js';
+import { calendarRequest, createSession, validSession } from './liveAdapters.js';
 import { beginRun, errorRun, finishRun } from './orchestrator.js';
 import { routeRequest } from './router.js';
 import { publicConfig, saveConfig } from './config.js';
 import { synthesizeSpeech, transcribeAudio, ttsStatus } from './tts.js';
-import { findToolReplay, rememberToolResult } from './idempotency.js';
 import { downloadVideoJob, generateMedia, readGeneratedMedia, refreshVideoJob } from './mediaGeneration.js';
-import { composioActionHash, composioStatus, composioToolRisk, createComposioConnectLink, executeComposioTool, listComposioAccounts, listComposioTools, validateComposioProjectKey } from './composioAdapter.js';
+import { composioStatus, composioToolRisk, createComposioConnectLink, listComposioAccounts, listComposioTools, validateComposioProjectKey } from './composioAdapter.js';
 import { complete as completeConfiguredProvider, providerForLogicalModel } from './providerClient.js';
 import { systemMetrics } from './systemMetrics.js';
 import { browserManager } from './browser/index.js';
@@ -27,7 +27,11 @@ import { listProjectStatus } from './projectIntelligence.js';
 import { discoverMcpServers } from './mcpDiscovery.js';
 import { deviceStatus, ingestDeviceEvent, pairDevice, revokeDevice } from './deviceBridge.js';
 import { planGroundedResearch } from './researchWorkflow.js';
-import { mcpActionHash } from './mcpDiscovery.js';
+import { requestOriginAllowed } from './requestSecurity.js';
+import { executeModelToolLoop } from './modelToolLoop.js';
+import { executeModelPool } from './modelPool.js';
+import { invokeToolRequest } from './toolRuntime.js';
+import { unattendedTool, unattendedTools } from './toolPolicy.js';
 
 const port = Number(process.env.JARVIS_PORT || 8787);
 const processStartedAt = Date.now();
@@ -36,14 +40,20 @@ const schedulerEnabled = process.env.JARVIS_SCHEDULER !== '0';
 const schedulerInterval = Math.max(10_000, Number(process.env.JARVIS_SCHEDULER_INTERVAL_MS || 30_000));
 let lastSchedulerTick = null;
 const json = (res, status, body) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
 };
 
 async function body(req) {
   let data = '';
-  for await (const chunk of req) data += chunk;
-  return data ? JSON.parse(data) : {};
+  let bytes = 0;
+  for await (const chunk of req) {
+    bytes += chunk.length;
+    if (bytes > 16_000_000) throw Object.assign(new Error('Request body exceeds 16 MB'), { code: 'PAYLOAD_TOO_LARGE' });
+    data += chunk;
+  }
+  try { return data ? JSON.parse(data) : {}; }
+  catch { throw Object.assign(new Error('Request body must be valid JSON'), { code: 'INVALID_JSON' }); }
 }
 
 function recordActivity(state, entry) {
@@ -57,7 +67,8 @@ function modelFailureReply(error, runId) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type' }); return res.end(); }
+  if (!requestOriginAllowed(req.headers)) return json(res, 403, { error: 'Origin or host is not allowed' });
+  if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': req.headers.origin || '', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type,authorization', vary: 'Origin' }); return res.end(); }
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (req.method === 'POST' && url.pathname === '/api/auth/login') { const input = await body(req); if (process.env.JARVIS_AUTH_TOKEN && input.token !== process.env.JARVIS_AUTH_TOKEN) return json(res, 401, { error: 'Invalid credentials' }); return json(res, 200, createSession(input.user || 'local-operator')); }
@@ -92,15 +103,15 @@ const server = http.createServer(async (req, res) => {
       await updateState((draft) => { revoked = revokeDevice(draft, String(input.deviceId || '')); return draft; });
       return revoked ? json(res, 200, { revoked: true }) : json(res, 404, { error: 'Device not found' });
     }
-    if (req.method === 'GET' && url.pathname.startsWith('/api/generated/')) { const fileName = url.pathname.split('/').pop(); const media = await readGeneratedMedia(fileName); res.writeHead(200, { 'content-type': media.contentType, 'content-length': media.content.length, 'cache-control': 'private, max-age=3600', 'access-control-allow-origin': '*' }); return res.end(media.content); }
-    if (req.method === 'GET' && url.pathname.match(/^\/api\/media\/jobs\/[^/]+\/download$/)) { const id = url.pathname.split('/')[4]; const job = (state.mediaJobs || []).find((item) => item.id === id); if (!job) return json(res, 404, { error: 'Media job not found' }); const media = await downloadVideoJob(job); res.writeHead(200, { 'content-type': media.contentType, 'content-length': media.content.length, 'cache-control': 'private, max-age=3600', 'access-control-allow-origin': '*' }); return res.end(media.content); }
+    if (req.method === 'GET' && url.pathname.startsWith('/api/generated/')) { const fileName = url.pathname.split('/').pop(); const media = await readGeneratedMedia(fileName); res.writeHead(200, { 'content-type': media.contentType, 'content-length': media.content.length, 'cache-control': 'private, max-age=3600' }); return res.end(media.content); }
+    if (req.method === 'GET' && url.pathname.match(/^\/api\/media\/jobs\/[^/]+\/download$/)) { const id = url.pathname.split('/')[4]; const job = (state.mediaJobs || []).find((item) => item.id === id); if (!job) return json(res, 404, { error: 'Media job not found' }); const media = await downloadVideoJob(job); res.writeHead(200, { 'content-type': media.contentType, 'content-length': media.content.length, 'cache-control': 'private, max-age=3600' }); return res.end(media.content); }
     if (req.method === 'GET' && url.pathname.startsWith('/api/media/jobs/')) { const id = url.pathname.split('/').pop(); const existing = (state.mediaJobs || []).find((job) => job.id === id); if (!existing) return json(res, 404, { error: 'Media job not found' }); const job = await refreshVideoJob(existing); await updateState((draft) => { const index = (draft.mediaJobs || []).findIndex((item) => item.id === id); if (index >= 0) draft.mediaJobs[index] = job; return draft; }); return json(res, 200, { job: { ...job, operationName: undefined, credentialSlot: undefined, downloadUri: job.downloadUri ? `/api/media/jobs/${job.id}/download` : null } }); }
     if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicConfig());
     if (req.method === 'PATCH' && url.pathname === '/api/config') { const config = saveConfig(await body(req)); return json(res, 200, config); }
     if (req.method === 'GET' && url.pathname === '/api/voice/tts') return json(res, 200, ttsStatus());
     if (req.method === 'POST' && url.pathname === '/api/voice/tts') {
       const result = await synthesizeSpeech(await body(req));
-      res.writeHead(200, { 'content-type': result.contentType, 'content-length': result.audio.length, 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
+      res.writeHead(200, { 'content-type': result.contentType, 'content-length': result.audio.length, 'cache-control': 'no-store' });
       return res.end(result.audio);
     }
     if (req.method === 'POST' && url.pathname === '/api/voice/transcribe') return json(res, 200, await transcribeAudio(await body(req)));
@@ -172,23 +183,10 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === 'POST' && url.pathname === '/api/composio/execute') {
-      if (!composioStatus().configured) return json(res, 503, { error: 'COMPOSIO_API_KEY is not configured' });
-      const input = await body(req); const toolSlug = String(input.toolSlug || '').toUpperCase(); const riskLevel = composioToolRisk(toolSlug); const toolId = `composio:${toolSlug}`; const replayInput = { arguments: input.arguments || {}, connectedAccountId: input.connectedAccountId || null, userId: input.userId || null };
-      const replay = findToolReplay(state, input.idempotencyKey, toolId, replayInput);
-      if (replay) return json(res, 200, { ...replay.result, replayed: true, idempotencyKey: replay.idempotencyKey });
-      if (riskLevel !== 'READ_ONLY') {
-        const actionHash = composioActionHash(input); const approval = input.approvalId ? (state.approvals || []).find((item) => item.id === input.approvalId) : null;
-        if (!approval) {
-          const pending = { id: `approval-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, icon: 'shield', risk: 'high', title: `Approve ${toolSlug}`, sub: 'External action through Composio', status: 'pending', toolName: 'composio.execute', actionHash, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), consumedAt: null };
-          await updateState((draft) => { draft.approvals ??= []; draft.approvals.unshift(pending); recordActivity(draft, activityEntry('approval.requested', pending.title, { approvalId: pending.id, toolSlug })); return draft; });
-          return json(res, 202, { approvalRequired: true, approval: pending });
-        }
-        if (approval.status !== 'approved' || approval.toolName !== 'composio.execute' || approval.actionHash !== actionHash || approval.consumedAt || Date.parse(approval.expiresAt || 0) <= Date.now()) return json(res, 403, { error: 'A current approval bound to this exact Composio action is required' });
-      }
-      const result = await executeComposioTool(input);
-      if (!result.successful) return json(res, 502, result);
-      await updateState((draft) => { if (input.approvalId) { const approval = (draft.approvals || []).find((item) => item.id === input.approvalId); if (approval) { approval.status = 'consumed'; approval.consumedAt = new Date().toISOString(); } } rememberToolResult(draft, { idempotencyKey: input.idempotencyKey, runId: input.runId, toolId, input: replayInput, result }); recordActivity(draft, activityEntry('composio.tool.executed', toolSlug, { toolSlug, logId: result.logId, runId: input.runId || null })); return draft; });
-      return json(res, 200, { ...result, riskLevel });
+      const input = await body(req);
+      const { approvalId, idempotencyKey, runId, ...toolInput } = input;
+      const result = await invokeToolRequest(state, { toolId: 'composio.execute', input: toolInput, approvalId, idempotencyKey, runId });
+      return json(res, result.status, result.status === 200 ? { successful: result.body.ok, toolSlug: toolInput.toolSlug, data: result.body.data, logId: result.body.meta?.logId || null, riskLevel: composioToolRisk(toolInput.toolSlug), replayed: result.body.replayed || false } : result.body);
     }
     if (req.method === 'GET' && url.pathname === '/api/memory') return json(res, 200, { memories: state.memories || [] });
     if (req.method === 'GET' && url.pathname === '/api/memory/search') return json(res, 200, { memories: searchMemory(state.memories || [], url.searchParams.get('q') || '') });
@@ -205,34 +203,28 @@ const server = http.createServer(async (req, res) => {
       await updateState((draft) => { draft.documents ??= []; draft.documents.unshift(document); recordActivity(draft, activityEntry('document.ingested', document.name, { documentId: document.id })); return draft; });
       return json(res, 201, { document: { ...document, content: undefined } });
     }
-    if (req.method === 'GET' && url.pathname === '/api/permissions') return json(res, 200, { mode: 'assisted', consequential: ['command.execute', 'messages.send', 'calendar.write', 'files.delete'], default: 'deny' });
+    if (req.method === 'GET' && url.pathname === '/api/permissions') return json(res, 200, { mode: 'assisted', consequential: ['command.execute', 'browser.evaluate', 'messages.send', 'calendar.create', 'mcp.call', 'composio.execute'], default: 'deny' });
     if (req.method === 'GET' && url.pathname === '/api/adapters') return json(res, 200, adapterStatus());
     if (req.method === 'GET' && url.pathname === '/api/calendar/events') return json(res, 200, await calendarRequest('GET'));
-    if (req.method === 'POST' && url.pathname === '/api/calendar/events') return json(res, 200, await calendarRequest('POST', await body(req)));
+    if (req.method === 'POST' && url.pathname === '/api/calendar/events') {
+      const input = await body(req);
+      const { approvalId, idempotencyKey, runId, ...payload } = input;
+      const result = await invokeToolRequest(state, { toolId: 'calendar.create', input: { payload }, approvalId, idempotencyKey, runId });
+      return json(res, result.status, result.status === 200 ? result.body.data : result.body);
+    }
     if (req.method === 'POST' && url.pathname === '/api/messages/send') {
       const input = await body(req);
-      if (!process.env.MESSAGING_API_URL && !process.env.SLACK_WEBHOOK_URL && !process.env.SLACK_BOT_TOKEN) return json(res, 503, { configured: false, error: 'No messaging provider is configured' });
-      if (!String(input.text || input.message || '').trim()) return json(res, 400, { error: 'Message text is required' });
-      const approval = input.approvalId ? state.approvals.find((item) => item.id === input.approvalId) : null;
-      if (!approval) {
-        const pending = { id: `approval-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, icon: 'shield', risk: 'high', title: 'Approve message send', sub: 'External communication', status: 'pending', toolName: 'messages.send', actionHash: messageActionHash(input), createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), consumedAt: null };
-        await updateState((draft) => { draft.approvals ??= []; draft.approvals.unshift(pending); recordActivity(draft, activityEntry('approval.requested', pending.title, { approvalId: pending.id })); return draft; });
-        return json(res, 202, { approvalRequired: true, approval: pending });
-      }
-      const approvalForExecution = { ...approval };
-      let claimed = false;
-      await updateState((draft) => { const current = (draft.approvals || []).find((item) => item.id === approval.id); if (current?.status === 'approved' && current.toolName === 'messages.send' && !current.consumedAt && Date.parse(current.expiresAt || 0) > Date.now() && current.actionHash === messageActionHash(input)) { current.status = 'consumed'; current.consumedAt = new Date().toISOString(); claimed = true; } return draft; });
-      if (!claimed) return json(res, 403, { error: 'A current approval bound to this exact message is required' });
-      const result = (await executeTool('messages.send', input, { approval: approvalForExecution })).data;
-      return json(res, 200, result);
+      const { approvalId, idempotencyKey, runId, ...toolInput } = input;
+      const result = await invokeToolRequest(state, { toolId: 'messages.send', input: toolInput, approvalId, idempotencyKey, runId });
+      return json(res, result.status, result.status === 200 ? result.body.data : result.body);
     }
-    if (req.method === 'POST' && url.pathname === '/api/hardware/command') return json(res, 200, await hardwareCommand(await body(req)));
+    if (req.method === 'POST' && url.pathname === '/api/hardware/command') return json(res, 501, { code: 'HARDWARE_CAPABILITY_UNAVAILABLE', error: 'Hardware commands need a paired capability-scoped device provider.' });
     if (req.method === 'POST' && url.pathname === '/api/mcp') {
       const request = await body(req); const id = request.id ?? null;
       if (request.method === 'initialize') return json(res, 200, mcpResponse(id, { protocolVersion: '2025-03-26', serverInfo: { name: 'aegis-jarvis', version: '1.0.0' }, capabilities: { tools: {} } }));
       if (request.method === 'notifications/initialized') return json(res, 200, {});
-      if (request.method === 'tools/list') return json(res, 200, mcpResponse(id, { tools: listTools().map((tool) => ({ name: tool.id, description: tool.name, inputSchema: { type: 'object' } })) }));
-      if (request.method === 'tools/call') { try { const result = await executeTool(request.params?.name, request.params?.arguments || {}); return json(res, 200, mcpResponse(id, { content: [{ type: 'text', text: JSON.stringify(result.data) }], isError: false })); } catch (error) { return json(res, 200, mcpError(id, -32000, error.message)); } }
+      if (request.method === 'tools/list') return json(res, 200, mcpResponse(id, { tools: unattendedTools().map((tool) => ({ name: tool.id, description: tool.description, inputSchema: tool.inputSchema })) }));
+      if (request.method === 'tools/call') { try { if (!unattendedTool(request.params?.name)) throw new Error('Tool requires the authenticated JARVIS runtime'); const result = await invokeToolRequest(state, { toolId: request.params.name, input: request.params?.arguments || {} }); if (result.status !== 200 || !result.body?.ok) throw new Error(result.body?.error || result.body?.code || 'Tool call failed'); return json(res, 200, mcpResponse(id, { content: [{ type: 'text', text: JSON.stringify(result.body.data) }], isError: false })); } catch (error) { return json(res, 200, mcpError(id, -32000, error.message)); } }
       return json(res, 200, mcpError(id, -32601, 'MCP method not found'));
     }
     if (req.method === 'POST' && url.pathname === '/api/memory/index') {
@@ -253,14 +245,26 @@ const server = http.createServer(async (req, res) => {
       const input = await body(req); const type = String(input.type || '').trim();
       if (!type) return json(res, 400, { error: 'type is required' });
       const runs = [];
-      await updateState(async (draft) => { for (const workflow of draft.workflows || []) if (workflow.state === 'active' && (workflow.trigger === `event:${type}` || workflow.trigger === type)) runs.push(await runWorkflow(draft, workflow)); recordActivity(draft, activityEntry('event.received', type, { runs: runs.length })); return draft; });
+      for (const workflow of state.workflows || []) if (workflow.state === 'active' && (workflow.trigger === `event:${type}` || workflow.trigger === type)) runs.push(await runWorkflow(state, workflow));
+      await updateState((draft) => { recordActivity(draft, activityEntry('event.received', type, { runs: runs.length })); return draft; });
       return json(res, 202, { accepted: true, type, runs: runs.map((run) => run.id) });
     }
     if (req.method === 'GET' && url.pathname === '/api/capabilities') return json(res, 200, { assistant: 'JARVIS', capabilities: listCapabilities() });
     if (req.method === 'GET' && url.pathname === '/api/tools') return json(res, 200, { tools: listTools() });
     if (req.method === 'GET' && url.pathname === '/api/workflows') return json(res, 200, { workflows: state.workflows || [], summary: workflowSummary(state.workflows || []) });
     if (req.method === 'POST' && url.pathname === '/api/workflows') {
-      const input = await body(req); const workflow = { id: `workflow-${Date.now()}`, name: String(input.name || 'Untitled workflow'), trigger: String(input.trigger || 'Manual'), runs: 0, state: 'active', steps: Array.isArray(input.steps) && input.steps.length ? input.steps.map(String).slice(0, 20) : ['Prepare', 'Execute', 'Verify'], dependsOn: Array.isArray(input.dependsOn) ? input.dependsOn.map(String).slice(0, 10) : [], schedule: input.schedule?.enabled ? { enabled: true, intervalSeconds: Math.max(10, Number(input.schedule.intervalSeconds || 3600)), maxRetries: Math.min(3, Number(input.schedule.maxRetries || 0)) } : { enabled: false }, lastRun: null };
+      const input = await body(req);
+      if (!Array.isArray(input.steps) || !input.steps.length || input.steps.length > 20) return json(res, 400, { error: 'Workflow needs 1 to 20 executable tool steps' });
+      let steps;
+      try {
+        steps = input.steps.map((step, index) => {
+          const tool = step && typeof step === 'object' ? getTool(step.tool) : null;
+          if (!tool?.enabled) throw new Error(`Step ${index + 1} does not name an available tool`);
+          validateToolInput(tool.inputSchema, step.arguments || {});
+          return { id: String(step.id || index + 1), tool: tool.id, arguments: step.arguments || {}, dependsOn: Array.isArray(step.dependsOn) ? step.dependsOn.map(String).slice(0, 20) : [], maxRetries: Math.max(0, Math.min(3, Number(step.maxRetries || 0))) };
+        });
+      } catch (error) { return json(res, 400, { error: error.message, code: error.code || 'WORKFLOW_INVALID' }); }
+      const workflow = { id: `workflow-${crypto.randomUUID()}`, name: String(input.name || 'Untitled workflow').slice(0, 120), trigger: String(input.trigger || 'Manual'), runs: 0, state: 'active', steps, dependsOn: Array.isArray(input.dependsOn) ? input.dependsOn.map(String).slice(0, 10) : [], schedule: input.schedule?.enabled ? { enabled: true, intervalSeconds: Math.max(10, Number(input.schedule.intervalSeconds || 3600)), maxRetries: Math.min(3, Number(input.schedule.maxRetries || 0)) } : { enabled: false }, lastRun: null };
       await updateState((draft) => { draft.workflows ??= []; draft.workflows.unshift(workflow); recordActivity(draft, activityEntry('workflow.created', workflow.name, { workflowId: workflow.id })); return draft; });
       return json(res, 201, { workflow });
     }
@@ -270,50 +274,34 @@ const server = http.createServer(async (req, res) => {
       return workflow ? json(res, 200, { workflow }) : json(res, 404, { error: 'Workflow not found' });
     }
     if (req.method === 'POST' && url.pathname.match(/^\/api\/workflows\/[^/]+\/run$/)) {
-      const id = url.pathname.split('/')[3]; let run;
-      await updateState(async (draft) => { const workflow = (draft.workflows || []).find((item) => item.id === id); if (!workflow) return draft; run = await runWorkflow(draft, workflow, await body(req)); return draft; });
+      const id = url.pathname.split('/')[3]; const workflow = (state.workflows || []).find((item) => item.id === id);
+      const run = workflow ? await runWorkflow(state, workflow, await body(req)) : null;
+      if (run) await updateState((draft) => draft);
       return run ? json(res, 200, { run }) : json(res, 404, { error: 'Workflow not found' });
     }
     if (req.method === 'GET' && url.pathname === '/api/scheduler') return json(res, 200, { enabled: schedulerEnabled, intervalSeconds: schedulerInterval / 1000, lastTickAt: lastSchedulerTick });
-    if (req.method === 'POST' && url.pathname === '/api/scheduler/tick') return json(res, 200, { runs: await tick(state), tickedAt: new Date().toISOString() });
+    if (req.method === 'POST' && url.pathname === '/api/scheduler/tick') { const runs = await tick(state); await updateState((draft) => draft); return json(res, 200, { runs, tickedAt: new Date().toISOString() }); }
     if (req.method === 'POST' && url.pathname === '/api/tools/execute') {
-      const input = await body(req); const toolId = String(input.toolId || '');
-      const toolInput = input.input || {};
-      const replay = findToolReplay(state, input.idempotencyKey, toolId, toolInput);
-      if (replay) return json(res, 200, { ...replay.result, replayed: true, idempotencyKey: replay.idempotencyKey });
-      if (toolId === 'messages.send' && !process.env.MESSAGING_API_URL && !process.env.SLACK_WEBHOOK_URL && !process.env.SLACK_BOT_TOKEN) return json(res, 503, { configured: false, error: 'No messaging provider is configured' });
-      const approval = input.approvalId ? state.approvals.find((item) => item.id === input.approvalId) : null;
-      const exactAction = toolId === 'mcp.call' || toolId === 'messages.send';
-      const exactHash = toolId === 'mcp.call' ? mcpActionHash(toolInput) : toolId === 'messages.send' ? messageActionHash(toolInput) : null;
-      if (exactAction && !approval) {
-        if (toolId === 'mcp.call' && (!toolInput.server || !toolInput.tool || typeof toolInput.arguments !== 'object' && toolInput.arguments !== undefined)) return json(res, 400, { error: 'server, tool and object arguments are required' });
-        if (toolId === 'messages.send' && !String(toolInput.text || toolInput.message || '').trim()) return json(res, 400, { error: 'Message text is required' });
-        const pending = { id: `approval-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, icon: 'shield', risk: 'high', title: toolId === 'mcp.call' ? `Approve MCP ${toolInput.server}/${toolInput.tool}` : 'Approve message send', sub: toolId === 'mcp.call' ? 'External MCP action' : 'External communication', status: 'pending', toolName: toolId, actionHash: exactHash, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), consumedAt: null };
-        await updateState((draft) => { draft.approvals ??= []; draft.approvals.unshift(pending); recordActivity(draft, activityEntry('approval.requested', pending.title, { approvalId: pending.id })); return draft; });
-        return json(res, 202, { approvalRequired: true, approval: pending });
-      }
-      const approvalForExecution = approval ? { ...approval } : null;
-      if (exactAction && approval) {
-        let claimed = false;
-        await updateState((draft) => { const current = (draft.approvals || []).find((item) => item.id === approval.id); if (current?.status === 'approved' && current.toolName === toolId && !current.consumedAt && Date.parse(current.expiresAt || 0) > Date.now() && current.actionHash === exactHash) { current.status = 'consumed'; current.consumedAt = new Date().toISOString(); claimed = true; } return draft; });
-        if (!claimed) return json(res, 403, { error: 'A current approval bound to this exact action is required' });
-      }
-      const result = await executeTool(toolId, toolInput, { approval: approvalForExecution });
-      await updateState((draft) => { rememberToolResult(draft, { idempotencyKey: input.idempotencyKey, runId: input.runId, toolId, input: toolInput, result }); recordActivity(draft, activityEntry('tool.executed', toolId, { toolId, runId: input.runId || null })); return draft; });
-      return json(res, 200, result);
+      const result = await invokeToolRequest(state, await body(req));
+      return json(res, result.status, result.body);
     }
     if (req.method === 'GET' && url.pathname === '/api/tasks') return json(res, 200, { tasks: state.tasks });
     if (req.method === 'POST' && url.pathname === '/api/tasks') {
       const input = await body(req);
-      const task = { id: `task-${Date.now()}`, title: String(input.title || 'Untitled task').trim(), sub: String(input.sub || 'Created by JARVIS'), icon: input.icon || 'cyan', svg: input.svg || 'notes', pct: 0, status: 'pending', createdAt: new Date().toISOString() };
-      await updateState((draft) => { draft.tasks.unshift(task); recordActivity(draft, activityEntry('task.created', task.title, { taskId: task.id })); return draft; });
+      const result = await invokeToolRequest(state, { toolId: 'tasks.manage', input: { title: String(input.title || '').trim(), ...(input.status ? { status: input.status } : {}) }, idempotencyKey: req.headers['idempotency-key'] || input.idempotencyKey });
+      if (result.status !== 200) return json(res, result.status, result.body);
+      const task = result.body.data.task;
+      if (!result.body.replayed) await updateState((draft) => { recordActivity(draft, activityEntry('task.created', task.title, { taskId: task.id })); return draft; });
       return json(res, 201, { task });
     }
     if (req.method === 'PATCH' && url.pathname.startsWith('/api/tasks/')) {
       const id = url.pathname.split('/').pop(); const input = await body(req);
-      let updated;
-      await updateState((draft) => { const task = draft.tasks.find((item) => item.id === id); if (!task) return draft; Object.assign(task, input); updated = task; recordActivity(draft, activityEntry('task.updated', task.title, { taskId: id })); return draft; });
-      return updated ? json(res, 200, { task: updated }) : json(res, 404, { error: 'Task not found' });
+      if (!state.tasks.find((item) => item.id === id)) return json(res, 404, { error: 'Task not found' });
+      const result = await invokeToolRequest(state, { toolId: 'tasks.manage', input: { id, ...(input.title !== undefined ? { title: input.title } : {}), ...(input.status !== undefined ? { status: input.status } : {}) }, idempotencyKey: req.headers['idempotency-key'] || input.idempotencyKey });
+      if (result.status !== 200) return json(res, result.status, result.body);
+      const updated = result.body.data.task;
+      if (!result.body.replayed) await updateState((draft) => { recordActivity(draft, activityEntry('task.updated', updated.title, { taskId: id })); return draft; });
+      return json(res, 200, { task: updated });
     }
     if (req.method === 'GET' && url.pathname === '/api/approvals') return json(res, 200, { approvals: state.approvals.filter((item) => item.status === 'pending') });
     if (req.method === 'POST' && url.pathname.startsWith('/api/approvals/')) {
@@ -331,6 +319,27 @@ const server = http.createServer(async (req, res) => {
         const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.status = 'running';
         const toolStarted = performance.now(); let data; let reply;
         if (route.capability === 'browser.open') { data = { action: 'open_url', url: route.args.url, label: route.args.label }; reply = `Opening ${route.args.label}.`; }
+        else if (route.capability.startsWith('audio.')) {
+          const response = await invokeToolRequest(state, { toolId: route.capability, input: route.args, runId: run.id, idempotencyKey: `${run.id}:audio` });
+          if (response.status !== 200 || !response.body.ok) {
+            errorRun(run, Object.assign(new Error(response.body.error || 'Audio action failed'), { code: response.body.code || 'AUDIO_ACTION_FAILED' }));
+            await updateState((draft) => draft);
+            return json(res, response.status === 200 ? 502 : response.status, { reply: response.body.error || 'Audio action failed', runId: run.id, code: response.body.code || 'AUDIO_ACTION_FAILED' });
+          }
+          data = response.body.data;
+          reply = route.capability === 'audio.get_volume' ? `System volume is ${data.volume} percent${data.muted ? ' and muted' : ''}.` : `System volume is now ${data.volume} percent${data.muted ? ' and muted' : ''}.`;
+        }
+        else if (route.capability.startsWith('media.') && route.capability !== 'media.generate') {
+          const response = await invokeToolRequest(state, { toolId: route.capability, input: route.args, runId: run.id, idempotencyKey: `${run.id}:media` });
+          data = response.body.data || response.body;
+          if (response.status !== 200 || !response.body.ok || route.capability === 'media.status' && data.status !== 'available') {
+            const message = data.status === 'ambiguous' ? `Multiple media players are available: ${data.players.map((item) => item.application).join(', ')}. Specify a player.` : data.status === 'unavailable' ? 'No MPRIS media player is available.' : 'The media action could not be verified.';
+            errorRun(run, Object.assign(new Error(message), { code: 'MEDIA_ACTION_UNVERIFIED' }));
+            await updateState((draft) => draft);
+            return json(res, response.status === 200 ? 409 : response.status, { reply: message, runId: run.id, data, code: 'MEDIA_ACTION_UNVERIFIED' });
+          }
+          reply = route.capability === 'media.status' ? `${data.application} is ${data.state}${data.title ? `: ${data.title}` : ''}.` : `${data.player.application} is now ${data.player.state}${data.player.title ? `: ${data.player.title}` : ''}.`;
+        }
         else if (route.capability === 'apps.open') {
           const result = await executeTool('apps.open', route.args);
           data = result.data;
@@ -338,9 +347,9 @@ const server = http.createServer(async (req, res) => {
             : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
               : `I could not find an installed application named ${route.args.name}.`;
         }
-        else if (route.capability === 'tasks.list') { data = { tasks: state.tasks }; reply = state.tasks.length ? `You have ${state.tasks.length} tasks.` : 'You have no tasks.'; }
+        else if (route.capability === 'tasks.list') { data = (await executeTool('tasks.list', {}, { state })).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
         else if (route.capability === 'gmail.latest') {
-          const tool = await executeTool('composio.execute', { toolSlug: 'GMAIL_FETCH_EMAILS', arguments: { user_id: 'me', max_results: route.args.limit, verbose: false, include_payload: false, label_ids: ['INBOX'] } });
+          const tool = await executeTool('gmail.latest', { limit: route.args.limit });
           const emails = (Array.isArray(tool.data?.messages) ? tool.data.messages : []).sort((a, b) => Date.parse(b.messageTimestamp || 0) - Date.parse(a.messageTimestamp || 0)).slice(0, route.args.limit);
           data = { emails };
           reply = emails.length ? `Your latest ${emails.length} inbox emails:\n${emails.map((email, index) => `${index + 1}. ${email.subject || '(no subject)'} — ${email.sender || 'Unknown sender'} (${email.messageTimestamp ? new Date(email.messageTimestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown time'})`).join('\n')}` : 'Your Gmail inbox has no matching emails.';
@@ -350,9 +359,9 @@ const server = http.createServer(async (req, res) => {
         else if (route.capability === 'mcp.servers') { const result = await executeTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }
         else if (route.capability === 'projects.status') { const result = await executeTool('projects.status'); data = result.data; const selected = route.args.name ? data.projects.filter((project) => project.name.toLowerCase() === route.args.name.toLowerCase() || project.name.toLowerCase().includes(route.args.name.toLowerCase())) : data.projects; reply = selected.length ? selected.map((project) => `${project.name}: ${project.status}${project.branch ? ` on ${project.branch}` : ''}${project.changedFiles === null ? '' : `, ${project.changedFiles} changed files`}`).join('\n') : `No connected project matches ${route.args.name}.`; }
         else if (route.capability === 'research.plan') { const result = await executeTool('research.plan', route.args); data = result.data; reply = data.status === 'sources_collected' ? `Collected ${data.sources.length} attributable sources for ${data.topic}. Source verification and synthesis remain next steps.` : data.message; }
-        else if (route.capability === 'diagnostics') { data = diagnostics(state); reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
-        else if (route.capability === 'memory.search') { data = { memories: searchMemory(state.memories || [], route.args.q) }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
-        else if (route.capability === 'media.generate') { const media = await generateMedia(route.args.kind, route.args.prompt); data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
+        else if (route.capability === 'diagnostics') { data = (await executeTool('diagnostics', {}, { state })).data; reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
+        else if (route.capability === 'memory.search') { const result = await executeTool('memory.search', { query: route.args.q }, { state }); data = { memories: result.data.results }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
+        else if (route.capability === 'media.generate') { const media = (await executeTool('media.generate', { kind: route.args.kind, prompt: route.args.prompt })).data; data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
         else { const result = await executeTool('files.read', route.args); data = result.data; reply = `README.md is ${data.bytes} bytes and is available in the project workspace.`; }
         finishRun(run, data, { total: 0 });
         await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); Object.assign(stored, run); if (data?.media?.kind === 'video') { draft.mediaJobs ??= []; draft.mediaJobs.unshift(data.media); draft.mediaJobs = draft.mediaJobs.slice(0, 100); } draft.runtime ??= { usage: {}, latency: {} }; draft.runtime.usage ??= { requests: 0, tokens: 0, cost: 0 }; draft.runtime.usage.requests += 1; draft.runtime.latency ??= { samples: 0 }; draft.runtime.latency.routerMs = routeStarted ? Math.round(performance.now() - routeStarted) : 0; draft.runtime.latency.toolMs = Math.round(performance.now() - toolStarted); draft.runtime.latency.totalMs = Math.round(performance.now() - routeStarted); draft.runtime.latency.samples = Number(draft.runtime.latency.samples || 0) + 1; draft.conversations ??= []; draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply], media: data?.media || null }); draft.conversations = draft.conversations.slice(-100); return draft; });
@@ -363,7 +372,11 @@ const server = http.createServer(async (req, res) => {
       const taskIntent = /^(create|add|remember)\s+(a\s+)?task\b/i.test(text);
       let createdTask = null;
       if (taskIntent) {
-        await updateState((draft) => { createdTask = { id: `task-${Date.now()}`, title: text.replace(/^(create|add|remember)\s+(a\s+)?task\s*:?[\s-]*/i, '') || text, sub: 'Created from JARVIS chat', icon: 'cyan', svg: 'notes', pct: 0, status: 'pending', createdAt: new Date().toISOString() }; draft.tasks.unshift(createdTask); recordActivity(draft, activityEntry('task.created', createdTask.title, { taskId: createdTask.id, source: 'chat' })); return draft; });
+        const title = text.replace(/^(create|add|remember)\s+(a\s+)?task\s*:?[\s-]*/i, '') || text;
+        const result = await invokeToolRequest(state, { toolId: 'tasks.manage', input: { title }, runId: run.id });
+        if (result.status !== 200) throw new Error(result.body?.error || 'Task creation failed');
+        createdTask = result.body.data.task;
+        await updateState((draft) => { recordActivity(draft, activityEntry('task.created', createdTask.title, { taskId: createdTask.id, source: 'chat' })); return draft; });
       }
       let reply = createdTask ? `Task created: ${createdTask.title}` : '';
       let providerResult = null; let modelRoute = null; let modelFailure = null;
@@ -372,7 +385,8 @@ const server = http.createServer(async (req, res) => {
         modelRoute = await selectLogicalModelWithClassifier(text, state.modelRouting || {}, { hasMedia: Boolean(input.attachments?.length) }, state);
         const assembledContext = assembleModelContext({ query: text, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
         try {
-          providerResult = await executeModelDelegation({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false });
+          providerResult = await executeModelDelegation({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
+          if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);
           reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.logicalModel;
           run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
         } catch (error) {
@@ -404,7 +418,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: true, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
     }
     return json(res, 404, { error: 'Not found' });
-  } catch (error) { console.error(error); return json(res, error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500, { error: 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }
+  } catch (error) { console.error(error); return json(res, error.code === 'PAYLOAD_TOO_LARGE' ? 413 : error.code === 'INVALID_JSON' || error.code === 'TOOL_INPUT_INVALID' ? 400 : error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500, { error: 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }
 });
 
 server.on('error', (error) => {
@@ -423,7 +437,7 @@ process.once('SIGTERM', shutdownBrowser);
 
 const schedulerTimer = setInterval(async () => {
   if (!schedulerEnabled) return;
-  try { await updateState(async (draft) => { await tick(draft); lastSchedulerTick = new Date().toISOString(); return draft; }); } catch (error) { console.warn(`Scheduler tick failed: ${error.message}`); }
+  try { const state = await getState(); await tick(state); lastSchedulerTick = new Date().toISOString(); await updateState((draft) => draft); } catch (error) { console.warn(`Scheduler tick failed: ${error.message}`); }
 }, schedulerInterval);
 schedulerTimer.unref();
 

@@ -78,7 +78,7 @@ function cooldownMs(response, kind) {
   return kind === 'RATE_LIMITED' ? 60_000 : 15_000;
 }
 
-async function callProvider(provider, messages, fetchImpl, timeoutMs) {
+async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = []) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -86,7 +86,7 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs) {
       method: 'POST',
       signal: controller.signal,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env[provider.credentialRef]}` },
-      body: JSON.stringify({ model: provider.modelId, messages, temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))) }),
+      body: JSON.stringify({ model: provider.modelId, messages, temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))), ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) }),
     });
   } catch (error) {
     return { ok: false, status: 0, headers: new Headers(), json: async () => ({ error: { message: error.name === 'AbortError' ? 'Provider request timed out' : error.message } }) };
@@ -114,14 +114,14 @@ function userContent(request, attachments, modality) {
   return content;
 }
 
-export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000 }) {
+export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null }) {
   const registry = modelRegistry();
   const pools = configuredPools();
   const routing = state.modelRouting ??= {};
   const health = routing.providerHealth ??= {};
   const modality = normalizeModality(requiredModality);
   const continuation = continuationMessage(continuationState);
-  const messages = [...context, ...(continuation ? [continuation] : []), { role: 'user', content: userContent(request, attachments, modality) }];
+  const messages = messagesOverride || [...context, ...(continuation ? [continuation] : []), { role: 'user', content: userContent(request, attachments, modality) }];
   const telemetry = { requestedModel: logicalModel, selectedModel: logicalModel, finalModel: null, providerAttempts: [], apiRotationCount: 0, modelFallbackUsed: false, fallbackFrom: null, fallbackTo: null };
   const visited = new Set();
 
@@ -139,16 +139,18 @@ export async function executeModelPool({ logicalModel, request, context = [], co
         while (true) {
           const startedAt = new Date(now()).toISOString();
           const started = performance.now();
-          const response = await callProvider(provider, messages, fetchImpl, timeoutMs);
+          const response = await callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs);
           const payload = await response.json().catch(() => ({}));
           const attempt = telemetry.providerAttempts.length + 1;
-          const reply = payload.choices?.[0]?.message?.content;
-          if (response.ok && typeof reply === 'string' && reply.trim()) {
+          const messageResult = payload.choices?.[0]?.message;
+          const reply = messageResult?.content;
+          const toolCalls = Array.isArray(messageResult?.tool_calls) ? messageResult.tool_calls : [];
+          if (response.ok && ((typeof reply === 'string' && reply.trim()) || toolCalls.length)) {
             health[provider.id] = { status: 'HEALTHY', consecutiveFailures: 0, lastSuccessAt: new Date(now()).toISOString() };
             telemetry.providerAttempts.push({ providerId: provider.id, modelId: provider.modelId, attempt, startedAt, latencyMs: Math.round(performance.now() - started), success: true, statusCode: response.status || 200 });
             telemetry.finalModel = model;
             telemetry.apiRotationCount = new Set(telemetry.providerAttempts.map((item) => item.providerId)).size - 1;
-            return { reply, tokens: Number(payload.usage?.total_tokens || 0), inputTokens: Number(payload.usage?.prompt_tokens || 0), outputTokens: Number(payload.usage?.completion_tokens || 0), cost: Number(payload.usage?.cost || 0), provider: provider.id, model: provider.modelId, logicalModel: model, routingTelemetry: telemetry };
+            return { reply: typeof reply === 'string' ? reply : '', toolCalls, tokens: Number(payload.usage?.total_tokens || 0), inputTokens: Number(payload.usage?.prompt_tokens || 0), outputTokens: Number(payload.usage?.completion_tokens || 0), cost: Number(payload.usage?.cost || 0), provider: provider.id, model: provider.modelId, logicalModel: model, routingTelemetry: telemetry };
           }
 
           const message = response.ok ? 'Provider returned a successful response without model output' : payload.error?.message || payload.message || '';

@@ -7,6 +7,8 @@ test('tool executor reads only bounded files inside the workspace', async () => 
   assert.equal(result.ok, true);
   assert.match(result.data.content, /jarvis-command-console/);
   await assert.rejects(() => executeTool('files.read', { path: '..' }), /outside the JARVIS workspace/);
+  await assert.rejects(() => executeTool('files.read', { path: '.env' }), /protected/);
+  await assert.rejects(() => executeTool('files.read', { path: 'server/data/state.json' }), /protected/);
 });
 
 test('command execution requires an approved approval record', async () => {
