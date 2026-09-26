@@ -9,6 +9,7 @@ import '../styles/galaxy-immersive.css';
 
 const NAV = [
   { id: 'home', label: 'Home', icon: Home }, { id: 'chat', label: 'Chat', icon: MessageCircle },
+  { id: 'brain', label: 'Brain', icon: BrainCircuit },
   { id: 'tasks', label: 'Tasks', icon: ListTodo }, { id: 'runs', label: 'Runs', icon: Activity },
   { id: 'workflows', label: 'Workflows', icon: Workflow }, { id: 'memory', label: 'Memory', icon: Database },
   { id: 'browser', label: 'Browser', icon: Globe2 },
@@ -84,6 +85,7 @@ export default function GalaxyHome() {
   const [incomingCall, setIncomingCall] = useState(null);
   const [immersive, setImmersive] = useState(false);
   const [hudVisible, setHudVisible] = useState(false);
+  useEffect(() => { let active = true; fetch('/api/brain').then((response) => response.ok ? response.json() : null).then((result) => { if (active && result?.setupRequired) manager.open('brain'); }).catch(() => {}); return () => { active = false; }; }, []);
   useEffect(() => pollWithBackoff(async (signal) => {
     const response = await fetch('/api/system/metrics', { signal });
     if (!response.ok) throw new Error(`Metrics ${response.status}`);

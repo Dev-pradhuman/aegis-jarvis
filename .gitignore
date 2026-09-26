@@ -5,6 +5,8 @@ server/graphify-out/
 .env.local
 server/data/credentials.env
 server/data/state.json
+server/data/brain-sources.json
+server/data/brain-secrets.json
 server/data/generated/
 server/data/browser/
 .playwright-cli/

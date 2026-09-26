@@ -4,12 +4,13 @@ import Chat from '../components/Chat.jsx';
 import WorkspaceViews from '../components/WorkspaceViews.jsx';
 import LiveModule from './LiveModule.jsx';
 import BrowserPanel from './BrowserPanel.jsx';
+import BrainManager from '../components/BrainManager.jsx';
 
 const TITLES = {
   chat: 'Conversation', tasks: 'Tasks', approvals: 'Approvals', runs: 'Execution runs',
   workflows: 'Workflows', memory: 'Memory', research: 'Research', mcp: 'MCP tools',
   agents: 'Agents', projects: 'Projects', media: 'Media', integrations: 'Integrations',
-  system: 'System', settings: 'Settings', phone: 'Phone', messaging: 'Messaging', browser: 'Browser',
+  system: 'System', settings: 'Settings', phone: 'Phone', messaging: 'Messaging', browser: 'Browser', brain: 'JARVIS Brain',
 };
 
 function initialGeometry(index) {
@@ -48,6 +49,7 @@ function reducer(windows, action) {
 function WindowBody({ id }) {
   if (id === 'chat') return <Chat />;
   if (id === 'browser') return <BrowserPanel />;
+  if (id === 'brain') return <BrainManager />;
   if (id === 'settings') return <WorkspaceViews view="settings" />;
   return <LiveModule id={id} />;
 }

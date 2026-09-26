@@ -1,16 +1,19 @@
 import { modelRegistry } from './modelRouting.js';
+import { brainCatalog } from './brainSources.js';
+import { spawn } from 'node:child_process';
 
-const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Array.from({ length: 4 }, (_, index) => `OPENROUTER_API_KEY_${index + 1}`)].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, ...extra }));
-const DEFAULT_POOLS = {
-  'muse-spark-1.2': openRouterPool('muse', 'muse/spark-1.2'),
-  'deepseek-v4-flash': openRouterPool('deepseek', 'deepseek/deepseek-v4-flash'),
-  'glm-5.2': openRouterPool('glm', 'z-ai/glm-5.2'),
-  'laguna-s-2.1': openRouterPool('laguna', 'laguna-s-2.1'),
-  'minimax-m3': openRouterPool('minimax', 'minimax/minimax-m3'),
-  'nemotron-3-nano-omni': openRouterPool('nano-omni', 'nvidia/nemotron-3-nano-omni', { modalities: ['text', 'image', 'audio', 'video'] }),
-  'mimo-v2.5': openRouterPool('mimo', 'xiaomi/mimo-v2.5', { modalities: ['text', 'image', 'audio', 'video'] }),
-  'nemotron-3.5-lightning': openRouterPool('lightning', 'nvidia/nemotron-3.5-lightning'),
+const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Object.keys(process.env).filter((key) => /^OPENROUTER_API_KEY_\d+$/.test(key)).sort((a, b) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, priority: 500, ...extra }));
+const DEFAULT_POOL_MODELS = {
+  'muse-spark-1.2': ['muse', 'muse/spark-1.2'],
+  'deepseek-v4-flash': ['deepseek', 'deepseek/deepseek-v4-flash'],
+  'glm-5.2': ['glm', 'z-ai/glm-5.2'],
+  'laguna-s-2.1': ['laguna', 'laguna-s-2.1'],
+  'minimax-m3': ['minimax', 'minimax/minimax-m3'],
+  'nemotron-3-nano-omni': ['nano-omni', 'nvidia/nemotron-3-nano-omni', { modalities: ['text', 'image', 'audio', 'video'] }],
+  'mimo-v2.5': ['mimo', 'xiaomi/mimo-v2.5', { modalities: ['text', 'image', 'audio', 'video'] }],
+  'nemotron-3.5-lightning': ['lightning', 'nvidia/nemotron-3.5-lightning'],
 };
+const defaultPoolMap = () => Object.fromEntries(Object.entries(DEFAULT_POOL_MODELS).map(([logicalModel, args]) => [logicalModel, openRouterPool(...args)]));
 
 const inFlight = new Map();
 const retryable = new Set(['PROVIDER_ERROR', 'TEMPORARILY_UNAVAILABLE', 'NETWORK_ERROR', 'INVALID_RESPONSE']);
@@ -34,23 +37,22 @@ export function normalizeModality(value = 'text') {
   return 'text';
 }
 
-export function configuredPools() {
-  try {
-    const parsed = JSON.parse(process.env.MODEL_PROVIDER_POOLS || '{}');
-    return { ...DEFAULT_POOLS, ...parsed };
-  } catch {
-    return structuredClone(DEFAULT_POOLS);
-  }
+export function configuredPools(catalog = brainCatalog) {
+  let parsed = {};
+  try { parsed = JSON.parse(process.env.MODEL_PROVIDER_POOLS || '{}'); } catch {}
+  const merged = { ...defaultPoolMap(), ...parsed };
+  for (const entry of catalog.poolEntries()) (merged[entry.logicalModel] ??= []).unshift(entry);
+  return merged;
 }
 
-export function publicPools() {
-  return Object.fromEntries(Object.entries(configuredPools()).map(([model, providers]) => [model, providers.map((provider) => ({
+export function publicPools(catalog = brainCatalog) {
+  return Object.fromEntries(Object.entries(configuredPools(catalog)).map(([model, providers]) => [model, providers.map((provider) => ({
     id: provider.id,
     provider: provider.provider,
     baseUrl: provider.baseUrl,
     modelId: provider.modelId,
-    credentialRef: provider.credentialRef,
-    credentialConfigured: Boolean(process.env[provider.credentialRef]),
+    credentialRef: provider.credentialRef || null,
+    credentialConfigured: provider.type === 'API' ? Boolean(catalog.credentialSecret(provider.credentialId)) : provider.type ? true : Boolean(process.env[provider.credentialRef]),
     modalities: provider.modalities || ['text'],
     capabilities: provider.capabilities || [],
   }))]));
@@ -64,9 +66,18 @@ function supportsCapability(model, capability, registry, pools) {
 
 function eligible(provider, health, timestamp) {
   const current = health[provider.id];
+  const modelHealth = provider.sourceId && health[`brain-model-${provider.sourceId}-${provider.modelId}`];
+  if (modelHealth?.retryAfter && new Date(modelHealth.retryAfter).getTime() > timestamp) return false;
   if (!current) return true;
-  if (['DISABLED', 'INVALID_CREDENTIAL', 'QUOTA_EXHAUSTED', 'MODEL_UNAVAILABLE'].includes(current.status)) return false;
+  if (['DISABLED', 'INVALID_CREDENTIAL'].includes(current.status)) return false;
   return !current.retryAfter || new Date(current.retryAfter).getTime() <= timestamp;
+}
+
+function safeReason(message, provider, catalog) {
+  let result = String(message || '').slice(0, 300);
+  const secret = provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef];
+  if (secret) result = result.replaceAll(secret, '[redacted]');
+  return result;
 }
 
 function cooldownMs(response, kind) {
@@ -75,17 +86,18 @@ function cooldownMs(response, kind) {
   if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
   const date = Date.parse(retryAfter || '');
   if (Number.isFinite(date)) return Math.max(0, date - Date.now());
-  return kind === 'RATE_LIMITED' ? 60_000 : 15_000;
+  return kind === 'QUOTA_EXHAUSTED' ? 15 * 60_000 : kind === 'RATE_LIMITED' ? 60_000 : 15_000;
 }
 
-async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = []) {
+async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = [], catalog = brainCatalog) {
+  if (provider.type === 'CLI') return callCliProvider(provider, messages, timeoutMs);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       signal: controller.signal,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env[provider.credentialRef]}` },
+      headers: { 'content-type': 'application/json', ...((provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef]) ? { authorization: `Bearer ${provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef]}` } : {}) },
       body: JSON.stringify({ model: provider.modelId, messages, temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))), ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) }),
     });
   } catch (error) {
@@ -93,6 +105,25 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
   } finally {
     clearTimeout(timer);
   }
+}
+
+function callCliProvider(provider, messages, timeoutMs) {
+  const command = provider.adapter === 'codex' ? 'codex' : provider.adapter === 'claude' ? 'claude' : null;
+  if (!command) return Promise.resolve({ ok: false, status: 503, headers: new Headers(), json: async () => ({ error: { message: 'CLI adapter is not available for inference' } }) });
+  const args = provider.adapter === 'codex' ? ['exec', '--sandbox', 'read-only', '--ephemeral', ...(provider.modelId && provider.modelId !== 'default' ? ['--model', provider.modelId] : []), '-'] : ['-p', '--tools', '', '--output-format', 'text', ...(provider.modelId && provider.modelId !== 'default' ? ['--model', provider.modelId] : [])];
+  const prompt = messages.map((item) => `${item.role}: ${typeof item.content === 'string' ? item.content : JSON.stringify(item.content)}`).join('\n\n');
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd: process.cwd(), env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = '', errorOutput = '', settled = false;
+    const finish = (ok, message) => { if (settled) return; settled = true; clearTimeout(timer); resolve({ ok, status: ok ? 200 : 503, headers: new Headers(), json: async () => ok ? { choices: [{ message: { content: output.trim() } }] } : { error: { message } } }); };
+    const timer = setTimeout(() => { child.kill('SIGTERM'); finish(false, 'CLI request timed out'); }, timeoutMs);
+    child.stdout.on('data', (chunk) => { output += chunk; if (output.length > 2_000_000) { child.kill('SIGTERM'); finish(false, 'CLI output exceeded limit'); } });
+    child.stderr.on('data', (chunk) => { errorOutput += chunk; if (errorOutput.length > 8_000) errorOutput = errorOutput.slice(-8_000); });
+    child.on('error', () => finish(false, 'CLI executable unavailable'));
+    child.stdin.on('error', () => {});
+    child.on('close', (code) => finish(code === 0 && Boolean(output.trim()), code === 0 ? 'CLI returned no output' : `CLI exited with status ${code}`));
+    child.stdin.end(prompt);
+  });
 }
 
 function continuationMessage(continuationState) {
@@ -114,9 +145,9 @@ function userContent(request, attachments, modality) {
   return content;
 }
 
-export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null }) {
+export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null, catalog = brainCatalog }) {
   const registry = modelRegistry();
-  const pools = configuredPools();
+  const pools = configuredPools(catalog);
   const routing = state.modelRouting ??= {};
   const health = routing.providerHealth ??= {};
   const modality = normalizeModality(requiredModality);
@@ -129,8 +160,9 @@ export async function executeModelPool({ logicalModel, request, context = [], co
     if (visited.has(model)) return null;
     visited.add(model);
     const available = (pools[model] || [])
-      .filter((provider) => process.env[provider.credentialRef] && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)))
-      .sort((a, b) => (inFlight.get(a.id) || 0) - (inFlight.get(b.id) || 0));
+      .filter((provider) => !(routing.modelMode === 'manual' && routing.lockedSourceId) || provider.sourceId === routing.lockedSourceId)
+      .filter((provider) => (provider.type === 'LOCAL' || provider.type === 'CLI' || provider.credentialId && catalog.credentialSecret(provider.credentialId) || process.env[provider.credentialRef]) && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)) && (!provider.type || ((!toolSpecs.length || provider.type !== 'CLI' && provider.capabilities?.includes('tools')) && (!requiredCapability || requiredCapability === 'text' || provider.capabilities?.includes(requiredCapability)))))
+      .sort((a, b) => (a.priority ?? 500) - (b.priority ?? 500) || (inFlight.get(a.id) || 0) - (inFlight.get(b.id) || 0));
 
     for (const provider of available) {
       inFlight.set(provider.id, (inFlight.get(provider.id) || 0) + 1);
@@ -139,7 +171,7 @@ export async function executeModelPool({ logicalModel, request, context = [], co
         while (true) {
           const startedAt = new Date(now()).toISOString();
           const started = performance.now();
-          const response = await callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs);
+          const response = await callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs, catalog);
           const payload = await response.json().catch(() => ({}));
           const attempt = telemetry.providerAttempts.length + 1;
           const messageResult = payload.choices?.[0]?.message;
@@ -153,8 +185,9 @@ export async function executeModelPool({ logicalModel, request, context = [], co
             return { reply: typeof reply === 'string' ? reply : '', toolCalls, tokens: Number(payload.usage?.total_tokens || 0), inputTokens: Number(payload.usage?.prompt_tokens || 0), outputTokens: Number(payload.usage?.completion_tokens || 0), cost: Number(payload.usage?.cost || 0), provider: provider.id, model: provider.modelId, logicalModel: model, routingTelemetry: telemetry };
           }
 
-          const message = response.ok ? 'Provider returned a successful response without model output' : payload.error?.message || payload.message || '';
-          const kind = response.ok ? 'INVALID_RESPONSE' : failureClass(response.status, message);
+          const rawMessage = response.ok ? 'Provider returned a successful response without model output' : payload.error?.message || payload.message || '';
+          const kind = response.ok ? 'INVALID_RESPONSE' : failureClass(response.status, rawMessage);
+          const message = safeReason(rawMessage, provider, catalog);
           telemetry.providerAttempts.push({ providerId: provider.id, modelId: provider.modelId, attempt, startedAt, latencyMs: Math.round(performance.now() - started), success: false, statusCode: response.status, failureClass: kind, failureReason: message.slice(0, 300) });
           if (kind === 'REQUEST_ERROR') {
             const error = new Error(message || `Request rejected with HTTP ${response.status}`);
@@ -162,11 +195,15 @@ export async function executeModelPool({ logicalModel, request, context = [], co
             error.routingTelemetry = telemetry;
             throw error;
           }
-          if (retryable.has(kind) && retry++ === 0) continue;
+          if (retryable.has(kind) && retry++ === 0 && provider.type !== 'CLI') continue;
+          if (kind === 'MODEL_UNAVAILABLE' && provider.sourceId) {
+            health[`brain-model-${provider.sourceId}-${provider.modelId}`] = { status: kind, lastFailureAt: new Date(now()).toISOString(), retryAfter: new Date(now() + cooldownMs(response, kind)).toISOString() };
+            break;
+          }
           health[provider.id] = {
             status: kind,
             lastFailureAt: new Date(now()).toISOString(),
-            retryAfter: ['RATE_LIMITED', 'TEMPORARILY_UNAVAILABLE', 'PROVIDER_ERROR', 'NETWORK_ERROR', 'INVALID_RESPONSE'].includes(kind) ? new Date(now() + cooldownMs(response, kind)).toISOString() : null,
+            retryAfter: ['RATE_LIMITED', 'QUOTA_EXHAUSTED', 'MODEL_UNAVAILABLE', 'TEMPORARILY_UNAVAILABLE', 'PROVIDER_ERROR', 'NETWORK_ERROR', 'INVALID_RESPONSE'].includes(kind) ? new Date(now() + cooldownMs(response, kind)).toISOString() : null,
             consecutiveFailures: Number(health[provider.id]?.consecutiveFailures || 0) + 1,
             failureReason: message.slice(0, 300),
           };
@@ -203,5 +240,5 @@ export async function executeModelPool({ logicalModel, request, context = [], co
 }
 
 export function defaultPools() {
-  return structuredClone(DEFAULT_POOLS);
+  return defaultPoolMap();
 }

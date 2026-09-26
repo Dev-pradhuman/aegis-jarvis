@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import BrainManager from './BrainManager.jsx';
 import Approvals from './Approvals.jsx';
 import Chat from './Chat.jsx';
 import Icon from './Icon.jsx';
@@ -344,14 +345,12 @@ function LegacyBilingualVoicePanel() {
 }
 
 function CredentialsPanel() {
-  const modelKeys = Array.from({ length: 12 }, (_, index) => `MODEL_API_KEY_${index + 1}`);
-  const providerKeys = ['GROQ', 'GEMINI', 'OPENROUTER', 'OPENCODE_ZEN', 'NINEROUTER', 'CUSTOM'].flatMap((provider) => [`${provider}_API_KEY`, ...Array.from({ length: 4 }, (_, index) => `${provider}_API_KEY_${index + 1}`)]);
-  const fields = [...providerKeys, 'GROQ_CHAT_MODEL', 'GROQ_STT_MODEL', 'GROQ_TTS_MODEL', 'GROQ_TTS_VOICE', 'GEMINI_IMAGE_MODEL', 'GEMINI_VIDEO_MODEL', 'TTS_PROVIDER', 'PROVIDER_FALLBACK_ORDER', 'MODEL_PROVIDER_POOLS', 'JARVIS_ROUTER_DEBUG', ...modelKeys, 'COMPOSIO_API_KEY', 'COMPOSIO_USER_ID', 'COMPOSIO_AUTH_CONFIGS', 'SLACK_BOT_TOKEN', 'SLACK_CHANNEL_ID', 'SLACK_WEBHOOK_URL', 'SEARCH_PROVIDER_URL', 'CALENDAR_API_URL', 'MESSAGING_API_URL', 'HARDWARE_ENDPOINT', 'JARVIS_AUTH_TOKEN'];
+  const fields = ['GROQ_STT_MODEL', 'GROQ_TTS_MODEL', 'GROQ_TTS_VOICE', 'GEMINI_IMAGE_MODEL', 'GEMINI_VIDEO_MODEL', 'TTS_PROVIDER', 'COMPOSIO_API_KEY', 'COMPOSIO_USER_ID', 'COMPOSIO_AUTH_CONFIGS', 'SLACK_BOT_TOKEN', 'SLACK_CHANNEL_ID', 'SLACK_WEBHOOK_URL', 'SEARCH_PROVIDER_URL', 'CALENDAR_API_URL', 'MESSAGING_API_URL', 'HARDWARE_ENDPOINT', 'JARVIS_AUTH_TOKEN'];
   const [values, setValues] = useState(Object.fromEntries(fields.map((key) => [key, ''])));
   const [status, setStatus] = useState({});
   useEffect(() => { fetch('/api/config').then((response) => response.ok ? response.json() : null).then((data) => data && setStatus(data)).catch(() => {}); }, []);
   async function save() { const payload = Object.fromEntries(Object.entries(values).filter(([, value]) => value)); const response = await fetch('/api/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }); if (response.ok) { setStatus(await response.json()); setValues(Object.fromEntries(fields.map((key) => [key, '']))); } }
-  return <section className="workspace-panel settings-section full"><div className="panel-label">Environment credentials</div><p className="setting-help">Values are written to the server-only credentials file and are never returned to this page. MODEL_PROVIDER_POOLS maps logical models to endpoint records whose credentialRef names a MODEL_API_KEY slot. Leave a field blank to keep its existing value.</p><div className="form-grid credential-grid">{fields.map((key) => <label key={key}>{key.replaceAll('_', ' ')}<input type={key.includes('KEY') || key.includes('TOKEN') ? 'password' : 'text'} value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} placeholder={status[key]?.configured ? 'Configured · enter to replace' : 'Not configured'} /></label>)}</div><button className="secondary-action" onClick={save}>Save credentials</button></section>;
+  return <section className="workspace-panel settings-section full"><div className="panel-label">Environment credentials</div><p className="setting-help">Use the Brain tab for model providers and any number of API keys. These other integration values are written to the server-only credentials file. Leave a field blank to keep its existing value.</p><div className="form-grid credential-grid">{fields.map((key) => <label key={key}>{key.replaceAll('_', ' ')}<input type={key.includes('KEY') || key.includes('TOKEN') ? 'password' : 'text'} value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} placeholder={status[key]?.configured ? 'Configured · enter to replace' : 'Not configured'} /></label>)}</div><button className="secondary-action" onClick={save}>Save credentials</button></section>;
 }
 
 function ComposioPanel() {
@@ -451,7 +450,7 @@ function SettingsWorkspace() {
 
 export default function WorkspaceViews({ view }) {
   const views = {
-    chat: <ChatWorkspace />, brain: <BrainWorkspace />, tasks: <TasksWorkspace />, approvals: <ApprovalsWorkspace />,
+    chat: <ChatWorkspace />, brain: <BrainManager />, tasks: <TasksWorkspace />, approvals: <ApprovalsWorkspace />,
     connections: <ConnectionsWorkspace />, workflows: <WorkflowsWorkspace />, goals: <GoalsWorkspace />,
     agents: <AgentsWorkspace />, skills: <SkillsWorkspace />, settings: <div className="settings-shell"><ModelRoutingControl /><ComposioPanel /><FunctionRoutingPanel /><SettingsWorkspace /></div>,
   };

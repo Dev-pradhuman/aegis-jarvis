@@ -33,6 +33,8 @@ import { executeModelToolLoop } from './modelToolLoop.js';
 import { executeModelPool } from './modelPool.js';
 import { invokeToolRequest } from './toolRuntime.js';
 import { unattendedTool, unattendedTools } from './toolPolicy.js';
+import { brainCatalog } from './brainSources.js';
+import { detectedCliSources, discoverBrainModels, testBrainSource } from './brainService.js';
 
 const port = Number(process.env.JARVIS_PORT || 8787);
 const processStartedAt = Date.now();
@@ -119,6 +121,23 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname.startsWith('/api/media/jobs/')) { const id = url.pathname.split('/').pop(); const existing = (state.mediaJobs || []).find((job) => job.id === id); if (!existing) return json(res, 404, { error: 'Media job not found' }); const job = await refreshVideoJob(existing); await updateState((draft) => { const index = (draft.mediaJobs || []).findIndex((item) => item.id === id); if (index >= 0) draft.mediaJobs[index] = job; return draft; }); return json(res, 200, { job: { ...job, operationName: undefined, credentialSlot: undefined, downloadUri: job.downloadUri ? `/api/media/jobs/${job.id}/download` : null } }); }
     if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicConfig());
     if (req.method === 'PATCH' && url.pathname === '/api/config') { const config = saveConfig(await body(req)); return json(res, 200, config); }
+    if (req.method === 'GET' && url.pathname === '/api/brain') return json(res, 200, { ...brainCatalog.publicStatus(state.modelRouting?.providerHealth), configurationLocked: !process.env.JARVIS_AUTH_TOKEN, cli: detectedCliSources(), models: modelRegistry(), routing: { modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || null, lockedSourceId: state.modelRouting?.lockedSourceId || null, manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false }, events: (state.modelRouting?.telemetry || []).flatMap((item) => item.providerAttempts || []).slice(-30) });
+    if (url.pathname.startsWith('/api/brain/') && !process.env.JARVIS_AUTH_TOKEN && req.method !== 'GET') return json(res, 403, { code: 'BRAIN_AUTH_REQUIRED', error: 'Configure JARVIS_AUTH_TOKEN before editing Brain sources' });
+    if (req.method === 'GET' && url.pathname === '/api/brain/sources') return json(res, 200, { sources: brainCatalog.list(state.modelRouting?.providerHealth) });
+    if (req.method === 'POST' && url.pathname === '/api/brain/sources') { const source = brainCatalog.addSource(await body(req)); return json(res, 201, { source }); }
+    const sourceRoute = url.pathname.match(/^\/api\/brain\/sources\/([^/]+)(?:\/(credentials|test|models))?(?:\/([^/]+))?(?:\/(test))?$/);
+    if (sourceRoute) {
+      const [, sourceId, action, credentialId, trailing] = sourceRoute;
+      try {
+        if (!action && req.method === 'PATCH') return json(res, 200, { source: brainCatalog.updateSource(sourceId, await body(req)) });
+        if (!action && req.method === 'DELETE') { brainCatalog.removeSource(sourceId); await updateState((draft) => { if (draft.modelRouting?.lockedSourceId === sourceId) draft.modelRouting.lockedSourceId = null; return draft; }); return json(res, 200, { removed: true }); }
+        if (action === 'credentials' && !credentialId && req.method === 'POST') return json(res, 201, { credential: brainCatalog.addCredential(sourceId, await body(req)) });
+        if (action === 'credentials' && credentialId && req.method === 'PATCH') return json(res, 200, { credential: brainCatalog.updateCredential(sourceId, credentialId, await body(req)) });
+        if (action === 'credentials' && credentialId && req.method === 'DELETE') { brainCatalog.removeCredential(sourceId, credentialId); return json(res, 200, { removed: true }); }
+        if ((action === 'test' || action === 'credentials' && trailing === 'test') && req.method === 'POST') { const result = await testBrainSource(sourceId, action === 'credentials' ? credentialId : null); await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || sourceId}`] = { status: result.status, lastCheckedAt: new Date().toISOString() }; return draft; }); return json(res, 200, { result }); }
+        if (action === 'models' && req.method === 'GET') return json(res, 200, await discoverBrainModels(sourceId));
+      } catch (error) { if (error.code?.startsWith('BRAIN_')) return json(res, error.code.endsWith('NOT_FOUND') ? 404 : 400, { code: error.code, error: error.message }); throw error; }
+    }
     if (req.method === 'GET' && url.pathname === '/api/voice/tts') return json(res, 200, ttsStatus());
     if (req.method === 'POST' && url.pathname === '/api/voice/tts') {
       const result = await synthesizeSpeech(await body(req));
@@ -135,7 +154,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/telemetry') return json(res, 200, { uptimeSeconds: uptimeSeconds(), usage: state.runtime?.usage || { requests: 0, tokens: 0, cost: 0 }, latency: state.runtime?.latency || {}, provider: publicProvider(state.provider), modelRouting: { mode: state.modelRouting?.modelMode || 'auto', jarvisMode: state.modelRouting?.jarvisMode || 'normal', manualModel: state.modelRouting?.manualModel || null, last: state.runtime?.lastModelRoute || null } });
     if (req.method === 'GET' && url.pathname === '/api/provider') return json(res, 200, { provider: publicProvider(state.provider) });
     if (req.method === 'GET' && url.pathname === '/api/model-routing') return json(res, 200, { settings: { jarvisMode: state.modelRouting?.jarvisMode || 'normal', modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || 'muse-spark-1.2', manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false }, models: modelRegistry(), providerPools: publicPools(), providerHealth: state.modelRouting?.providerHealth || {}, recentTelemetry: (state.modelRouting?.telemetry || []).slice(0, 25), debug: process.env.JARVIS_ROUTER_DEBUG === 'true' });
-    if (req.method === 'PATCH' && url.pathname === '/api/model-routing') { const input = await body(req); const updated = await updateState((draft) => { draft.modelRouting ??= {}; if (['normal', 'coding', 'deepthinking'].includes(input.jarvisMode)) draft.modelRouting.jarvisMode = input.jarvisMode; if (['auto', 'manual'].includes(input.modelMode)) draft.modelRouting.modelMode = input.modelMode; if (modelRegistry()[input.manualModel]) draft.modelRouting.manualModel = input.manualModel; if (typeof input.manualFallbackAllowed === 'boolean') draft.modelRouting.manualFallbackAllowed = input.manualFallbackAllowed; return draft; }); return json(res, 200, { settings: updated.modelRouting }); }
+    if (req.method === 'PATCH' && url.pathname === '/api/model-routing') { const input = await body(req); const updated = await updateState((draft) => { draft.modelRouting ??= {}; if (['normal', 'coding', 'deepthinking'].includes(input.jarvisMode)) draft.modelRouting.jarvisMode = input.jarvisMode; if (['auto', 'manual'].includes(input.modelMode)) draft.modelRouting.modelMode = input.modelMode; if (modelRegistry()[input.manualModel]) draft.modelRouting.manualModel = input.manualModel; if (typeof input.manualFallbackAllowed === 'boolean') draft.modelRouting.manualFallbackAllowed = input.manualFallbackAllowed; if (input.lockedSourceId === null || brainCatalog.list().some((source) => source.id === input.lockedSourceId)) draft.modelRouting.lockedSourceId = input.lockedSourceId; return draft; }); return json(res, 200, { settings: updated.modelRouting }); }
     if (req.method === 'GET' && url.pathname === '/api/provider/models') {
       const provider = state.provider || {};
       if (!provider.baseUrl) return json(res, 400, { error: 'Provider base URL is not configured' });
