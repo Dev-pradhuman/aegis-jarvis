@@ -37,6 +37,7 @@ import { unattendedTool, unattendedTools } from './toolPolicy.js';
 const port = Number(process.env.JARVIS_PORT || 8787);
 const processStartedAt = Date.now();
 const uptimeSeconds = () => Math.floor((Date.now() - processStartedAt) / 1000);
+const desktopErrorStatus = (code) => ({ WINDOW_NOT_FOUND: 404, AMBIGUOUS_TARGET: 409, WINDOW_FOCUS_FAILED: 409, TARGET_FOCUS_CHANGED: 409, WINDOW_OPERATION_UNSUPPORTED: 503, WINDOW_BACKEND_UNAVAILABLE: 503, WINDOW_BACKEND_TIMEOUT: 504, APP_LAUNCH_FAILED: 502 })[code];
 const schedulerEnabled = process.env.JARVIS_SCHEDULER !== '0';
 const schedulerInterval = Math.max(10_000, Number(process.env.JARVIS_SCHEDULER_INTERVAL_MS || 30_000));
 let lastSchedulerTick = null;
@@ -366,7 +367,7 @@ const server = http.createServer(async (req, res) => {
           const step = run.steps[0];
           step.type = 'tool'; step.capability = toolId; step.status = 'running'; step.startedAt ||= new Date().toISOString();
           let response;
-          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, idempotencyKey: `${run.id}:${toolId}`, resumeOnApproval: toolId === 'computer.keypress' || toolId === 'computer.type' }); }
+          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, idempotencyKey: `${run.id}:${toolId}`, resumeOnApproval: toolId === 'computer.keypress' || toolId === 'computer.type' || toolId === 'windows.close' }); }
           catch (error) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); throw error; }
           if (response.status === 202 && response.body?.approvalRequired) {
             step.status = 'waiting_for_approval';
@@ -407,12 +408,25 @@ const server = http.createServer(async (req, res) => {
         else if (route.capability === 'apps.open') {
           const result = await invokeChatTool('apps.open', route.args);
           data = result.data;
-          reply = data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
+          if (data.window) { state.runtime ??= {}; state.runtime.lastDesktopTarget = { windowId: data.window.windowId, appId: data.window.appId, ...(data.window.processId ? { processId: data.window.processId } : {}) }; }
+          reply = data.window ? `${data.app.name} is ${data.status === 'focused' ? 'focused' : 'open'} in window ${data.window.windowId}.`
+            : data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
             : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
               : `I could not find an installed application named ${route.args.name}.`;
         }
-        else if (route.capability === 'computer.keypress' || route.capability === 'computer.type') {
+        else if (route.capability.startsWith('windows.')) {
           const result = await invokeChatTool(route.capability, route.args);
+          if (result.approvalRequired) {
+            await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+            return json(res, 202, { reply: 'Window close is waiting for approval bound to the exact window.', runId: run.id, approvalRequired: true, approval: result.approval });
+          }
+          data = result.data;
+          if (data.window?.windowId && route.capability === 'windows.focus') { state.runtime ??= {}; state.runtime.lastDesktopTarget = { windowId: data.window.windowId, appId: data.window.appId, ...(data.window.processId ? { processId: data.window.processId } : {}) }; }
+          reply = data.window ? `${route.capability.split('.')[1]}: ${data.window.title || data.window.appId} (${data.window.windowId}).` : 'No active window is available.';
+        }
+        else if (route.capability === 'computer.keypress' || route.capability === 'computer.type') {
+          const args = { ...route.args, ...(route.args.target ? {} : state.runtime?.lastDesktopTarget ? { target: state.runtime.lastDesktopTarget } : {}) };
+          const result = await invokeChatTool(route.capability, args);
           if (result.approvalRequired) {
             await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
             return json(res, 202, { reply: 'Desktop input is waiting for your exact-action approval and desktop portal consent.', runId: run.id, approvalRequired: true, approval: result.approval });
@@ -439,7 +453,7 @@ const server = http.createServer(async (req, res) => {
         } catch (error) {
           errorRun(run, error);
           await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
-          return json(res, error.httpStatus || 502, { reply: error.message, runId: run.id, code: error.code || 'TOOL_ERROR' });
+          return json(res, error.httpStatus || desktopErrorStatus(error.code) || 502, { reply: error.message, runId: run.id, code: error.code || 'TOOL_ERROR' });
         }
         if (run.steps[0]?.status === 'queued') { run.steps[0].status = 'completed'; run.steps[0].startedAt = run.steps[0].startedAt || new Date().toISOString(); run.steps[0].completedAt = new Date().toISOString(); }
         finishRun(run, data, { total: 0 });
@@ -502,7 +516,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: true, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
     }
     return json(res, 404, { error: 'Not found' });
-  } catch (error) { console.error(error); return json(res, error.code === 'PAYLOAD_TOO_LARGE' ? 413 : error.code === 'INVALID_JSON' || error.code === 'TOOL_INPUT_INVALID' ? 400 : error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500, { error: 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }
+  } catch (error) { if (!desktopErrorStatus(error.code)) console.error(error); return json(res, desktopErrorStatus(error.code) || (error.code === 'PAYLOAD_TOO_LARGE' ? 413 : error.code === 'INVALID_JSON' || error.code === 'TOOL_INPUT_INVALID' ? 400 : error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500), { error: desktopErrorStatus(error.code) ? error.message : 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }
 });
 
 server.on('error', (error) => {

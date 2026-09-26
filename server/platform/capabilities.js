@@ -57,9 +57,9 @@ export async function computerCapabilities(platform = osPlatform) {
     os: platform.os, displayServer: platform.displayServer, desktopEnvironment: platform.desktopEnvironment,
     apps: { available: Boolean(platform.apps), provider: platform.os },
     audio, media, clipboard,
-    keyboard: keyboardBackend && process.env.JARVIS_DESKTOP_INPUT === '1' && process.env.JARVIS_AUTH_TOKEN ? { available: true, provider: keyboardBackend, requiresUserConsent: true, requiresActionApproval: true, verified: false } : unavailable(keyboardBackend ? 'Set JARVIS_DESKTOP_INPUT=1 and JARVIS_AUTH_TOKEN to enable consent-based input' : 'Desktop RemoteDesktop portal keyboard access is unavailable'),
+    keyboard: keyboardBackend && platform.windows?.supported && process.env.JARVIS_DESKTOP_INPUT === '1' && process.env.JARVIS_AUTH_TOKEN ? { available: true, provider: keyboardBackend, targetProvider: platform.windows.provider, requiresUserConsent: true, requiresActionApproval: true, verified: false } : unavailable(!platform.windows?.supported ? 'A target-aware window backend is unavailable' : keyboardBackend ? 'Set JARVIS_DESKTOP_INPUT=1 and JARVIS_AUTH_TOKEN to enable consent-based input' : 'Desktop RemoteDesktop portal keyboard access is unavailable'),
     mouse: unavailable(wayland ? 'Desktop pointer provider is not implemented' : 'Desktop pointer provider is not implemented'),
-    windows: unavailable(wayland ? 'KWin window provider is not implemented' : 'Window provider is not implemented'),
+    windows: platform.windows?.supported ? { available: true, provider: platform.windows.provider, operations: ['list', 'get_active', 'find', 'focus', 'minimize', 'maximize', 'restore', 'close'] } : unavailable('A supported compositor window API is unavailable'),
     screen: screenBackend ? { available: true, provider: screenBackend, targets: ['desktop'], requiresUserConsent: true } : unavailable('Desktop screenshot portal or Python D-Bus bindings are unavailable'),
   };
 }

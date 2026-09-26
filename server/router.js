@@ -1,5 +1,9 @@
 export function routeRequest(text) {
   const value = String(text).trim();
+  const targetedType = value.match(/^(?:jarvis[, ]+)?type\s+(.{1,500}?)\s+into\s+(.{2,120})[.!]?$/i);
+  if (targetedType) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: targetedType[1], target: { name: targetedType[2].trim() } }, confidence: 0.99 };
+  const targetedPress = value.match(/^(?:jarvis[, ]+)?press\s+([A-Za-z0-9+ ]{1,60})\s+in\s+(.{2,120})[.!]?$/i);
+  if (targetedPress) return { route: 'TOOL_CALL', capability: 'computer.keypress', args: { keys: targetedPress[1].trim(), target: { name: targetedPress[2].trim() } }, confidence: 0.99 };
   const typeText = value.match(/^(?:jarvis[, ]+)?type\s*:\s*([^\r\n]+)$/i);
   if (typeText && typeText[1].length <= 500) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: typeText[1] }, confidence: 1 };
   const pressKey = value.match(/^(?:jarvis[, ]+)?press\s+(?:(?:the\s+)?(?:key|keys)\s+)?([A-Za-z0-9+ ]{1,60})[.!]?$/i);
@@ -25,6 +29,9 @@ export function routeRequest(text) {
   if (media) return { route: 'TOOL_CALL', capability: 'media.generate', args: { kind: /video|clip/i.test(media[1]) ? 'video' : 'image', prompt: media[2] || value }, confidence: 0.99 };
   if (/^(open|launch|go to)\s+(youtube|youtube\.com)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: 'https://www.youtube.com', label: 'YouTube' }, confidence: 1 };
   const application = value.match(/^(?:please\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application))?[.!]?$/i);
+  const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
+  if (windowAction) return { route: 'TOOL_CALL', capability: `windows.${windowAction[1].toLowerCase()}`, args: { target: { name: windowAction[2].trim() } }, confidence: 0.99 };
+  if (/^(?:what(?:'s| is) (?:the )?active window|which window is active)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
   if (application && application[1].length <= 120) return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: application[1] }, confidence: 0.99 };
   const latestEmail = value.match(/\b(?:latest|last|recent|newest)\s*(\d{1,2})?\s*(?:e-?mails?|mails?)\b/i);
   if (latestEmail) return { route: 'TOOL_CALL', capability: 'gmail.latest', args: { limit: Math.min(20, Math.max(1, Number(latestEmail[1] || 4))) }, confidence: 0.99 };

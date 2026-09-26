@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { composioActionHash, composioToolRisk, executeComposioTool } from './composioAdapter.js';
 import { osPlatform } from './platform/index.js';
 import { computerCapabilities } from './platform/capabilities.js';
+import { resolveApp } from './platform/linux/apps.js';
+import { windowError } from './platform/linux/windows.js';
 import { browserManager } from './browser/index.js';
 import { listProjectStatus } from './projectIntelligence.js';
 import { callMcpTool, discoverMcpServers, mcpActionHash } from './mcpDiscovery.js';
@@ -23,6 +25,13 @@ import { generateMedia } from './mediaGeneration.js';
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const blockedRoots = new Set(['node_modules', 'dist', '.git', 'server/data']);
+
+export function appWindowMatches(app, window) {
+  const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const appId = normalize(window.appId);
+  const candidates = [app.id, app.startupWMClass, app.name, String(app.id || '').split('_').at(-1)].map(normalize).filter((value) => value.length >= 4);
+  return candidates.some((candidate) => appId === candidate || appId.startsWith(candidate) && /[-_.]/.test(String(window.appId || '').slice(candidate.length)) || !appId && normalize(window.title).startsWith(candidate));
+}
 
 function safePath(input = '.') {
   const candidate = path.resolve(workspaceRoot, input);
@@ -60,6 +69,7 @@ export const implementedToolIds = [
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
   'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'screen.capture',
+  'windows.list', 'windows.get_active', 'windows.find', 'windows.focus', 'windows.minimize', 'windows.maximize', 'windows.restore', 'windows.close',
 ];
 
 function requireExactApproval(toolId, input, approval, runId = null, hash = actionFingerprint(toolId, input)) {
@@ -113,10 +123,25 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'clipboard.read') return { ok: true, toolId, data: await osPlatform.clipboard.read() };
   if (toolId === 'clipboard.write') return { ok: true, toolId, data: await osPlatform.clipboard.write(input.text) };
   if (toolId === 'computer.capabilities') return { ok: true, toolId, data: await computerCapabilities() };
+  if (toolId.startsWith('windows.')) {
+    const windows = context.platform?.windows || osPlatform.windows;
+    if (!windows?.supported) throw windowError('WINDOW_OPERATION_UNSUPPORTED', 'Window control is unavailable on this desktop');
+    if (toolId === 'windows.list') return { ok: true, toolId, data: { windows: await windows.list() } };
+    if (toolId === 'windows.get_active') return { ok: true, toolId, data: { window: await windows.getActive() } };
+    if (toolId === 'windows.find') return { ok: true, toolId, data: { window: await windows.find(input.target) } };
+    if (toolId === 'windows.close') requireExactApproval(toolId, input, context.approval, context.runId);
+    const action = toolId.split('.')[1];
+    return { ok: true, toolId, data: { window: await windows[action](input.target) } };
+  }
   if (toolId === 'computer.keypress' || toolId === 'computer.type') {
     if (!getTool(toolId)?.enabled) throw new Error('Desktop input requires JARVIS_DESKTOP_INPUT=1 and JARVIS_AUTH_TOKEN');
     requireExactApproval(toolId, input, context.approval, context.runId);
-    const data = toolId === 'computer.keypress' ? await osPlatform.input.keypress(input.keys) : await osPlatform.input.type(input.text);
+    const platform = context.platform || osPlatform;
+    if (!input.target?.windowId) throw windowError('WINDOW_NOT_FOUND', 'Desktop input requires an exact approved window');
+    await platform.input.startSession();
+    const active = await platform.windows.getActive();
+    if (active?.windowId !== input.target.windowId || active.appId !== input.target.appId || input.target.processId && active.processId !== input.target.processId) throw windowError('TARGET_FOCUS_CHANGED', 'Desktop focus changed after approval; no input was sent');
+    const data = toolId === 'computer.keypress' ? await platform.input.keypress(input.keys) : await platform.input.type(input.text);
     return { ok: data.sent > 0, toolId, data };
   }
   if (toolId === 'screen.capture') return { ok: true, toolId, data: await osPlatform.screen.capture(input) };
@@ -164,6 +189,31 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'apps.open') {
     const name = String(input.name || '').trim();
     if (!name || name.length > 120) throw new Error('Application name must contain 1 to 120 characters');
+    const windows = context.platform?.windows || osPlatform.windows;
+    if (windows?.supported) {
+      const apps = context.platform?.apps || osPlatform.apps;
+      const resolution = resolveApp(name, await apps.list());
+      if (resolution.status !== 'resolved') return { ok: false, toolId, data: resolution };
+      const app = resolution.app;
+      const findMatches = async () => {
+        const all = await windows.list();
+        return all.filter((window) => appWindowMatches(app, window));
+      };
+      let matches = await findMatches();
+      if (matches.length > 1) throw windowError('AMBIGUOUS_TARGET', `Multiple ${app.name} windows are open`);
+      if (matches.length === 1) return { ok: true, toolId, data: { status: 'focused', app, window: await windows.focus({ windowId: matches[0].windowId }), verified: true } };
+      let launched;
+      try { launched = await apps.open(name); }
+      catch (error) { throw windowError('APP_LAUNCH_FAILED', `${app.name} could not be launched: ${error.message}`); }
+      if (launched.status !== 'launched') return { ok: false, toolId, data: launched };
+      for (let attempt = 0; attempt < 16; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        matches = await findMatches();
+        if (matches.length > 1) throw windowError('AMBIGUOUS_TARGET', `Multiple ${app.name} windows appeared`);
+        if (matches.length === 1) return { ok: true, toolId, data: { status: 'launched', app, window: await windows.focus({ windowId: matches[0].windowId }), verified: true } };
+      }
+      throw windowError('WINDOW_NOT_FOUND', `${app.name} launched but no matching window appeared`);
+    }
     const result = await osPlatform.apps.open(name);
     return { ok: result.status === 'launched', toolId, data: result };
   }
