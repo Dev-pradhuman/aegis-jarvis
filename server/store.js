@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failRun } from './runEngine.js';
 import { DEFAULT_APPROVAL_POLICY } from './approvalPolicy.js';
+import { expirePendingApprovals } from './approvalExpiry.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data');
 const file = path.join(root, 'state.json');
@@ -57,6 +58,7 @@ async function load() {
     const parsed = JSON.parse(await readFile(file, 'utf8'));
     await chmod(file, 0o600);
     const interrupted = recoverInterruptedRuns(parsed.runs);
+    const expiredApprovals = expirePendingApprovals(parsed);
     let removedDemoSeed = false;
     if (!parsed.demoSeedRemoved) {
       const demoTasks = new Map([['task-1', 'Research quantum computing'], ['task-2', 'Message Arjun'], ['task-3', 'Review system architecture'], ['task-4', 'Prepare meeting agenda']]);
@@ -68,7 +70,7 @@ async function load() {
       parsed.demoSeedRemoved = true;
       removedDemoSeed = true;
     }
-    if (interrupted || removedDemoSeed) await writeJsonAtomically(file, parsed);
+    if (interrupted || removedDemoSeed || expiredApprovals.length) await writeJsonAtomically(file, parsed);
     return { ...structuredClone(seed), ...parsed, approvalPolicy: { ...DEFAULT_APPROVAL_POLICY, ...(parsed.approvalPolicy || {}) }, reminders: parsed.reminders || [], runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;

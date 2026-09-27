@@ -14,6 +14,7 @@ import { resolveApprovalRequest } from './approvalContinuation.js';
 import { executeApiTool } from './apiToolRun.js';
 import { capabilityStatus } from './capabilityStatus.js';
 import { publicApprovalPolicy, validateApprovalRules } from './approvalPolicy.js';
+import { expirePendingApprovals } from './approvalExpiry.js';
 import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchMemory } from './systemModules.js';
 import { tick } from './scheduler.js';
 import { claimDueReminders, deliverDesktopReminder } from './reminders.js';
@@ -55,6 +56,7 @@ async function processSchedulerTick() {
   if (schedulerTickInFlight) return schedulerTickInFlight;
   schedulerTickInFlight = (async () => {
     const current = await getState();
+    expirePendingApprovals(current);
     const runs = await tick(current);
     const reminders = claimDueReminders(current);
     lastSchedulerTick = new Date().toISOString();
@@ -399,7 +401,7 @@ const server = http.createServer(async (req, res) => {
       if (!result.body.replayed) await updateState((draft) => { recordActivity(draft, activityEntry('task.updated', updated.title, { taskId: id })); return draft; });
       return json(res, 200, { task: updated });
     }
-    if (req.method === 'GET' && url.pathname === '/api/approvals') return json(res, 200, { approvals: state.approvals.filter((item) => item.status === 'pending') });
+    if (req.method === 'GET' && url.pathname === '/api/approvals') return json(res, 200, { approvals: state.approvals.filter((item) => item.status === 'pending' && Date.parse(item.expiresAt || 0) > Date.now()) });
     if (req.method === 'GET' && url.pathname === '/api/approval-policy') return json(res, 200, publicApprovalPolicy(state));
     if (req.method === 'PATCH' && url.pathname === '/api/approval-policy') {
       if (!process.env.JARVIS_AUTH_TOKEN) return json(res, 403, { code: 'AUTH_REQUIRED_FOR_POLICY', error: 'Set JARVIS_AUTH_TOKEN before changing approval policy' });
