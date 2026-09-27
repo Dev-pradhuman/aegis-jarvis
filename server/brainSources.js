@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { modelRegistry } from './modelRouting.js';
+import { presetFor, providerPresetRegistry } from './providerPresets.js';
 
 const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
 const sourceFile = path.join(dataDir, 'brain-sources.json');
@@ -28,7 +29,7 @@ function writePrivate(file, value) {
 
 function fail(code, message) { throw Object.assign(new Error(message), { code }); }
 function cleanCapabilities(value) { return [...new Set((Array.isArray(value) ? value : ['text']).filter((item) => allowedCapabilities.has(item)))]; }
-function mask(secret) { return `••••${String(secret).slice(-4)}`; }
+function mask(secret) { return secret ? `••••${String(secret).slice(-4)}` : 'Not configured'; }
 function sourceInput(input, current = {}) {
   const type = String(input.type ?? current.type ?? '').toUpperCase();
   if (!allowedTypes.has(type)) fail('BRAIN_SOURCE_INVALID', 'Choose an API, local, or CLI source');
@@ -47,16 +48,29 @@ function sourceInput(input, current = {}) {
   if (!logicalModels.length || logicalModels.some((item) => !modelRegistry()[item])) fail('BRAIN_SOURCE_INVALID', 'Select valid routing roles');
   const adapter = type === 'CLI' ? String(input.adapter ?? current.adapter ?? '') : null;
   if (type === 'CLI' && !cliAdapters[adapter]) fail('BRAIN_SOURCE_INVALID', 'Unsupported CLI adapter');
-  return { ...current, id: current.id || crypto.randomUUID(), name, type, provider: String(input.provider ?? current.provider ?? type.toLowerCase()).trim().slice(0, 50), baseUrl: type === 'CLI' ? '' : baseUrl.replace(/\/$/, ''), modelId, logicalModels, capabilities: cleanCapabilities(input.capabilities ?? current.capabilities), priority: Math.max(0, Math.min(1000, Number(input.priority ?? current.priority ?? 100) || 0)), enabled: input.enabled === undefined ? current.enabled !== false : Boolean(input.enabled), adapter, credentials: current.credentials || [], createdAt: current.createdAt || new Date().toISOString() };
+  return { ...current, id: current.id || crypto.randomUUID(), name, type, provider: String(input.provider ?? current.provider ?? type.toLowerCase()).trim().slice(0, 50), presetId: input.presetId ?? current.presetId ?? null, baseUrl: type === 'CLI' ? '' : baseUrl.replace(/\/$/, ''), modelId, logicalModels, capabilities: cleanCapabilities(input.capabilities ?? current.capabilities), priority: Math.max(0, Math.min(1000, Number(input.priority ?? current.priority ?? 100) || 0)), rolePriorities: input.rolePriorities ?? current.rolePriorities ?? {}, enabled: input.enabled === undefined ? current.enabled !== false : Boolean(input.enabled), adapter, credentials: current.credentials || [], createdAt: current.createdAt || new Date().toISOString() };
 }
 
 export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = secretFile, env = process.env } = {}) {
   const sources = readJson(sourcesPath, []);
   const secrets = readJson(secretsPath, {});
+  const secretFor = (credential) => credential?.envRef ? String(env[credential.envRef] || '') : String(secrets[credential?.id] || '');
+  // Environment credentials are referenced by name. Never copy their values to disk.
+  for (const preset of Object.values(providerPresetRegistry)) {
+    if (preset.providerType !== 'API' || !preset.envNames.length) continue;
+    const references = preset.envNames.flatMap((name) => Object.keys(env).filter((key) => (key === name || new RegExp(`^${name}_\\d+$`).test(key)) && env[key]));
+    if (!references.length) continue;
+    let source = sources.find((item) => item.presetId === preset.id);
+    if (!source) {
+      source = sourceInput({ name: preset.displayName, type: 'API', provider: preset.id, presetId: preset.id, baseUrl: preset.defaultBaseUrl, modelId: 'auto', logicalModels: ['muse-spark-1.2', 'deepseek-v4-flash', 'glm-5.2', 'laguna-s-2.1'], capabilities: preset.capabilities, priority: 20 });
+      sources.push(source);
+    }
+    for (const reference of references) if (!source.credentials.some((item) => item.envRef === reference)) source.credentials.push({ id: crypto.randomUUID(), envRef: reference, label: `Environment · ${reference}`, enabled: true, priority: source.credentials.length });
+  }
   const save = () => { writePrivate(secretsPath, secrets); writePrivate(sourcesPath, sources); };
   const find = (id) => { const source = sources.find((entry) => entry.id === id); if (!source) fail('BRAIN_SOURCE_NOT_FOUND', 'Brain source not found'); return source; };
-  const exposed = (source, health = {}) => ({ ...source, health: health[`brain-${source.id}`]?.status || 'UNKNOWN', credentials: source.credentials.map((credential) => ({ ...credential, hint: mask(secrets[credential.id] || ''), status: health[`brain-${credential.id}`]?.status || 'UNKNOWN', retryAfter: health[`brain-${credential.id}`]?.retryAfter || null })), secretConfigured: source.type !== 'API' || source.credentials.some((item) => Boolean(secrets[item.id])) });
-  const envKeys = () => Object.keys(env).filter((key) => /^(?:OPENROUTER|GEMINI|GROQ|XAI|ANTHROPIC|OPENAI|NVIDIA|CUSTOM|MODEL|OPENCODE_ZEN|NINEROUTER)_API_KEY(?:_\d+)?$/.test(key) && env[key]);
+  const exposed = (source, health = {}) => ({ ...source, health: health[`brain-${source.id}`]?.status || 'UNKNOWN', credentials: source.credentials.map((credential) => ({ ...credential, hint: mask(secretFor(credential)), status: health[`brain-${credential.id}`]?.status || 'UNKNOWN', retryAfter: health[`brain-${credential.id}`]?.retryAfter || null })), secretConfigured: source.type !== 'API' || source.credentials.some((item) => Boolean(secretFor(item))) });
+  const envKeys = () => Object.keys(env).filter((key) => (Object.values(providerPresetRegistry).some((preset) => preset.envNames.some((name) => key === name || key.startsWith(`${name}_`) && /^\d+$/.test(key.slice(name.length + 1)))) || /^(?:CUSTOM|MODEL|OPENCODE_ZEN|NINEROUTER)_API_KEY(?:_\d+)?$/.test(key)) && env[key]);
   const list = (health = {}) => sources.map((source) => exposed(source, health));
   const publicStatus = (health = {}) => {
     const entries = list(health);
@@ -71,6 +85,15 @@ export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = sec
     return { sources: entries, importedEnvironment: [...new Set([...importedKeys, ...configuredPoolKeys])].map((key) => ({ reference: key, hint: mask(env[key]) })), setupRequired: !configured, status };
   };
   const addSource = (input) => { const source = sourceInput(input); sources.push(source); save(); return exposed(source); };
+  const addPresetSource = (presetId, overrides = {}) => {
+    const preset = presetFor(presetId);
+    if (!preset || presetId === 'custom') fail('BRAIN_SOURCE_INVALID', 'Choose a known provider preset');
+    const existing = sources.find((item) => item.presetId === presetId);
+    if (existing) return exposed(existing);
+    const local = preset.providerType === 'LOCAL';
+    const source = sourceInput({ name: local ? 'Local Qwen' : preset.displayName, type: preset.providerType, provider: preset.id, presetId, baseUrl: preset.defaultBaseUrl, modelId: local ? 'qwen3:4b' : 'auto', logicalModels: ['muse-spark-1.2', 'deepseek-v4-flash', 'glm-5.2', 'laguna-s-2.1'], capabilities: preset.capabilities, priority: local ? 0 : 20, rolePriorities: local ? { 'muse-spark-1.2': 0, 'deepseek-v4-flash': 900, 'glm-5.2': 900, 'laguna-s-2.1': 900 } : {}, ...overrides });
+    sources.push(source); save(); return exposed(source);
+  };
   const updateSource = (id, input) => { const index = sources.findIndex((entry) => entry.id === id); if (index < 0) fail('BRAIN_SOURCE_NOT_FOUND', 'Brain source not found'); sources[index] = sourceInput(input, sources[index]); save(); return exposed(sources[index]); };
   const removeSource = (id) => { const source = find(id); for (const key of source.credentials) delete secrets[key.id]; sources.splice(sources.indexOf(source), 1); save(); };
   const addCredential = (sourceId, input) => {
@@ -78,18 +101,19 @@ export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = sec
     if (source.type !== 'API') fail('BRAIN_CREDENTIAL_INVALID', 'API keys are only used by API sources');
     const secret = String(input.secret || '').trim();
     if (!secret) fail('BRAIN_CREDENTIAL_INVALID', 'API key is required');
-    if (source.credentials.some((entry) => secrets[entry.id] === secret)) fail('BRAIN_CREDENTIAL_DUPLICATE', 'This key is already configured for the source');
+    if (source.credentials.some((entry) => secretFor(entry) === secret)) fail('BRAIN_CREDENTIAL_DUPLICATE', 'This key is already configured for the source');
     const credential = { id: crypto.randomUUID(), label: String(input.label || '').trim().slice(0, 60), enabled: true, priority: source.credentials.length, createdAt: new Date().toISOString() };
     source.credentials.push(credential); secrets[credential.id] = secret; save(); return { ...credential, hint: mask(secret), status: 'UNKNOWN' };
   };
-  const updateCredential = (sourceId, credentialId, input) => { const credential = find(sourceId).credentials.find((item) => item.id === credentialId); if (!credential) fail('BRAIN_CREDENTIAL_NOT_FOUND', 'Credential not found'); if (typeof input.enabled === 'boolean') credential.enabled = input.enabled; if (Number.isFinite(input.priority)) credential.priority = Math.max(0, Math.min(1000, input.priority)); save(); return { ...credential, hint: mask(secrets[credential.id]) }; };
+  const updateCredential = (sourceId, credentialId, input) => { const credential = find(sourceId).credentials.find((item) => item.id === credentialId); if (!credential) fail('BRAIN_CREDENTIAL_NOT_FOUND', 'Credential not found'); if (typeof input.enabled === 'boolean') credential.enabled = input.enabled; if (Number.isFinite(input.priority)) credential.priority = Math.max(0, Math.min(1000, input.priority)); save(); return { ...credential, hint: mask(secretFor(credential)) }; };
   const removeCredential = (sourceId, credentialId) => { const source = find(sourceId); const index = source.credentials.findIndex((item) => item.id === credentialId); if (index < 0) fail('BRAIN_CREDENTIAL_NOT_FOUND', 'Credential not found'); source.credentials.splice(index, 1); delete secrets[credentialId]; save(); };
-  const credentialSecret = (id) => secrets[id] || '';
+  const credentialSecret = (id) => { for (const source of sources) { const credential = source.credentials.find((item) => item.id === id); if (credential) return secretFor(credential); } return ''; };
   const poolEntries = () => sources.filter((source) => source.enabled).flatMap((source) => {
-    const keys = source.type === 'API' ? source.credentials.filter((item) => item.enabled && secrets[item.id]) : [{ id: source.id, priority: 0 }];
-    return source.logicalModels.flatMap((logicalModel) => keys.map((credential) => ({ id: `brain-${credential.id}`, sourceId: source.id, type: source.type, provider: source.provider, baseUrl: source.baseUrl, modelId: source.modelId, logicalModel, capabilities: source.capabilities, modalities: source.capabilities.filter((item) => ['text', 'image', 'audio', 'video'].includes(item)), priority: source.priority * 1000 + credential.priority, credentialId: source.type === 'API' ? credential.id : null, adapter: source.adapter })));
+    if (source.modelId === 'auto') return [];
+    const keys = source.type === 'API' ? source.credentials.filter((item) => item.enabled && secretFor(item)) : [{ id: source.id, priority: 0 }];
+    return source.logicalModels.flatMap((logicalModel) => keys.map((credential) => ({ id: `brain-${credential.id}`, sourceId: source.id, type: source.type, provider: source.provider, presetId: source.presetId, baseUrl: source.baseUrl, modelId: source.modelId, logicalModel, capabilities: source.capabilities, modalities: source.capabilities.filter((item) => ['text', 'image', 'audio', 'video'].includes(item)), priority: (source.rolePriorities?.[logicalModel] ?? source.priority) * 1000 + credential.priority, credentialId: source.type === 'API' ? credential.id : null, adapter: source.adapter })));
   });
-  return { list, publicStatus, addSource, updateSource, removeSource, addCredential, updateCredential, removeCredential, credentialSecret, poolEntries, find, envKeys };
+  return { list, publicStatus, addSource, addPresetSource, updateSource, removeSource, addCredential, updateCredential, removeCredential, credentialSecret, poolEntries, find, envKeys };
 }
 
 export const brainCatalog = createBrainCatalog();

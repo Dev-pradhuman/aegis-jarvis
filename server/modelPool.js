@@ -1,5 +1,7 @@
 import { modelRegistry } from './modelRouting.js';
 import { brainCatalog } from './brainSources.js';
+import { resolveAutoBrainModels } from './brainService.js';
+import { presetFor } from './providerPresets.js';
 import { spawn } from 'node:child_process';
 
 const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Object.keys(process.env).filter((key) => /^OPENROUTER_API_KEY_\d+$/.test(key)).sort((a, b) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, priority: 500, ...extra }));
@@ -92,14 +94,40 @@ function cooldownMs(response, kind) {
 async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = [], catalog = brainCatalog) {
   if (provider.type === 'CLI') return callCliProvider(provider, messages, timeoutMs);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), provider.presetId === 'ollama' ? Math.max(timeoutMs, 90_000) : timeoutMs);
   try {
-    return await fetchImpl(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    const secret = provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef];
+    const anthropic = presetFor(provider.presetId)?.apiFormat === 'anthropic-messages';
+    const ollama = provider.presetId === 'ollama';
+    const system = messages.filter((item) => item.role === 'system').map((item) => item.content).filter((item) => typeof item === 'string').join('\n');
+    const requestMessages = anthropic ? messages.filter((item) => item.role !== 'system').map((item) => {
+      if (item.role === 'tool') return { role: 'user', content: [{ type: 'tool_result', tool_use_id: item.tool_call_id, content: String(item.content || '') }] };
+      if (item.role === 'assistant' && item.tool_calls?.length) {
+        const content = typeof item.content === 'string' && item.content ? [{ type: 'text', text: item.content }] : [];
+        for (const call of item.tool_calls) {
+          let input = {};
+          try { input = JSON.parse(call.function?.arguments || '{}'); } catch {}
+          content.push({ type: 'tool_use', id: call.id, name: call.function?.name, input });
+        }
+        return { role: 'assistant', content };
+      }
+      return item;
+    }) : messages;
+    const maxTokens = Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048)));
+    const body = ollama ? { model: provider.modelId, messages: [{ role: 'system', content: '/no_think' }, ...messages], stream: false, think: false, options: { num_predict: Math.min(512, maxTokens) }, ...(toolSpecs.length ? { tools: toolSpecs } : {}) } : anthropic ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) } : { model: provider.modelId, messages, max_tokens: maxTokens, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
+    const endpoint = ollama ? `${new URL(provider.baseUrl).origin}/api/chat` : `${provider.baseUrl.replace(/\/$/, '')}${anthropic ? '/messages' : '/chat/completions'}`;
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
       signal: controller.signal,
-      headers: { 'content-type': 'application/json', ...((provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef]) ? { authorization: `Bearer ${provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef]}` } : {}) },
-      body: JSON.stringify({ model: provider.modelId, messages, temperature: 0.2, max_tokens: Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048))), ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) }),
+      headers: { 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}), ...(anthropic ? { 'anthropic-version': '2023-06-01' } : {}) },
+      body: JSON.stringify(body),
     });
+    if ((!anthropic && !ollama) || !response.ok) return response;
+    const payload = await response.json().catch(() => ({}));
+    if (ollama) return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content: String(payload.message?.content || '').split('</think>').at(-1).trim(), tool_calls: payload.message?.tool_calls?.map((item, index) => ({ id: item.id || `ollama-tool-${index}`, type: 'function', function: { name: item.function?.name || item.name, arguments: JSON.stringify(item.function?.arguments || item.arguments || {}) } })) || [] } }], usage: { prompt_tokens: payload.prompt_eval_count || 0, completion_tokens: payload.eval_count || 0, total_tokens: Number(payload.prompt_eval_count || 0) + Number(payload.eval_count || 0) } }) };
+    const content = payload.content?.filter((item) => item.type === 'text').map((item) => item.text).join('') || '';
+    const toolCalls = payload.content?.filter((item) => item.type === 'tool_use').map((item) => ({ id: item.id, type: 'function', function: { name: item.name, arguments: JSON.stringify(item.input || {}) } })) || [];
+    return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content, tool_calls: toolCalls } }], usage: { prompt_tokens: payload.usage?.input_tokens, completion_tokens: payload.usage?.output_tokens, total_tokens: Number(payload.usage?.input_tokens || 0) + Number(payload.usage?.output_tokens || 0) } }) };
   } catch (error) {
     return { ok: false, status: 0, headers: new Headers(), json: async () => ({ error: { message: error.name === 'AbortError' ? 'Provider request timed out' : error.message } }) };
   } finally {
@@ -146,6 +174,7 @@ function userContent(request, attachments, modality) {
 }
 
 export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null, catalog = brainCatalog }) {
+  if (catalog.list().some((source) => source.modelId === 'auto' && source.secretConfigured)) await resolveAutoBrainModels({ catalog, fetchImpl });
   const registry = modelRegistry();
   const pools = configuredPools(catalog);
   const routing = state.modelRouting ??= {};

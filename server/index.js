@@ -34,7 +34,8 @@ import { executeModelPool } from './modelPool.js';
 import { invokeToolRequest } from './toolRuntime.js';
 import { unattendedTool, unattendedTools } from './toolPolicy.js';
 import { brainCatalog } from './brainSources.js';
-import { detectedCliSources, discoverBrainModels, testBrainSource } from './brainService.js';
+import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from './brainService.js';
+import { publicProviderPresets, presetFor } from './providerPresets.js';
 
 const port = Number(process.env.JARVIS_PORT || 8787);
 const processStartedAt = Date.now();
@@ -121,8 +122,36 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname.startsWith('/api/media/jobs/')) { const id = url.pathname.split('/').pop(); const existing = (state.mediaJobs || []).find((job) => job.id === id); if (!existing) return json(res, 404, { error: 'Media job not found' }); const job = await refreshVideoJob(existing); await updateState((draft) => { const index = (draft.mediaJobs || []).findIndex((item) => item.id === id); if (index >= 0) draft.mediaJobs[index] = job; return draft; }); return json(res, 200, { job: { ...job, operationName: undefined, credentialSlot: undefined, downloadUri: job.downloadUri ? `/api/media/jobs/${job.id}/download` : null } }); }
     if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicConfig());
     if (req.method === 'PATCH' && url.pathname === '/api/config') { const config = saveConfig(await body(req)); return json(res, 200, config); }
-    if (req.method === 'GET' && url.pathname === '/api/brain') return json(res, 200, { ...brainCatalog.publicStatus(state.modelRouting?.providerHealth), configurationLocked: !process.env.JARVIS_AUTH_TOKEN, cli: detectedCliSources(), models: modelRegistry(), routing: { modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || null, lockedSourceId: state.modelRouting?.lockedSourceId || null, manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false }, events: (state.modelRouting?.telemetry || []).flatMap((item) => item.providerAttempts || []).slice(-30) });
+    if (req.method === 'GET' && url.pathname === '/api/brain') {
+      const runtime = await ollamaRuntimeStatus();
+      const status = brainCatalog.publicStatus(state.modelRouting?.providerHealth);
+      if (runtime.status !== 'MODEL_AVAILABLE') for (const source of status.sources) if (source.presetId === 'ollama') source.health = runtime.status;
+      if (runtime.status !== 'MODEL_AVAILABLE' && status.sources.every((source) => source.type === 'LOCAL')) status.status = runtime.status;
+      return json(res, 200, { ...status, configurationLocked: !process.env.JARVIS_AUTH_TOKEN, localRuntime: runtime, presets: publicProviderPresets(), cli: detectedCliSources(), models: modelRegistry(), routing: { modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || null, lockedSourceId: state.modelRouting?.lockedSourceId || null, manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false }, events: (state.modelRouting?.telemetry || []).flatMap((item) => item.providerAttempts || []).slice(-30) });
+    }
     if (url.pathname.startsWith('/api/brain/') && !process.env.JARVIS_AUTH_TOKEN && req.method !== 'GET') return json(res, 403, { code: 'BRAIN_AUTH_REQUIRED', error: 'Configure JARVIS_AUTH_TOKEN before editing Brain sources' });
+    if (req.method === 'POST' && url.pathname === '/api/brain/test-all') {
+      const tasks = brainCatalog.list().flatMap((source) => source.type === 'API' ? source.credentials.filter((key) => key.enabled).map((key) => ({ source, credentialId: key.id })) : [{ source, credentialId: null }]);
+      const results = await Promise.all(tasks.map(async ({ source, credentialId }) => {
+        const result = await testBrainSource(source.id, credentialId);
+        await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || source.id}`] = { status: result.status, lastCheckedAt: new Date().toISOString() }; return draft; });
+        return { sourceId: source.id, credentialId, ...result };
+      }));
+      return json(res, 200, { results });
+    }
+    if (req.method === 'POST' && url.pathname.match(/^\/api\/brain\/presets\/[^/]+\/connect$/)) {
+      const presetId = url.pathname.split('/')[4]; const preset = presetFor(presetId);
+      if (!preset || presetId === 'custom') return json(res, 400, { error: 'Choose a known provider preset' });
+      const input = await body(req);
+      if (preset.providerType === 'API' && !String(input.secret || '').trim()) return json(res, 400, { error: 'Paste an API key' });
+      try {
+        const source = brainCatalog.addPresetSource(presetId);
+        const credential = preset.providerType === 'API' ? brainCatalog.addCredential(source.id, { secret: input.secret }) : null;
+        const result = await testBrainSource(source.id, credential?.id || null);
+        await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credential?.id || source.id}`] = { status: result.status, lastCheckedAt: new Date().toISOString() }; return draft; });
+        return json(res, 200, { sourceId: source.id, credentialId: credential?.id || null, result });
+      } catch (error) { if (error.code?.startsWith('BRAIN_')) return json(res, 400, { code: error.code, error: error.message }); throw error; }
+    }
     if (req.method === 'GET' && url.pathname === '/api/brain/sources') return json(res, 200, { sources: brainCatalog.list(state.modelRouting?.providerHealth) });
     if (req.method === 'POST' && url.pathname === '/api/brain/sources') { const source = brainCatalog.addSource(await body(req)); return json(res, 201, { source }); }
     const sourceRoute = url.pathname.match(/^\/api\/brain\/sources\/([^/]+)(?:\/(credentials|test|models))?(?:\/([^/]+))?(?:\/(test))?$/);

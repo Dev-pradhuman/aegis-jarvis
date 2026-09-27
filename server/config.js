@@ -27,10 +27,17 @@ export function loadEnvFile() {
 export function publicConfig() { return Object.fromEntries(CONFIG_KEYS.map((key) => { const value = String(process.env[key] || ''); const configured = key === 'COMPOSIO_API_KEY' ? value.startsWith('ak_') : Boolean(value); return [key, { configured, value: '', ...(key === 'COMPOSIO_API_KEY' && value.startsWith('ck_') ? { issue: 'Consumer key detected; Platform Project API key required' } : {}) }]; })); }
 
 export function saveConfig(values = {}) {
-  const lines = [];
-  for (const key of CONFIG_KEYS) { if (values[key] !== undefined && String(values[key]).length) process.env[key] = String(values[key]); if (process.env[key]) lines.push(`${key}=${JSON.stringify(process.env[key])}`); }
+  const existing = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8').split(/\r?\n/) : [];
+  const existingKeys = new Set(existing.map((line) => line.match(/^\s*([A-Z0-9_]+)\s*=/)?.[1]).filter(Boolean));
+  const known = new Set(CONFIG_KEYS);
+  const lines = existing.filter((line) => { const key = line.match(/^\s*([A-Z0-9_]+)\s*=/)?.[1]; return line.trim() && (!key || !known.has(key)); });
+  for (const key of CONFIG_KEYS) {
+    if (values[key] !== undefined && String(values[key]).length) process.env[key] = String(values[key]);
+    if ((existingKeys.has(key) || values[key] !== undefined && String(values[key]).length) && process.env[key]) lines.push(`${key}=${JSON.stringify(process.env[key])}`);
+  }
   fs.mkdirSync(path.dirname(envFile), { recursive: true });
   fs.writeFileSync(envFile, `${lines.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+  fs.chmodSync(envFile, 0o600);
   return publicConfig();
 }
 

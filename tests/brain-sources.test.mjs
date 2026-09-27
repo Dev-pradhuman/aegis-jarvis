@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createBrainCatalog } from '../server/brainSources.js';
 import { executeModelPool, configuredPools } from '../server/modelPool.js';
-import { detectedCliSources, discoverBrainModels, testBrainSource } from '../server/brainService.js';
+import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from '../server/brainService.js';
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-brain-'));
@@ -109,8 +109,164 @@ test('401 disables only that key, tool requests skip text-only sources, and stri
 test('local model discovery and health are grounded in the endpoint response', async (t) => {
   const { catalog } = fixture(t);
   const local = catalog.addSource({ name: 'Local', type: 'LOCAL', provider: 'local', baseUrl: 'http://127.0.0.1:2222/v1', modelId: 'local-model', logicalModels: ['muse-spark-1.2'], capabilities: ['text'] });
-  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'real-model' }] }) });
+  const fetchImpl = async (url, init) => ({ ok: true, status: 200, json: async () => url.endsWith('/models') ? { data: [{ id: 'real-model' }] } : JSON.parse(init.body).tools ? { choices: [{ message: { tool_calls: [{ function: { name: 'report_ready' } }] } }] } : { choices: [{ message: { content: 'JARVIS_LOCAL_OK' } }] } });
   assert.equal((await discoverBrainModels(local.id, { catalog, fetchImpl })).models[0].id, 'real-model');
-  assert.equal((await testBrainSource(local.id, null, { catalog, fetchImpl })).status, 'HEALTHY');
+  const checked = await testBrainSource(local.id, null, { catalog, fetchImpl });
+  assert.equal(checked.status, 'HEALTHY');
+  assert.deepEqual(checked.capabilities, ['text', 'tools']);
+  const misleading = await testBrainSource(local.id, null, { catalog, fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'unexpected' } }] }) }) });
+  assert.equal(misleading.status, 'UNVERIFIED');
   assert.ok(detectedCliSources().every((item) => !['READY', 'HEALTHY'].includes(item.status)));
+});
+
+test('known presets reference environment keys without copying them to secret storage', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-env-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const env = { OPENAI_API_KEY: 'private-value' };
+  const catalog = createBrainCatalog({ sourcesPath: path.join(dir, 'sources.json'), secretsPath: path.join(dir, 'secrets.json'), env });
+  const source = catalog.list().find((item) => item.presetId === 'openai');
+  assert.equal(source.credentials.length, 1);
+  assert.equal(source.credentials[0].envRef, 'OPENAI_API_KEY');
+  assert.equal(source.credentials[0].hint, '••••alue');
+  assert.ok(!JSON.stringify(catalog.publicStatus()).includes('private-value'));
+  assert.equal(fs.existsSync(path.join(dir, 'secrets.json')), false);
+});
+
+test('numbered environment keys join the same preset pool without copying secrets', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-env-pool-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const catalog = createBrainCatalog({ sourcesPath: path.join(dir, 'sources.json'), secretsPath: path.join(dir, 'secrets.json'), env: { OPENROUTER_API_KEY_1: 'backup-one', OPENROUTER_API_KEY_2: 'backup-two' } });
+  const source = catalog.list().find((item) => item.presetId === 'openrouter');
+  assert.equal(source.credentials.length, 2);
+  assert.deepEqual(source.credentials.map((item) => item.envRef), ['OPENROUTER_API_KEY_1', 'OPENROUTER_API_KEY_2']);
+  assert.equal(fs.existsSync(path.join(dir, 'secrets.json')), false);
+});
+
+test('Ollama pool uses native non-thinking chat and normalizes tool output', async (t) => {
+  const { catalog } = fixture(t);
+  const local = catalog.addPresetSource('ollama', { logicalModels: ['muse-spark-1.2'], capabilities: ['text', 'tools'] });
+  const original = process.env.MODEL_PROVIDER_POOLS;
+  process.env.MODEL_PROVIDER_POOLS = JSON.stringify({ 'muse-spark-1.2': [] });
+  t.after(() => original === undefined ? delete process.env.MODEL_PROVIDER_POOLS : process.env.MODEL_PROVIDER_POOLS = original);
+  let request;
+  const result = await executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'hello', state: {}, catalog, toolSpecs: [{ type: 'function', function: { name: 'report_ready', parameters: { type: 'object', properties: {} } } }], fetchImpl: async (url, init) => { request = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, headers: new Headers(), json: async () => ({ message: { content: '<think>private</think>ready', tool_calls: [{ function: { name: 'report_ready', arguments: { value: true } } }] }, eval_count: 2 }) }; } });
+  assert.equal(request.url, 'http://127.0.0.1:11434/api/chat');
+  assert.equal(request.body.think, false);
+  assert.equal(request.body.messages[0].content, '/no_think');
+  assert.equal(result.reply, 'ready');
+  assert.equal(result.toolCalls[0].function.name, 'report_ready');
+  assert.equal(result.provider, `brain-${local.id}`);
+});
+
+test('preset connection selects a discovered chat model only after inference succeeds', async (t) => {
+  const { catalog } = fixture(t);
+  const source = catalog.addPresetSource('groq');
+  const key = catalog.addCredential(source.id, { secret: 'mock-private-key' });
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, authorization: init.headers.authorization });
+    return { ok: true, status: 200, json: async () => url.endsWith('/models') ? { data: [{ id: 'speech-to-text' }, { id: 'chat-model' }] } : { choices: [{ message: { content: 'JARVIS_LOCAL_OK' } }] } };
+  };
+  const tested = await testBrainSource(source.id, key.id, { catalog, fetchImpl });
+  assert.equal(tested.status, 'HEALTHY');
+  assert.equal(catalog.find(source.id).modelId, 'chat-model');
+  assert.ok(calls.some((call) => call.url.endsWith('/chat/completions')));
+  assert.ok(calls.every((call) => call.authorization === 'Bearer mock-private-key'));
+  assert.ok(!JSON.stringify(catalog.publicStatus()).includes('mock-private-key'));
+});
+
+test('Together preset uses current API base and accepts its array model catalog', async (t) => {
+  const { catalog } = fixture(t);
+  const source = catalog.addPresetSource('together');
+  const key = catalog.addCredential(source.id, { secret: 'mock-private-key' });
+  const urls = [];
+  const fetchImpl = async (url) => { urls.push(url); return { ok: true, status: 200, json: async () => url.endsWith('/models') ? [{ id: 'embed-new', type: 'embedding', created: 999 }, { id: 'chat-model', type: 'chat', created: 1 }] : { choices: [{ message: { content: 'ready' } }] } }; };
+  const result = await testBrainSource(source.id, key.id, { catalog, fetchImpl });
+  assert.equal(result.status, 'HEALTHY');
+  assert.equal(result.modelId, 'chat-model');
+  assert.ok(urls.every((url) => url.startsWith('https://api.together.ai/v1/')));
+});
+
+test('Anthropic preset preserves tool calls and tool results in canonical continuation', async (t) => {
+  const { catalog } = fixture(t);
+  const source = catalog.addPresetSource('anthropic', { modelId: 'test-model', logicalModels: ['muse-spark-1.2'], capabilities: ['text', 'tools'] });
+  catalog.addCredential(source.id, { secret: 'mock-private-key' });
+  const original = process.env.MODEL_PROVIDER_POOLS;
+  process.env.MODEL_PROVIDER_POOLS = JSON.stringify({ 'muse-spark-1.2': [] });
+  t.after(() => original === undefined ? delete process.env.MODEL_PROVIDER_POOLS : process.env.MODEL_PROVIDER_POOLS = original);
+  let sent;
+  const result = await executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'continue', state: {}, catalog, messagesOverride: [
+    { role: 'system', content: 'Use tools when needed.' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 'call-1', function: { name: 'status', arguments: '{"detail":true}' } }] },
+    { role: 'tool', tool_call_id: 'call-1', content: '{"ok":true}' },
+  ], fetchImpl: async (url, init) => { sent = { url, headers: init.headers, body: JSON.parse(init.body) }; return { ok: true, status: 200, headers: new Headers(), json: async () => ({ content: [{ type: 'text', text: 'Done' }], usage: { input_tokens: 5, output_tokens: 1 } }) }; } });
+  assert.ok(sent.url.endsWith('/messages'));
+  assert.equal(sent.headers['anthropic-version'], '2023-06-01');
+  assert.equal(sent.body.messages[0].content[0].type, 'tool_use');
+  assert.deepEqual(sent.body.messages[0].content[0].input, { detail: true });
+  assert.equal(sent.body.messages[1].content[0].tool_use_id, 'call-1');
+  assert.equal(result.reply, 'Done');
+});
+
+test('Anthropic discovery keeps tools only after a successful tool probe', async (t) => {
+  const { catalog } = fixture(t);
+  const source = catalog.addPresetSource('anthropic');
+  const key = catalog.addCredential(source.id, { secret: 'mock-private-key' });
+  const fetchImpl = async (url, init) => ({ ok: true, status: 200, json: async () => url.endsWith('/models') ? { data: [{ id: 'claude-test-model' }] } : JSON.parse(init.body).tools ? { content: [{ type: 'tool_use', name: 'report_ready', input: { value: true } }] } : { content: [{ type: 'text', text: 'JARVIS_LOCAL_OK' }] } });
+  const result = await testBrainSource(source.id, key.id, { catalog, fetchImpl });
+  assert.equal(result.status, 'HEALTHY');
+  assert.equal(result.toolStatus, 'HEALTHY');
+  assert.deepEqual(catalog.find(source.id).capabilities, ['text', 'tools']);
+});
+
+test('provider failover reaches a second API and then local, while vision rejects text-only local', async (t) => {
+  const { catalog } = fixture(t);
+  const first = catalog.addSource(source('first', ['deepseek-v4-flash'], ['text', 'tools']));
+  catalog.addCredential(first.id, { secret: 'first-key' });
+  const second = catalog.addSource(source('second', ['deepseek-v4-flash'], ['text', 'tools']));
+  const secondKey = catalog.addCredential(second.id, { secret: 'second-key' });
+  const local = catalog.addSource({ name: 'Local Qwen', type: 'LOCAL', provider: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1', modelId: 'qwen3:4b', logicalModels: ['deepseek-v4-flash', 'glm-5.2'], capabilities: ['text', 'tools'], priority: 3 });
+  const previous = process.env.MODEL_PROVIDER_POOLS;
+  process.env.MODEL_PROVIDER_POOLS = JSON.stringify({ 'deepseek-v4-flash': [], 'glm-5.2': [] });
+  t.after(() => previous === undefined ? delete process.env.MODEL_PROVIDER_POOLS : process.env.MODEL_PROVIDER_POOLS = previous);
+  const state = { modelRouting: { providerHealth: {} } };
+  const cloud = await executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'hello', state, catalog, fetchImpl: async (url) => url.includes('first.example') ? failure(503, 'unavailable') : reply('second works') });
+  assert.equal(cloud.provider, `brain-${secondKey.id}`);
+  const offline = await executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'hello', state: {}, catalog, fetchImpl: async (url) => url.includes('127.0.0.1') ? reply('local works') : failure(503, 'unavailable') });
+  assert.equal(offline.provider, `brain-${local.id}`);
+  await assert.rejects(() => executeModelPool({ logicalModel: 'nemotron-3-nano-omni', request: 'describe image', requiredModality: 'image', attachments: [{ url: 'https://example.test/image.png' }], state: {}, catalog, fetchImpl: async () => reply('wrong') }), { code: 'CAPABILITY_UNAVAILABLE' });
+});
+
+test('Ollama runtime distinguishes stopped service from missing and installed model', async (t) => {
+  const { catalog } = fixture(t);
+  catalog.addPresetSource('ollama');
+  const stopped = await ollamaRuntimeStatus({ catalog, fetchImpl: async () => { throw new Error('connection refused'); } });
+  assert.equal(stopped.status, 'RUNTIME_STOPPED');
+  const fetchImpl = async (url) => ({ ok: true, json: async () => url.endsWith('/api/version') ? { version: 'test' } : { models: [{ name: 'qwen3:4b' }] } });
+  const ready = await ollamaRuntimeStatus({ catalog, fetchImpl });
+  assert.equal(ready.status, 'MODEL_AVAILABLE');
+  assert.equal(ready.modelInstalled, true);
+  const missing = await ollamaRuntimeStatus({ catalog, fetchImpl: async (url) => ({ ok: true, json: async () => url.endsWith('/api/version') ? { version: 'test' } : { models: [] } }) });
+  assert.equal(missing.status, 'MODEL_MISSING');
+});
+
+test('OpenAI preset discovers a model and probes chat before registering it for routing', async (t) => {
+  const { catalog } = fixture(t);
+  const source = catalog.addPresetSource('openai');
+  const key = catalog.addCredential(source.id, { secret: 'test-only-credential' });
+  const requests = [];
+  const fetchImpl = async (url, init) => {
+    requests.push({ url, body: init.body ? JSON.parse(init.body) : null });
+    return url.endsWith('/models') ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'chat-model', created: 1 }] }) } : reply('ready');
+  };
+  const result = await testBrainSource(source.id, key.id, { catalog, fetchImpl });
+  assert.equal(result.status, 'HEALTHY');
+  assert.equal(catalog.find(source.id).modelId, 'chat-model');
+  assert.equal(requests[1].body.max_completion_tokens, 80);
+  assert.ok(!JSON.stringify(catalog.publicStatus()).includes('test-only-credential'));
+  const untested = catalog.addPresetSource('groq');
+  catalog.addCredential(untested.id, { secret: 'another-test-credential' });
+  const failed = await testBrainSource(untested.id, null, { catalog, fetchImpl: async (url) => url.endsWith('/models') ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'unusable-chat-model' }] }) } : failure(400, 'model unavailable') });
+  assert.equal(failed.status, 'MODEL_UNAVAILABLE');
+  assert.equal(catalog.find(untested.id).modelId, 'auto');
 });
