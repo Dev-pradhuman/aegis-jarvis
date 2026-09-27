@@ -7,9 +7,13 @@ import { assembleModelContext } from './contextAssembler.js';
 import { modelRegistry, selectLogicalModel } from './modelRouting.js';
 import { executeBrainWorkflow } from './brainWorkflow.js';
 import { openWebAiSession, webAiStatus } from './webAiProvider.js';
-import { paidApiUsageEnabled } from './spendPolicy.js';
+import { paidApiUsageEnabled, pricingClass } from './spendPolicy.js';
 import { executeTool } from './toolExecutor.js';
 import { runWorkflow, workflowSummary } from './workflowEngine.js';
+import { resolveApprovalRequest } from './approvalContinuation.js';
+import { executeApiTool } from './apiToolRun.js';
+import { capabilityStatus } from './capabilityStatus.js';
+import { publicApprovalPolicy, validateApprovalRules } from './approvalPolicy.js';
 import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchMemory } from './systemModules.js';
 import { tick } from './scheduler.js';
 import crypto from 'node:crypto';
@@ -202,7 +206,7 @@ const server = http.createServer(async (req, res) => {
         const response = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, { signal: controller.signal, headers: { accept: 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) return json(res, response.status, { error: payload.error?.message || `Provider returned HTTP ${response.status}` });
-        const models = Array.isArray(payload.data) ? payload.data.map((item) => { const pricing = item.pricing || item.price || null; const prompt = pricing?.prompt ?? pricing?.input ?? pricing?.input_token_cost; const completion = pricing?.completion ?? pricing?.output ?? pricing?.output_token_cost; return { id: item.id, name: item.name || item.id, pricing, free: Boolean(item.free || item.is_free || /(?:^|[-:])free$/i.test(item.id || '') || (pricing && Number(prompt || 0) === 0 && Number(completion || 0) === 0)) }; }).filter((item) => item.id) : [];
+        const models = Array.isArray(payload.data) ? payload.data.map((item) => { const pricingType = pricingClass(item); return { id: item.id, name: item.name || item.id, pricingType, free: pricingType === 'FREE_MODEL' }; }).filter((item) => item.id) : [];
         return json(res, 200, { provider: provider.id, models });
       } catch (error) { return json(res, 502, { error: error.name === 'AbortError' ? 'Model request timed out' : error.message }); }
       finally { clearTimeout(timer); }
@@ -316,7 +320,8 @@ const server = http.createServer(async (req, res) => {
       await updateState((draft) => { recordActivity(draft, activityEntry('event.received', type, { runs: runs.length })); return draft; });
       return json(res, 202, { accepted: true, type, runs: runs.map((run) => run.id) });
     }
-    if (req.method === 'GET' && url.pathname === '/api/capabilities') return json(res, 200, { assistant: 'JARVIS', capabilities: listCapabilities() });
+    if (req.method === 'GET' && url.pathname === '/api/capabilities') return json(res, 200, { assistant: 'JARVIS', capabilities: listCapabilities(), status: capabilityStatus(state, { brainSources: brainCatalog.list(), web: webAiStatus() }) });
+    if (req.method === 'GET' && url.pathname === '/api/capabilities/status') return json(res, 200, { status: capabilityStatus(state, { brainSources: brainCatalog.list(), web: webAiStatus() }) });
     if (req.method === 'GET' && url.pathname === '/api/tools') return json(res, 200, { tools: listTools() });
     if (req.method === 'GET' && url.pathname === '/api/workflows') return json(res, 200, { workflows: state.workflows || [], summary: workflowSummary(state.workflows || []) });
     if (req.method === 'POST' && url.pathname === '/api/workflows') {
@@ -349,7 +354,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/scheduler') return json(res, 200, { enabled: schedulerEnabled, intervalSeconds: schedulerInterval / 1000, lastTickAt: lastSchedulerTick });
     if (req.method === 'POST' && url.pathname === '/api/scheduler/tick') { const runs = await tick(state); await updateState((draft) => draft); return json(res, 200, { runs, tickedAt: new Date().toISOString() }); }
     if (req.method === 'POST' && url.pathname === '/api/tools/execute') {
-      const result = await invokeToolRequest(state, await body(req));
+      const result = await executeApiTool(state, await body(req));
       return json(res, result.status, result.body);
     }
     if (req.method === 'GET' && url.pathname === '/api/tasks') return json(res, 200, { tasks: state.tasks });
@@ -371,44 +376,28 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { task: updated });
     }
     if (req.method === 'GET' && url.pathname === '/api/approvals') return json(res, 200, { approvals: state.approvals.filter((item) => item.status === 'pending') });
+    if (req.method === 'GET' && url.pathname === '/api/approval-policy') return json(res, 200, publicApprovalPolicy(state));
+    if (req.method === 'PATCH' && url.pathname === '/api/approval-policy') {
+      if (!process.env.JARVIS_AUTH_TOKEN) return json(res, 403, { code: 'AUTH_REQUIRED_FOR_POLICY', error: 'Set JARVIS_AUTH_TOKEN before changing approval policy' });
+      const input = await body(req);
+      if (!['SAFE', 'CUSTOM'].includes(input.mode)) return json(res, 400, { code: 'APPROVAL_POLICY_INVALID', error: 'Use SAFE or CUSTOM here; FULL requires deliberate activation' });
+      let rules;
+      try { rules = validateApprovalRules(input.rules || []); }
+      catch (error) { return json(res, 400, { code: error.code, error: error.message }); }
+      const updated = await updateState((draft) => { draft.approvalPolicy = { mode: input.mode, rules, fullActivatedAt: null }; recordActivity(draft, activityEntry('approval.policy.changed', input.mode)); return draft; });
+      return json(res, 200, publicApprovalPolicy(updated));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/approval-policy/activate-full') {
+      if (!process.env.JARVIS_AUTH_TOKEN) return json(res, 403, { code: 'AUTH_REQUIRED_FOR_POLICY', error: 'Set JARVIS_AUTH_TOKEN before enabling Full mode' });
+      const input = await body(req);
+      if (input.confirm !== 'ENABLE FULL MODE' || input.acceptRisk !== true) return json(res, 400, { code: 'FULL_MODE_CONFIRMATION_REQUIRED', error: 'Full mode needs deliberate risk confirmation' });
+      const updated = await updateState((draft) => { draft.approvalPolicy = { ...publicApprovalPolicy(draft), mode: 'FULL', fullActivatedAt: new Date().toISOString() }; recordActivity(draft, activityEntry('approval.policy.full_enabled', 'Full mode enabled by local operator')); return draft; });
+      return json(res, 200, publicApprovalPolicy(updated));
+    }
     if (req.method === 'POST' && url.pathname.startsWith('/api/approvals/')) {
-      const id = url.pathname.split('/').pop(); const input = await body(req); let approval;
-      await updateState((draft) => {
-        const current = draft.approvals.find((item) => item.id === id);
-        if (!current || current.status !== 'pending' || Date.parse(current.expiresAt || 0) <= Date.now()) return draft;
-        current.status = input.outcome === 'approved' ? 'approved' : 'rejected';
-        approval = current;
-        recordActivity(draft, activityEntry(`approval.${current.status}`, current.title, { approvalId: id }));
-        if (current.status === 'rejected' && current.pendingRequest?.runId) {
-          const run = draft.runs.find((item) => item.id === current.pendingRequest.runId);
-          if (run && run.status === 'waiting_for_approval') {
-            const step = run.steps.find((item) => item.status === 'waiting_for_approval');
-            if (step) { step.status = 'cancelled'; step.completedAt = new Date().toISOString(); }
-            transitionRun(run, 'cancelled');
-          }
-        }
-        return draft;
-      });
-      if (!approval) return json(res, 404, { error: 'Approval is unavailable, expired, or already resolved' });
-      if (approval.status !== 'approved' || !approval.pendingRequest) return json(res, 200, { approval });
-      try {
-        const result = await invokeToolRequest(await getState(), { ...approval.pendingRequest, approvalId: id });
-        await updateState((draft) => {
-          const run = draft.runs.find((item) => item.id === approval.pendingRequest.runId);
-          if (run) {
-            const step = run.steps.find((item) => item.status === 'waiting_for_approval');
-            if (step) { step.status = result.status === 200 && result.body?.ok ? 'completed' : 'failed'; step.result = result.body; step.completedAt = new Date().toISOString(); }
-            run.toolCalls.push({ id: `tool-call-${crypto.randomUUID()}`, tool: approval.pendingRequest.toolId, status: result.status === 200 && result.body?.ok ? 'completed' : 'failed', resultId: approval.pendingRequest.idempotencyKey });
-            if (result.status === 200 && result.body?.ok) finishRun(run, { toolId: approval.pendingRequest.toolId, dispatch: result.body.data });
-            else errorRun(run, new Error(result.body?.error || 'Approved desktop action failed'));
-          }
-          return draft;
-        });
-        return json(res, result.status, { approval, result: result.body });
-      } catch (error) {
-        await updateState((draft) => { const run = draft.runs.find((item) => item.id === approval.pendingRequest.runId); if (run) { const step = run.steps.find((item) => item.status === 'waiting_for_approval'); if (step) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); } errorRun(run, error); } return draft; });
-        return json(res, 502, { approval, error: error.message, code: error.code || 'INPUT_FAILED' });
-      }
+      const id = url.pathname.split('/').pop(); const input = await body(req);
+      const resolved = await resolveApprovalRequest(id, input.outcome);
+      return json(res, resolved.status, resolved.body);
     }
     if (req.method === 'GET' && url.pathname === '/api/activity') return json(res, 200, { activity: state.activity || [] });
     if (req.method === 'GET' && url.pathname === '/api/chats') return json(res, 200, { messages: state.conversations || [] });
@@ -417,13 +406,13 @@ const server = http.createServer(async (req, res) => {
       if (!text) return json(res, 400, { error: 'message is required' });
       const routeStarted = performance.now(); const route = routeRequest(text);
       if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
-        const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); transitionRun(run, 'running');
+        const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.origin = 'chat'; transitionRun(run, 'running');
         const toolStarted = performance.now(); let data; let reply;
         const invokeChatTool = async (toolId, args = {}) => {
           const step = run.steps[0];
           step.type = 'tool'; step.capability = toolId; step.status = 'running'; step.startedAt ||= new Date().toISOString();
           let response;
-          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, idempotencyKey: `${run.id}:${toolId}`, resumeOnApproval: toolId === 'computer.keypress' || toolId === 'computer.type' || toolId === 'windows.close' }); }
+          try { response = await invokeToolRequest(state, { toolId, input: args, runId: run.id, stepId: step.id, idempotencyKey: `${run.id}:${toolId}`, resumeOnApproval: true }); }
           catch (error) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); throw error; }
           if (response.status === 202 && response.body?.approvalRequired) {
             step.status = 'waiting_for_approval';

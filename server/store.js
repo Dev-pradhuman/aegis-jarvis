@@ -1,7 +1,9 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failRun } from './runEngine.js';
+import { DEFAULT_APPROVAL_POLICY } from './approvalPolicy.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data');
 const file = path.join(root, 'state.json');
@@ -11,6 +13,7 @@ const seed = {
   modelRouting: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'muse-spark-1.2', manualFallbackAllowed: true, providerHealth: {}, telemetry: [] },
   tasks: [],
   approvals: [],
+  approvalPolicy: DEFAULT_APPROVAL_POLICY,
   activity: [],
   conversations: [],
   workflows: [],
@@ -24,6 +27,17 @@ const seed = {
 
 let statePromise;
 let updateQueue = Promise.resolve();
+
+export async function writeJsonAtomically(target, value) {
+  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify(value, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    await rename(temporary, target);
+    await chmod(target, 0o600);
+  } finally {
+    await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+  }
+}
 
 export function recoverInterruptedRuns(runs = []) {
   let recovered = 0;
@@ -40,6 +54,7 @@ async function load() {
   await mkdir(root, { recursive: true });
   try {
     const parsed = JSON.parse(await readFile(file, 'utf8'));
+    await chmod(file, 0o600);
     const interrupted = recoverInterruptedRuns(parsed.runs);
     let removedDemoSeed = false;
     if (!parsed.demoSeedRemoved) {
@@ -52,11 +67,11 @@ async function load() {
       parsed.demoSeedRemoved = true;
       removedDemoSeed = true;
     }
-    if (interrupted || removedDemoSeed) await writeFile(file, JSON.stringify(parsed, null, 2));
-    return { ...structuredClone(seed), ...parsed, runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
+    if (interrupted || removedDemoSeed) await writeJsonAtomically(file, parsed);
+    return { ...structuredClone(seed), ...parsed, approvalPolicy: { ...DEFAULT_APPROVAL_POLICY, ...(parsed.approvalPolicy || {}) }, runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    await writeFile(file, JSON.stringify(seed, null, 2));
+    await writeJsonAtomically(file, seed);
     return structuredClone(seed);
   }
 }
@@ -70,7 +85,7 @@ export async function updateState(mutator) {
   const operation = updateQueue.then(async () => {
     const current = await getState();
     const next = await mutator(current) || current;
-    await writeFile(file, JSON.stringify(next, null, 2));
+    await writeJsonAtomically(file, next);
     statePromise = Promise.resolve(next);
     return next;
   });

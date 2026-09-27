@@ -5,6 +5,8 @@ import WorkspaceViews from '../components/WorkspaceViews.jsx';
 import LiveModule from './LiveModule.jsx';
 import BrowserPanel from './BrowserPanel.jsx';
 import BrainManager from '../components/BrainManager.jsx';
+import Approvals from '../components/Approvals.jsx';
+import ApprovalPolicyPanel from '../components/ApprovalPolicyPanel.jsx';
 
 const TITLES = {
   chat: 'Conversation', tasks: 'Tasks', approvals: 'Approvals', runs: 'Execution runs',
@@ -50,6 +52,7 @@ function WindowBody({ id }) {
   if (id === 'chat') return <Chat />;
   if (id === 'browser') return <BrowserPanel />;
   if (id === 'brain') return <BrainManager />;
+  if (id === 'approvals') return <div className="galaxy-approvals"><Approvals /><ApprovalPolicyPanel /></div>;
   if (id === 'settings') return <WorkspaceViews view="settings" />;
   return <LiveModule id={id} />;
 }

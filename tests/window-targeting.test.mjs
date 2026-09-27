@@ -95,7 +95,7 @@ test('target-bound approval is exact, one-use, and aborts when focus changes', a
     const pending = await invokeToolRequest(f.state, { toolId: 'computer.type', input: { text: 'hello', target: { appId: 'firefox' } }, idempotencyKey: 'type-a' }, dependencies);
     assert.equal(pending.status, 202);
     assert.match(pending.body.approval.sub, /firefox \(a\)/);
-    assert.deepEqual(pending.body.approval.pendingRequest, undefined);
+    assert.deepEqual(pending.body.approval.pendingRequest, { toolId: 'computer.type', input: { text: 'hello', target: { windowId: 'a', appId: 'firefox', processId: 100 } }, runId: null, idempotencyKey: 'type-a' });
     const approved = pending.body.approval;
     approved.status = 'approved';
     const wrongWindow = await invokeToolRequest(f.state, { toolId: 'computer.type', input: { text: 'hello', target: { windowId: 'b' } }, idempotencyKey: 'type-b', approvalId: approved.id }, dependencies);

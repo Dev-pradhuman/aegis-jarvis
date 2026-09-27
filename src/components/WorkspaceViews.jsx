@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import BrainManager from './BrainManager.jsx';
 import Approvals from './Approvals.jsx';
+import ApprovalPolicyPanel from './ApprovalPolicyPanel.jsx';
 import Chat from './Chat.jsx';
 import Icon from './Icon.jsx';
 import Tasks from './Tasks.jsx';
@@ -15,43 +16,10 @@ const VIEW_META = {
   connections: ['Connections', 'Services, channels, and runtime endpoints'],
   workflows: ['Workflows', 'Multi-stage automations and execution history'],
   goals: ['Goals', 'Outcomes, milestones, and completion signals'],
-  agents: ['Agent Fleet', 'Specialist workers and current assignments'],
-  skills: ['Skill Library', 'Installed capabilities and invocation health'],
+  agents: ['Agent History', 'Observed model delegations; dynamic agents are not available'],
+  skills: ['Skills', 'Installable Skill runtime is not available yet'],
   settings: ['System Settings', 'Local policy, interface, and runtime controls'],
 };
-
-const connectionData = [
-  ['OpenAI', 'Model provider', '12 ms', true],
-  ['GitHub', 'Repository access', '38 ms', true],
-  ['Local shell', 'Execution bridge', '4 ms', true],
-  ['Google Calendar', 'Schedule context', '—', false],
-  ['Slack', 'Team messaging', '—', false],
-  ['Notion', 'Knowledge workspace', '—', false],
-];
-
-const goalData = [
-  { name: 'Ship autonomous research loop', owner: 'Research Agent', progress: 74, due: '12 Sep' },
-  { name: 'Reduce approval turnaround', owner: 'Planning Agent', progress: 46, due: '18 Sep' },
-  { name: 'Consolidate long-term memory', owner: 'Memory Agent', progress: 63, due: '28 Sep' },
-  { name: 'Reach 95% tool reliability', owner: 'Execution Agent', progress: 88, due: '04 Oct' },
-];
-
-const agentData = [
-  { name: 'Research', code: 'RSR-01', state: 'working', task: 'Quantum computing landscape', load: 72 },
-  { name: 'Planning', code: 'PLN-02', state: 'working', task: 'Sprint dependency map', load: 48 },
-  { name: 'Execution', code: 'EXE-03', state: 'idle', task: 'Awaiting approved action', load: 12 },
-  { name: 'Communications', code: 'COM-04', state: 'working', task: 'Drafting stakeholder update', load: 39 },
-  { name: 'Memory', code: 'MEM-05', state: 'syncing', task: 'Consolidating session context', load: 61 },
-];
-
-const skillData = [
-  ['Deep research', 'Search, compare, cite, and synthesize live sources', 'Research', 96],
-  ['Code operator', 'Inspect projects, edit files, and verify builds', 'Execution', 98],
-  ['Browser control', 'Navigate and operate web applications', 'Execution', 91],
-  ['Meeting brief', 'Prepare people, context, decisions, and agenda', 'Planning', 88],
-  ['Memory recall', 'Retrieve relevant episodic and semantic context', 'Memory', 94],
-  ['Message composer', 'Draft channel-aware communications', 'Comms', 90],
-];
 
 function WorkspaceHeader({ view, action }) {
   const [title, subtitle] = VIEW_META[view];
@@ -83,23 +51,16 @@ function MetricStrip({ items }) {
 function ChatWorkspace() {
   return (
     <div className="workspace-page">
-      <WorkspaceHeader view="chat" action={<button className="primary-action">New conversation</button>} />
+      <WorkspaceHeader view="chat" />
       <div className="chat-workspace-grid">
         <aside className="workspace-panel conversation-list">
-          <div className="panel-label">Recent channels</div>
-          {['Quantum research', 'Project Aegis', 'System architecture', 'Meeting prep'].map((label, i) => (
-            <button className={`conversation-row${i === 0 ? ' selected' : ''}`} key={label}>
-              <span>{label}</span><small>{i === 0 ? 'Now' : `${i + 1}h`}</small>
-            </button>
-          ))}
+          <div className="panel-label">Conversation</div>
+          <p className="setting-help">Messages in this channel come from the JARVIS service.</p>
         </aside>
         <Chat />
         <aside className="workspace-panel context-rail">
           <div className="panel-label">Active context</div>
-          <div className="context-stat"><span>Sources</span><b>14</b></div>
-          <div className="context-stat"><span>Working memory</span><b>62%</b></div>
-          <div className="context-stat"><span>Tools available</span><b>09</b></div>
-          <div className="context-note">JARVIS is using the current project, selected files, and the last 12 messages.</div>
+          <div className="context-note">Inspect each Run for its actual model, tool calls, and retrieved context. Live context metrics are not available in this view.</div>
         </aside>
       </div>
     </div>
@@ -206,19 +167,17 @@ function BrainWorkspace() {
 }
 
 function TasksWorkspace() {
-  const [filter, setFilter] = useState('All');
   return (
     <div className="workspace-page">
-      <WorkspaceHeader view="tasks" action={<button className="primary-action">Create task</button>} />
-      <MetricStrip items={[["Active", '03', 'cyan'], ['Queued', '12'], ['Completion', '81%', 'green'], ['Blocked', '01', 'red']]} />
+      <WorkspaceHeader view="tasks" />
       <div className="task-workspace-grid">
         <div className="workspace-panel expanded-list">
-          <div className="panel-toolbar"><div className="panel-label">Execution queue</div><div className="filter-group">{['All', 'Active', 'Pending'].map((item) => <button className={filter === item ? 'active' : ''} onClick={() => setFilter(item)} key={item}>{item}</button>)}</div></div>
+          <div className="panel-toolbar"><div className="panel-label">Saved tasks</div></div>
           <Tasks />
         </div>
         <aside className="workspace-panel timeline-panel">
-          <div className="panel-label">Today</div>
-          {['Research started', 'Architecture review queued', 'Documentation paused', 'Meeting brief scheduled'].map((item, i) => <div className="timeline-item" key={item}><span>{`0${9 + i}:30`}</span><p>{item}</p></div>)}
+          <div className="panel-label">Scheduling</div>
+          <p className="setting-help">Scheduled tasks and reminders are not implemented in this view.</p>
         </aside>
       </div>
     </div>
@@ -226,35 +185,29 @@ function TasksWorkspace() {
 }
 
 function ApprovalsWorkspace() {
-  const [reviewed, setReviewed] = useState(0);
   return (
     <div className="workspace-page">
-      <WorkspaceHeader view="approvals" action={<button className="secondary-action" onClick={() => setReviewed(4)}>Review all</button>} />
-      <MetricStrip items={[["Pending", String(4 - reviewed).padStart(2, '0')], ['High risk', reviewed >= 4 ? '00' : '02', 'red'], ['Median wait', '3m 18s', 'cyan'], ['Policy blocks', '01']]} />
+      <WorkspaceHeader view="approvals" />
       <div className="approval-workspace-grid">
         <div className="workspace-panel expanded-list"><Approvals /></div>
-        <aside className="workspace-panel policy-panel">
-          <div className="panel-label">Authorization policy</div>
-          <div className="policy-score">ASSISTED <span>MODE</span></div>
-          <p>External communications, shell commands, dependency changes, and spending require confirmation.</p>
-          <button className="primary-action" onClick={() => setReviewed((value) => Math.min(4, value + 1))}>Resolve next</button>
-        </aside>
+        <ApprovalPolicyPanel />
       </div>
     </div>
   );
 }
 
 function ConnectionsWorkspace() {
-  const [connections, setConnections] = useState(() => connectionData.map(([name, type, latency, online], index) => ({ id: `legacy-${index}`, name, type, latency, status: online ? 'configured' : 'not configured' })));
-  useEffect(() => { let mounted = true; Promise.all([fetch('/api/connections').then((response) => response.ok ? response.json() : null), fetch('/api/composio/status').then((response) => response.ok ? response.json() : null)]).then(([data, composio]) => { if (!mounted) return; const base = data?.connections || []; const apps = (composio?.toolkits || []).map((item) => ({ id: `composio-${item.slug}`, name: item.label, detail: `Composio · ${item.capabilities.join(', ')}${item.note ? ` · ${item.note}` : ''}`, status: composio.connectReady && item.authConfigured ? 'configured' : composio.connectReady ? 'ready to connect' : composio.hasCredential ? 'needs project key' : 'needs key' })); setConnections([...base, ...apps]); }).catch(() => {}); return () => { mounted = false; }; }, []);
-  function toggle(index) { setConnections((current) => current.map((value, i) => i === index ? { ...value, status: value.status === 'disabled' ? 'available' : 'disabled' } : value)); }
-  const onlineCount = connections.filter((item) => ['configured', 'available'].includes(item.status)).length;
+  const [connections, setConnections] = useState([]);
+  const [error, setError] = useState('');
+  useEffect(() => { let mounted = true; Promise.all([fetch('/api/connections').then((response) => { if (!response.ok) throw new Error('Connections unavailable'); return response.json(); }), fetch('/api/composio/status').then((response) => response.ok ? response.json() : null)]).then(([data, composio]) => { if (!mounted) return; const base = data?.connections || []; const apps = (composio?.toolkits || []).map((item) => ({ id: `composio-${item.slug}`, name: item.label, detail: `Composio · ${item.capabilities.join(', ')}${item.note ? ` · ${item.note}` : ''}`, status: composio.connectReady && item.authConfigured ? 'configured' : composio.connectReady ? 'ready to connect' : composio.hasCredential ? 'needs project key' : 'needs key' })); setConnections([...base, ...apps]); }).catch((reason) => { if (mounted) setError(reason.message); }); return () => { mounted = false; }; }, []);
+  const availableCount = connections.filter((item) => ['configured', 'available'].includes(item.status)).length;
   return (
     <div className="workspace-page">
-      <WorkspaceHeader view="connections" action={<button className="primary-action">Add connection</button>} />
-      <MetricStrip items={[["Online", String(onlineCount).padStart(2, '0'), 'green'], ['Providers', String(connections.length).padStart(2, '0')], ['Configured', String(connections.filter((item) => item.status === 'configured').length).padStart(2, '0'), 'cyan'], ['Local only', connections.some((item) => item.id === 'local') ? '01' : '00']]} />
+      <WorkspaceHeader view="connections" />
+      {error && <p role="alert">{error}</p>}
+      <MetricStrip items={[["Available / configured", String(availableCount).padStart(2, '0'), 'green'], ['Providers', String(connections.length).padStart(2, '0')], ['Configured', String(connections.filter((item) => item.status === 'configured').length).padStart(2, '0'), 'cyan'], ['Local only', connections.some((item) => item.id === 'local') ? '01' : '00']]} />
       <div className="card-grid">
-        {connections.map((connection, i) => <article className="workspace-panel data-card connection-card" key={connection.id || connection.name}><div className="card-icon"><Icon name={connection.id === 'local' ? 'terminal' : 'connections'} /></div><div><h3>{connection.name}</h3><p>{connection.detail || connection.type || connection.kind}</p></div><div className="card-meta"><span>{connection.status}</span><button className={`toggle${['configured', 'available'].includes(connection.status) ? ' on' : ''}`} onClick={() => toggle(i)} aria-label={`Toggle ${connection.name}`}><i /></button></div></article>)}
+        {connections.map((connection) => <article className="workspace-panel data-card connection-card" key={connection.id || connection.name}><div className="card-icon"><Icon name={connection.id === 'local' ? 'terminal' : 'connections'} /></div><div><h3>{connection.name}</h3><p>{connection.detail || connection.type || connection.kind}</p></div><div className="card-meta"><span>{connection.status}</span></div></article>)}
       </div>
     </div>
   );
@@ -305,23 +258,17 @@ function WorkflowsWorkspace() {
 }
 
 function GoalsWorkspace() {
-  return <div className="workspace-page"><WorkspaceHeader view="goals" action={<button className="primary-action">Define goal</button>} /><MetricStrip items={[["In progress", '04', 'cyan'], ['On track', '03', 'green'], ['At risk', '01', 'red'], ['Avg progress', '68%']]} /><div className="goal-grid">{goalData.map((goal) => <article className="workspace-panel goal-card" key={goal.name}><div className="goal-progress" style={{ '--progress': `${goal.progress * 3.6}deg` }}><strong>{goal.progress}%</strong></div><div><span className="card-eyebrow">DUE {goal.due}</span><h3>{goal.name}</h3><p>{goal.owner}</p><div className="goal-track"><i style={{ width: `${goal.progress}%` }} /></div></div></article>)}</div></div>;
+  return <div className="workspace-page"><WorkspaceHeader view="goals" /><p className="setting-help">Persistent Goals are not implemented. No goal progress is available.</p></div>;
 }
 
 function AgentsWorkspace() {
-  const [paused, setPaused] = useState([]);
-  return <div className="workspace-page"><WorkspaceHeader view="agents" action={<button className="primary-action">Deploy agent</button>} /><MetricStrip items={[["Online", String(agentData.length - paused.length).padStart(2, '0'), 'green'], ['Working', '03', 'cyan'], ['Queued actions', '19'], ['Avg load', '46%']]} /><div className="agent-grid">{agentData.map((agent, i) => { const isPaused = paused.includes(i); return <article className="workspace-panel agent-card" key={agent.code}><div className="agent-orbit"><Icon name="agents" /></div><div className="agent-title"><span>{agent.code}</span><h3>{agent.name} Agent</h3></div><span className={`agent-state ${isPaused ? 'paused' : agent.state}`}>{isPaused ? 'paused' : agent.state}</span><p>{isPaused ? 'Execution suspended by operator' : agent.task}</p><div className="load-row"><span>Compute load</span><b>{isPaused ? 0 : agent.load}%</b></div><div className="goal-track"><i style={{ width: `${isPaused ? 0 : agent.load}%` }} /></div><button className="secondary-action" onClick={() => setPaused((items) => items.includes(i) ? items.filter((x) => x !== i) : [...items, i])}>{isPaused ? 'Resume' : 'Pause'}</button></article>; })}</div></div>;
+  const [data, setData] = useState(null);
+  useEffect(() => { let active = true; fetch('/api/agents').then((response) => response.ok ? response.json() : null).then((value) => { if (active) setData(value); }).catch(() => { if (active) setData({ agents: [], error: true }); }); return () => { active = false; }; }, []);
+  return <div className="workspace-page"><WorkspaceHeader view="agents" /><p className="setting-help">Dynamic agents: {data?.dynamicAgentsAvailable ? 'available' : 'not implemented'}. Historical model delegations are shown below; they are not live workers.</p>{data?.error && <p role="alert">Agent history is unavailable.</p>}{data?.agents?.length === 0 && <p className="setting-help">No model delegations recorded.</p>}<div className="agent-grid">{data?.agents?.map((agent) => <article className="workspace-panel agent-card" key={agent.id}><h3>{agent.name}</h3><p>{agent.status} · Run {agent.runId}</p></article>)}</div></div>;
 }
 
 function SkillsWorkspace() {
-  const [enabled, setEnabled] = useState(() => skillData.map(() => true));
-  return <div className="workspace-page"><WorkspaceHeader view="skills" action={<button className="primary-action">Install skill</button>} /><div className="skill-toolbar workspace-panel"><input aria-label="Search skills" placeholder="Search installed capabilities…" /><span className="mono">{enabled.filter(Boolean).length} / {skillData.length} ENABLED</span></div><div className="skill-grid">{skillData.map(([name, description, domain, score], i) => <article className="workspace-panel skill-card" key={name}><div className="skill-glyph"><Icon name="skills" /></div><span className="card-eyebrow">{domain}</span><h3>{name}</h3><p>{description}</p><div className="skill-footer"><span>Reliability <b>{score}%</b></span><button className={`toggle${enabled[i] ? ' on' : ''}`} onClick={() => setEnabled((items) => items.map((value, x) => x === i ? !value : value))} aria-label={`Toggle ${name}`}><i /></button></div></article>)}</div></div>;
-}
-
-function LegacySettingsWorkspace() {
-  const [settings, setSettings] = useState({ approvals: true, telemetry: false, motion: true, sounds: false });
-  const toggle = (key) => setSettings((value) => ({ ...value, [key]: !value[key] }));
-  return <div className="workspace-page"><WorkspaceHeader view="settings" action={<button className="primary-action">Save changes</button>} /><div className="settings-grid"><section className="workspace-panel settings-section"><div className="panel-label">Autonomy & safety</div>{[['approvals', 'Require approval for consequential actions', 'Shell, spending, external messages, and destructive operations'], ['telemetry', 'Share anonymous diagnostics', 'Send aggregate performance data without project content']].map(([key, title, copy]) => <div className="setting-row" key={key}><div><h3>{title}</h3><p>{copy}</p></div><button className={`toggle${settings[key] ? ' on' : ''}`} onClick={() => toggle(key)} aria-label={`Toggle ${title}`}><i /></button></div>)}</section><section className="workspace-panel settings-section"><div className="panel-label">Interface</div>{[['motion', 'Ambient motion', 'Animate HUD telemetry and neural visualizations'], ['sounds', 'Interface sounds', 'Play subtle confirmation and warning tones']].map(([key, title, copy]) => <div className="setting-row" key={key}><div><h3>{title}</h3><p>{copy}</p></div><button className={`toggle${settings[key] ? ' on' : ''}`} onClick={() => toggle(key)} aria-label={`Toggle ${title}`}><i /></button></div>)}</section><section className="workspace-panel settings-section full"><div className="panel-label">Model routing</div><div className="form-grid"><label>Primary provider<select defaultValue="groq"><option>groq</option><option>openai</option><option>anthropic</option></select></label><label>Default model<select defaultValue="gpt-oss"><option value="gpt-oss">openai/gpt-oss-120b</option><option>claude-sonnet</option></select></label><label>Context budget<input type="range" min="20" max="100" defaultValue="72" /></label></div></section></div></div>;
+  return <div className="workspace-page"><WorkspaceHeader view="skills" /><p className="setting-help">An installable Skill runtime is not implemented. Use Tools to inspect actual registered JARVIS capabilities.</p></div>;
 }
 
 function BrowserVoicePanel() {
