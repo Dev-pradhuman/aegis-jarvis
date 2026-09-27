@@ -15,6 +15,9 @@ function fixture(t) {
 const reply = (text = 'ok') => ({ ok: true, status: 200, headers: new Headers(), json: async () => ({ choices: [{ message: { content: text } }] }) });
 const failure = (status, message) => ({ ok: false, status, headers: new Headers(), json: async () => ({ error: { message } }) });
 const source = (name, logicalModels = ['deepseek-v4-flash'], capabilities = ['text', 'tools']) => ({ name, type: 'API', provider: name, baseUrl: `https://${name}.example/v1`, modelId: `${name}/model`, logicalModels, capabilities, priority: name === 'first' ? 1 : 2 });
+// These provider calls use mocked responses. Explicitly opt into the paid-policy path here.
+process.env.ZERO_SPEND_MODE = 'false';
+process.env.ALLOW_PAID_API_USAGE = 'true';
 
 test('Brain catalog stores any number of credentials privately and masks status', (t) => {
   const { dir, catalog } = fixture(t);
@@ -152,10 +155,25 @@ test('Ollama pool uses native non-thinking chat and normalizes tool output', asy
   const result = await executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'hello', state: {}, catalog, toolSpecs: [{ type: 'function', function: { name: 'report_ready', parameters: { type: 'object', properties: {} } } }], fetchImpl: async (url, init) => { request = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, headers: new Headers(), json: async () => ({ message: { content: '<think>private</think>ready', tool_calls: [{ function: { name: 'report_ready', arguments: { value: true } } }] }, eval_count: 2 }) }; } });
   assert.equal(request.url, 'http://127.0.0.1:11434/api/chat');
   assert.equal(request.body.think, false);
-  assert.equal(request.body.messages[0].content, '/no_think');
+  assert.match(request.body.messages[0].content, /^\/no_think/);
   assert.equal(result.reply, 'ready');
   assert.equal(result.toolCalls[0].function.name, 'report_ready');
   assert.equal(result.provider, `brain-${local.id}`);
+});
+
+test('ordinary Ollama replies extract only the constrained final answer', async (t) => {
+  const { catalog } = fixture(t);
+  catalog.addPresetSource('ollama', { logicalModels: ['muse-spark-1.2'], capabilities: ['text', 'tools'] });
+  const original = process.env.MODEL_PROVIDER_POOLS;
+  process.env.MODEL_PROVIDER_POOLS = JSON.stringify({ 'muse-spark-1.2': [] });
+  t.after(() => original === undefined ? delete process.env.MODEL_PROVIDER_POOLS : process.env.MODEL_PROVIDER_POOLS = original);
+  let body;
+  const result = await executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'Explain RAM', state: {}, catalog, allowFallback: false, fetchImpl: async (_url, init) => {
+    body = JSON.parse(init.body);
+    return { ok: true, status: 200, headers: new Headers(), json: async () => ({ message: { content: '{"answer":"RAM temporarily holds data in use."}' }, eval_count: 9 }) };
+  } });
+  assert.equal(body.format.properties.answer.type, 'string');
+  assert.equal(result.reply, 'RAM temporarily holds data in use.');
 });
 
 test('preset connection selects a discovered chat model only after inference succeeds', async (t) => {

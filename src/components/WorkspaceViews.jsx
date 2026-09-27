@@ -29,8 +29,6 @@ const connectionData = [
   ['Notion', 'Knowledge workspace', '—', false],
 ];
 
-const workflowData = [];
-
 const goalData = [
   { name: 'Ship autonomous research loop', owner: 'Research Agent', progress: 74, due: '12 Sep' },
   { name: 'Reduce approval turnaround', owner: 'Planning Agent', progress: 46, due: '18 Sep' },
@@ -263,26 +261,42 @@ function ConnectionsWorkspace() {
 }
 
 function WorkflowsWorkspace() {
-  const [workflows, setWorkflows] = useState(workflowData);
+  const [workflows, setWorkflows] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
   async function refresh() {
-    const response = await fetch('/api/workflows');
-    if (!response.ok) return;
-    const data = await response.json();
-    setWorkflows(data.workflows || []);
-    setSummary(data.summary || null);
+    try {
+      const response = await fetch('/api/workflows');
+      if (!response.ok) throw new Error(`Workflow service returned HTTP ${response.status}`);
+      const data = await response.json();
+      setWorkflows(data.workflows || []);
+      setSummary(data.summary || null);
+      setStatus('ready');
+      setError('');
+    } catch (reason) {
+      setStatus('error');
+      setError(reason.message || 'Workflow service is unavailable');
+    }
   }
-  useEffect(() => { refresh().catch(() => {}); }, []);
+  useEffect(() => { void refresh(); }, []);
   async function run(id) {
-    const response = await fetch(`/api/workflows/${id}/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-    if (response.ok) await refresh();
+    try {
+      const response = await fetch(`/api/workflows/${id}/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      if (!response.ok) throw new Error(`Workflow run returned HTTP ${response.status}`);
+      await refresh();
+    } catch (reason) { setError(reason.message || 'Workflow run failed'); }
   }
   const active = workflows.filter((flow) => flow.state === 'active').length;
   const runs = workflows.reduce((sum, flow) => sum + Number(flow.runs || 0), 0);
   return <div className="workspace-page">
     <WorkspaceHeader view="workflows" />
-    <MetricStrip items={[["Active", String(active).padStart(2, '0'), 'green'], ['Total runs', String(runs), 'cyan'], ['Success rate', summary?.successRate === null || summary?.successRate === undefined ? '—' : `${summary.successRate}%`, 'green'], ['Paused', String(workflows.filter((flow) => flow.state === 'paused').length).padStart(2, '0')]]} />
-    <div className="workflow-list">{workflows.map((flow) => <article className="workspace-panel workflow-row" key={flow.id || flow.name}>
+    <MetricStrip items={[["Active", status === 'ready' ? String(active).padStart(2, '0') : '—', 'green'], ['Total runs', status === 'ready' ? String(runs) : '—', 'cyan'], ['Latest outcomes', status === 'ready' && summary?.successRate !== null && summary?.successRate !== undefined ? `${summary.successRate}%` : '—', 'green'], ['Paused', status === 'ready' ? String(workflows.filter((flow) => flow.state === 'paused').length).padStart(2, '0') : '—']]} />
+    {status === 'loading' && <p className="setting-help" role="status">Loading saved workflows…</p>}
+    {status === 'error' && <p className="form-error" role="alert">{error}</p>}
+    {status === 'ready' && error && <p className="form-error" role="alert">{error}</p>}
+    {status === 'ready' && workflows.length === 0 && <p className="setting-help">No workflows configured. Workflows run only saved canonical tool steps; no demo automations are installed by default.</p>}
+    <div className="workflow-list">{status === 'ready' && workflows.map((flow) => <article className="workspace-panel workflow-row" key={flow.id || flow.name}>
       <div className="workflow-summary"><span className={`state-mark ${flow.state}`} /><div><h3>{flow.name}</h3><p>{flow.trigger || 'Manual'} · {flow.runs || 0} total runs · {flow.lastRun?.state || 'never run'}</p></div></div>
       <div className="workflow-steps">{(flow.steps || []).map((step, i) => <div key={step.id || i}><span>{i + 1}</span>{typeof step === 'string' ? step : step.tool}</div>)}</div>
       <button className="row-menu" onClick={() => run(flow.id)} aria-label={`Run ${flow.name}`}>RUN</button>
@@ -324,7 +338,7 @@ function BrowserVoicePanel() {
 function VoicePanel() {
   const [provider, setProvider] = useState('browser');
   const [values, setValues] = useState({ elevenlabs: { apiKey: '', modelId: 'eleven_multilingual_v2', voiceId: '' }, 'fish-audio': { apiKey: '', modelId: 's2-pro', voiceId: '' }, groq: { apiKey: '', modelId: 'canopylabs/orpheus-v1-english', voiceId: 'autumn' } });
-  const [testText, setTestText] = useState('All JARVIS voice systems are online.');
+  const [testText, setTestText] = useState('JARVIS voice test.');
   const [status, setStatus] = useState(''); const [busy, setBusy] = useState(false);
   useEffect(() => { fetch('/api/voice/tts').then((response) => response.ok ? response.json() : null).then((data) => { if (!data) return; setProvider(data.provider || 'browser'); setValues((current) => ({ elevenlabs: { ...current.elevenlabs, modelId: data.elevenlabs?.modelId || current.elevenlabs.modelId }, 'fish-audio': { ...current['fish-audio'], modelId: data.fishAudio?.modelId || current['fish-audio'].modelId }, groq: { ...current.groq, modelId: data.groq?.ttsModel || current.groq.modelId, voiceId: data.groq?.voice || current.groq.voiceId } })); }).catch(() => {}); }, []);
   const active = values[provider] || null;
@@ -388,71 +402,31 @@ function ComposioPanel() {
   return <section className="workspace-panel settings-section full composio-panel"><div className="routing-head"><div><div className="panel-label">Composio app connections</div><p className="setting-help">Connect Gmail, Google Calendar, Discord, and Instagram without exposing their OAuth tokens to JARVIS. Managed auth is created automatically. External sends, publishing, deletion, and calendar mutations remain approval-gated.</p>{status.configurationError && <p className="routing-summary composio-message">{status.configurationError}</p>}</div><button type="button" className="secondary-action" onClick={refresh}>Refresh</button></div>{!status.connectReady && <div className="composio-key-setup"><label>Composio Project API key<input type="password" value={projectKey} onChange={(event) => setProjectKey(event.target.value)} placeholder="ak_… from Platform → Project → Settings → API Keys" /></label><button type="button" className="primary-action" disabled={!projectKey.trim()} onClick={saveProjectKey}>Save &amp; validate</button></div>}<div className="composio-grid">{status.toolkits.map((toolkit) => <article key={toolkit.slug}><div><h3>{toolkit.label}</h3><p>{toolkit.capabilities.join(' · ')}</p>{toolkit.note && <small>{toolkit.note}</small>}</div><span className={accountCount(toolkit.slug) ? 'composio-state online' : 'composio-state'}>{accountCount(toolkit.slug) ? `${accountCount(toolkit.slug)} active` : !status.connectReady && status.hasCredential ? 'Project API key required' : !status.configured ? 'API key needed' : toolkit.authConfigured ? 'Ready to connect' : 'Managed auth available'}</span><button type="button" className="secondary-action" disabled={!status.connectReady || accountCount(toolkit.slug) > 0} onClick={() => connect(toolkit)}>{accountCount(toolkit.slug) > 0 ? 'Connected' : 'Connect'}</button></article>)}</div>{message && <p className="routing-summary composio-message">{message}</p>}</section>;
 }
 
-function FunctionRoutingPanel() {
-  const textPresets = { local: ['Local model', 'http://127.0.0.1:11434/v1', 'llama3.2'], groq: ['Groq', 'https://api.groq.com/openai/v1', 'openai/gpt-oss-20b'], openrouter: ['OpenRouter', 'https://openrouter.ai/api/v1', 'openai/gpt-oss-20b'], 'opencode-zen': ['OpenCode Zen', 'https://opencode.ai/zen/v1', 'openai/gpt-oss-20b'], '9router': ['9router', 'https://9router.com/v1', 'openai/gpt-oss-20b'], custom: ['Custom API', '', ''] };
-  const [routing, setRouting] = useState({ textProvider: 'local', textModel: 'llama3.2', textBaseUrl: textPresets.local[1], sttProvider: 'groq', sttModel: 'whisper-large-v3-turbo', ttsProvider: 'browser', ttsModel: 'canopylabs/orpheus-v1-english', ttsVoice: 'autumn' }); const [saved, setSaved] = useState(false);
-  useEffect(() => { Promise.all([fetch('/api/provider').then((r) => r.ok ? r.json() : null), fetch('/api/voice/tts').then((r) => r.ok ? r.json() : null)]).then(([text, voice]) => setRouting((current) => ({ ...current, textProvider: text?.provider?.id || current.textProvider, textModel: text?.provider?.model || current.textModel, textBaseUrl: text?.provider?.baseUrl || current.textBaseUrl, sttProvider: voice?.sttProvider || current.sttProvider, sttModel: voice?.groq?.sttModel || current.sttModel, ttsProvider: voice?.provider || current.ttsProvider, ttsModel: voice?.groq?.ttsModel || current.ttsModel, ttsVoice: voice?.groq?.voice || current.ttsVoice }))).catch(() => {}); }, []);
-  function chooseText(id) { const preset = textPresets[id]; setRouting((current) => ({ ...current, textProvider: id, textBaseUrl: preset[1], textModel: preset[2] })); }
-  async function save() { setSaved(false); const preset = textPresets[routing.textProvider]; const providerResponse = await fetch('/api/provider', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: routing.textProvider, label: preset[0], model: routing.textModel, baseUrl: routing.textBaseUrl, configured: true }) }); const configResponse = await fetch('/api/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ STT_PROVIDER: routing.sttProvider, GROQ_STT_MODEL: routing.sttModel, TTS_PROVIDER: routing.ttsProvider, ...(routing.ttsProvider === 'groq' ? { GROQ_TTS_MODEL: routing.ttsModel, GROQ_TTS_VOICE: routing.ttsVoice } : {}) }) }); setSaved(providerResponse.ok && configResponse.ok); }
-  return <section className="workspace-panel settings-section full function-routing"><div className="routing-head"><div><div className="panel-label">Function routing</div><p className="setting-help">Choose the provider and model used for each stage of a JARVIS interaction.</p></div><button type="button" className="primary-action" onClick={save}>Save routes {saved ? '✓' : ''}</button></div><div className="route-grid"><article><span className="route-step">01</span><h3>Voice to text</h3><label>Provider<select value={routing.sttProvider} onChange={(event) => setRouting((current) => ({ ...current, sttProvider: event.target.value }))}><option value="groq">Groq Whisper</option><option value="browser">Browser recognition</option></select></label><label>Model<input value={routing.sttModel} disabled={routing.sttProvider === 'browser'} onChange={(event) => setRouting((current) => ({ ...current, sttModel: event.target.value }))} /></label></article><article><span className="route-step">02</span><h3>Text intelligence</h3><label>Provider<select value={routing.textProvider} onChange={(event) => chooseText(event.target.value)}>{Object.entries(textPresets).map(([id, value]) => <option key={id} value={id}>{value[0]}</option>)}</select></label><label>Model<input value={routing.textModel} onChange={(event) => setRouting((current) => ({ ...current, textModel: event.target.value }))} /></label></article><article><span className="route-step">03</span><h3>Text to speech</h3><label>Provider<select value={routing.ttsProvider} onChange={(event) => setRouting((current) => ({ ...current, ttsProvider: event.target.value }))}><option value="browser">Browser voice</option><option value="groq">Groq</option><option value="elevenlabs">ElevenLabs</option><option value="fish-audio">Fish Audio</option></select></label><label>Model<input value={routing.ttsModel} disabled={routing.ttsProvider === 'browser'} onChange={(event) => setRouting((current) => ({ ...current, ttsModel: event.target.value }))} /></label></article></div></section>;
-}
-
-function ModelRoutingControl() {
-  const [data, setData] = useState({ settings: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'muse-spark-1.2', manualFallbackAllowed: true }, models: {}, recentTelemetry: [] }); const [saved, setSaved] = useState(false);
-  useEffect(() => { fetch('/api/model-routing').then((response) => response.ok ? response.json() : null).then((value) => value && setData(value)).catch(() => {}); }, []);
-  async function save(settings) { setSaved(false); setData((current) => ({ ...current, settings })); const response = await fetch('/api/model-routing', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) }); setSaved(response.ok); }
-  const selected = data.settings.modelMode === 'auto' ? 'auto' : data.settings.manualModel; const latest = data.recentTelemetry?.[0];
-  return <section className="workspace-panel settings-section full model-routing-control"><div><div className="panel-label">JARVIS intelligence mode</div><p className="setting-help">Normal uses Muse Spark as the agent brain, Coding selects Laguna, and Deep Thinking selects GLM. A manual model still overrides the selected mode.</p></div><label>Mode<select value={data.settings.jarvisMode || 'normal'} onChange={(event) => void save({ ...data.settings, jarvisMode: event.target.value, modelMode: 'auto' })}><option value="normal">Normal · Muse Spark 1.2</option><option value="coding">Coding · Laguna S 2.1</option><option value="deepthinking">Deep Thinking · GLM-5.2</option></select></label><label>Model override<select value={selected} onChange={(event) => { const value = event.target.value; void save({ ...data.settings, modelMode: value === 'auto' ? 'auto' : 'manual', manualModel: value === 'auto' ? data.settings.manualModel : value }); }}><option value="auto">Auto within mode</option>{Object.entries(data.models).map(([id, model]) => <option key={id} value={id}>{model.label}</option>)}</select></label><label className="check-control"><input type="checkbox" checked={data.settings.manualFallbackAllowed} onChange={(event) => void save({ ...data.settings, manualFallbackAllowed: event.target.checked })} /> Allow GLM-5.2 fallback</label><div className="routing-summary">{saved ? 'Saved · ' : ''}{latest ? `Last handled by ${data.models[latest.finalModel]?.label || latest.finalModel}` : 'No model routing recorded yet'}</div></section>;
-}
-
 function AppearancePanel() {
   const [appearance, setAppearance] = useAppearance();
   return <section className="workspace-panel settings-section full appearance-panel"><div className="panel-label">Appearance</div><p className="setting-help">Personalize the interface locally. Changes persist in this browser.</p><div className="form-grid appearance-grid"><label>Theme<select value={appearance.theme} onChange={(event) => setAppearance((current) => ({ ...current, theme: event.target.value }))}><option value="carbon">Carbon / amber</option><option value="midnight">Midnight / cyan</option><option value="light">Light / amber</option></select></label><label>Font size <span className="range-value">{appearance.fontSize}px</span><input type="range" min="13" max="20" value={appearance.fontSize} onChange={(event) => setAppearance((current) => ({ ...current, fontSize: Number(event.target.value) }))} /></label><label>Accent colour<div className="colour-control"><input type="color" value={appearance.accent} onChange={(event) => setAppearance((current) => ({ ...current, accent: event.target.value }))} /><code>{appearance.accent.toUpperCase()}</code></div></label></div></section>;
 }
 
-function LegacyProviderSettingsWorkspace() {
-  const [provider, setProvider] = useState({ id: 'local', label: 'Local model', model: 'llama3.2', baseUrl: 'http://127.0.0.1:11434/v1', configured: false });
-  const [saved, setSaved] = useState(false);
-  useEffect(() => { fetch('/api/provider').then((response) => response.ok ? response.json() : null).then((data) => data?.provider && setProvider(data.provider)).catch(() => {}); }, []);
-  async function saveProvider() {
-    setSaved(false);
-    try { const response = await fetch('/api/provider', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...provider, configured: true }) }); const data = await response.json(); if (data.provider) setProvider(data.provider); setSaved(true); } catch {}
-  }
-  const options = [
-    ['local', 'Local model', 'Ollama / LM Studio / OpenAI-compatible local endpoint'],
-    ['openrouter', 'OpenRouter', 'Hosted model routing via OPENROUTER_API_KEY'],
-    ['opencode-zen', 'OpenCode Zen', 'Hosted model routing via OPENCODE_ZEN_API_KEY'],
-    ['9router', '9router', 'Self-hosted or hosted router adapter'],
-    ['custom', 'Custom API', 'Any OpenAI-compatible base URL'],
-  ];
-  return <div className="workspace-page"><WorkspaceHeader view="settings" action={<button className="primary-action" onClick={saveProvider}>Save provider {saved ? '✓' : ''}</button>} /><div className="settings-grid"><section className="workspace-panel settings-section full"><div className="panel-label">Model routing</div><div className="form-grid"><label>Provider<select value={provider.id} onChange={(event) => { const id = event.target.value; const option = options.find((item) => item[0] === id); setProvider((current) => ({ ...current, id, label: option?.[1] || id, configured: false })); }}>{options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label>Model<input value={provider.model || ''} onChange={(event) => setProvider((current) => ({ ...current, model: event.target.value }))} placeholder="llama3.2 / openai/gpt-4o-mini" /></label><label>API base URL<input value={provider.baseUrl || ''} onChange={(event) => setProvider((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://.../v1" /></label></div><p className="setting-help">{options.find((item) => item[0] === provider.id)?.[2]}. API keys stay server-side in environment variables and are never returned to the browser.</p></section><CredentialsPanel /><VoicePanel /><LegacySettingsWorkspace /></div></div>;
-}
-
-const PROVIDER_PRESETS = {
-  local: { label: 'Local model', baseUrl: 'http://127.0.0.1:11434/v1', keyName: '' },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', keyName: 'OPENROUTER_API_KEY' },
-  groq: { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', keyName: 'GROQ_API_KEY' },
-  'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen/v1', keyName: 'OPENCODE_ZEN_API_KEY' },
-  '9router': { label: '9router', baseUrl: 'https://9router.com/v1', keyName: 'NINEROUTER_API_KEY' },
-  custom: { label: 'Custom API', baseUrl: '', keyName: 'CUSTOM_API_KEY' },
-};
-
 function SettingsWorkspace() {
-  const [provider, setProvider] = useState({ id: 'local', label: 'Local model', model: 'llama3.2', baseUrl: PROVIDER_PRESETS.local.baseUrl, configured: false });
-  const [apiKey, setApiKey] = useState(''); const [models, setModels] = useState([]); const [freeOnly, setFreeOnly] = useState(false); const [loadingModels, setLoadingModels] = useState(false); const [modelError, setModelError] = useState(''); const [saved, setSaved] = useState(false);
-  useEffect(() => { fetch('/api/provider').then((response) => response.ok ? response.json() : null).then((data) => data?.provider && setProvider(data.provider)).catch(() => {}); }, []);
-  function selectProvider(id) { const preset = PROVIDER_PRESETS[id]; setProvider((current) => ({ ...current, id, label: preset.label, baseUrl: preset.baseUrl, configured: false })); setModels([]); setModelError(''); }
-  async function saveProvider() { setSaved(false); const response = await fetch('/api/provider', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...provider, configured: true }) }); if (response.ok) { const data = await response.json(); if (data.provider) setProvider(data.provider); const keyName = PROVIDER_PRESETS[provider.id]?.keyName; if ((apiKey && keyName) || provider.id === 'groq') await fetch('/api/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...(apiKey && keyName ? { [keyName]: apiKey } : {}), ...(provider.id === 'groq' ? { TTS_PROVIDER: 'groq' } : {}) }) }); setApiKey(''); setSaved(true); } }
-  async function fetchModels() { setLoadingModels(true); setModelError(''); try { const keyName = PROVIDER_PRESETS[provider.id]?.keyName; await fetch('/api/provider', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...provider, configured: true }) }); if (apiKey && keyName) await fetch('/api/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ [keyName]: apiKey }) }); const response = await fetch('/api/provider/models'); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to fetch models'); setModels((data.models || []).map((model) => ({ ...model, free: Boolean(model.free || /(^|:)free($|\b)/i.test(model.id || '') || /free/i.test(model.name || '')) }))); } catch (error) { setModelError(error.message); setModels([]); } finally { setLoadingModels(false); } }
-  const visibleModels = models.filter((model) => !freeOnly || model.free);
-  return <div className="workspace-page"><WorkspaceHeader view="settings" action={<button type="button" className="primary-action" onClick={saveProvider}>Save provider {saved ? '✓' : ''}</button>} /><div className="settings-grid"><AppearancePanel /><section className="workspace-panel settings-section full"><div className="panel-label">Model routing</div><div className="form-grid provider-grid"><label>Provider<select value={provider.id} onChange={(event) => selectProvider(event.target.value)}>{Object.entries(PROVIDER_PRESETS).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select></label><label>Model<select value={provider.model || ''} onChange={(event) => setProvider((current) => ({ ...current, model: event.target.value }))}><option value="">Select a model</option>{visibleModels.map((model) => <option key={model.id} value={model.id}>{model.name}{model.free ? ' · FREE' : ''}</option>)}</select><input value={provider.model || ''} onChange={(event) => setProvider((current) => ({ ...current, model: event.target.value }))} placeholder="Or enter a model ID" /></label><label>API base URL<input value={provider.baseUrl || ''} readOnly={provider.id !== 'custom' && provider.id !== 'local'} onChange={(event) => setProvider((current) => ({ ...current, baseUrl: event.target.value }))} /></label><label>API key {PROVIDER_PRESETS[provider.id]?.keyName && <span className="field-hint">{PROVIDER_PRESETS[provider.id].keyName}</span>}<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Enter key for this provider" /></label></div><div className="model-actions"><button type="button" className="secondary-action" onClick={fetchModels} disabled={loadingModels}>{loadingModels ? 'Fetching…' : 'Fetch models'}</button><label className="check-control"><input type="checkbox" checked={freeOnly} onChange={(event) => setFreeOnly(event.target.checked)} /> Free models only</label><span className="model-count">{models.length ? `${visibleModels.length} models` : 'No models loaded'}</span></div>{modelError && <p className="form-error">{modelError}</p>}<p className="setting-help">Preset providers use their standard endpoint automatically. API keys are stored server-side and never displayed after saving.</p></section><CredentialsPanel /><VoicePanel /><LegacySettingsWorkspace /></div></div>;
+  return <div className="workspace-page">
+    <WorkspaceHeader view="settings" />
+    <div className="settings-grid">
+      <AppearancePanel />
+      <section className="workspace-panel settings-section full">
+        <div className="panel-label">Intelligence sources</div>
+        <p className="setting-help">Routing order: deterministic tools → local Qwen → authorized ChatGPT or Claude web → verified zero-cost API models. Configure sources, manual locks, and API key pools in Brain. Paid API usage is disabled by default.</p>
+      </section>
+      <CredentialsPanel />
+      <VoicePanel />
+    </div>
+  </div>;
 }
 
 export default function WorkspaceViews({ view }) {
   const views = {
     chat: <ChatWorkspace />, brain: <BrainManager />, tasks: <TasksWorkspace />, approvals: <ApprovalsWorkspace />,
     connections: <ConnectionsWorkspace />, workflows: <WorkflowsWorkspace />, goals: <GoalsWorkspace />,
-    agents: <AgentsWorkspace />, skills: <SkillsWorkspace />, settings: <div className="settings-shell"><ModelRoutingControl /><ComposioPanel /><FunctionRoutingPanel /><SettingsWorkspace /></div>,
+    agents: <AgentsWorkspace />, skills: <SkillsWorkspace />, settings: <div className="settings-shell"><ComposioPanel /><SettingsWorkspace /></div>,
   };
   return views[view] || null;
 }

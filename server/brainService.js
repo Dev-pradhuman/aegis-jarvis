@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { brainCatalog } from './brainSources.js';
 import { presetFor } from './providerPresets.js';
+import { paidApiUsageEnabled, pricingClass } from './spendPolicy.js';
 
 const commands = [
   { id: 'codex', command: 'codex', label: 'Codex CLI' },
@@ -49,17 +50,17 @@ function sourceHeaders(source, secret) {
 
 function modelCapabilities(item) {
   const capabilities = ['text'];
-  const input = item.architecture?.input_modalities || item.input_modalities || [];
+  const input = item.modalities?.input || item.architecture?.input_modalities || item.input_modalities || [];
   if (input.includes('image') || item.capabilities?.vision) capabilities.push('image');
   if (input.includes('audio')) capabilities.push('audio');
-  if (item.capabilities?.tools || item.capabilities?.function_calling || item.supported_parameters?.includes?.('tools')) capabilities.push('tools');
-  if (item.capabilities?.reasoning) capabilities.push('reasoning');
+  if (item.capabilities?.tools || item.capabilities?.function_calling || item.supported_parameters?.includes?.('tools') || item.tags?.includes?.('tool-use')) capabilities.push('tools');
+  if (item.capabilities?.reasoning || item.tags?.includes?.('reasoning')) capabilities.push('reasoning');
   return capabilities;
 }
 
 const nonChat = /embed|rerank|moderation|whisper|transcrib|speech|tts|image|dall-e|realtime|audio|video|guard|classifier/i;
-export function chooseDiscoveredModel(models = []) {
-  return models.filter((item) => !nonChat.test(item.id) && (!item.type || item.type === 'chat') && item.capabilities?.includes('text'))
+export function chooseDiscoveredModel(models = [], { freeOnly = false } = {}) {
+  return models.filter((item) => !nonChat.test(item.id) && (!item.type || ['chat', 'language'].includes(item.type)) && item.capabilities?.includes('text') && (!freeOnly || item.pricingType === 'FREE_MODEL'))
     .sort((a, b) => Number(b.created || 0) - Number(a.created || 0) || Number(b.capabilities?.includes('tools')) - Number(a.capabilities?.includes('tools')) || a.id.localeCompare(b.id))[0] || null;
 }
 
@@ -70,7 +71,7 @@ async function requestModels(source, secret, fetchImpl, signal) {
   if (!response.ok) return { models: [], status: response.status === 401 || response.status === 403 ? 'INVALID_CREDENTIAL' : response.status === 429 ? 'RATE_LIMITED' : 'UNAVAILABLE', httpStatus: response.status };
   const payload = await response.json().catch(() => ({}));
   const list = Array.isArray(payload) ? payload : Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
-  return { models: list.map((item) => { const entry = typeof item === 'string' ? { id: item } : item; return { id: entry.id || entry.name, name: entry.display_name || entry.name || entry.id, type: entry.type || null, created: entry.created || entry.created_at || 0, capabilities: modelCapabilities(entry) }; }).filter((item) => item.id).slice(0, 1000), status: 'HEALTHY' };
+  return { models: list.map((item) => { const entry = typeof item === 'string' ? { id: item } : item; return { id: entry.id || entry.name, name: entry.display_name || entry.name || entry.id, type: entry.type || null, created: entry.created || entry.created_at || 0, capabilities: modelCapabilities(entry), pricingType: pricingClass(entry) }; }).filter((item) => item.id).slice(0, 1000), status: 'HEALTHY' };
 }
 
 async function quickInference(source, secret, fetchImpl, signal, tools = false) {
@@ -111,11 +112,14 @@ export async function testBrainSource(sourceId, credentialId = null, { catalog =
       return { status: discovery.status === 'HEALTHY' ? 'MODEL_SELECTION_REQUIRED' : discovery.status, latencyMs: Math.round(performance.now() - started), modelCount: discovery.models.length };
     }
     let selected = null;
-    if (source.modelId === 'auto') {
+    if (source.modelId === 'auto' || source.type === 'API' && !paidApiUsageEnabled()) {
       const discovery = await requestModels(source, secret, fetchImpl, controller.signal);
       if (discovery.status !== 'HEALTHY') return { status: discovery.status, latencyMs: Math.round(performance.now() - started) };
-      selected = chooseDiscoveredModel(discovery.models);
-      if (!selected) return { status: 'MODEL_SELECTION_REQUIRED', latencyMs: Math.round(performance.now() - started) };
+      selected = source.modelId === 'auto'
+        ? chooseDiscoveredModel(discovery.models, { freeOnly: source.type === 'API' && !paidApiUsageEnabled() })
+        : discovery.models.find((model) => model.id === source.modelId);
+      if (!selected) return { status: source.type === 'API' && !paidApiUsageEnabled() ? 'UNKNOWN_PRICING_DISABLED' : 'MODEL_SELECTION_REQUIRED', latencyMs: Math.round(performance.now() - started) };
+      if (source.type === 'API' && !paidApiUsageEnabled() && selected.pricingType !== 'FREE_MODEL') return { status: selected.pricingType, latencyMs: Math.round(performance.now() - started), modelId: selected.id };
     }
     const testedSource = selected ? { ...source, modelId: selected.id } : source;
     if (source.type === 'LOCAL') {
@@ -142,7 +146,7 @@ export async function testBrainSource(sourceId, credentialId = null, { catalog =
       if (toolStatus !== 'HEALTHY' && capabilities.includes('tools')) capabilities.splice(capabilities.indexOf('tools'), 1);
     }
     catalog.updateSource(source.id, { modelId: testedSource.modelId, capabilities });
-    return { status: 'HEALTHY', latencyMs: Math.round(performance.now() - started), modelId: testedSource.modelId, capabilities, toolStatus };
+    return { status: 'HEALTHY', pricingType: selected?.pricingType || (paidApiUsageEnabled() ? 'PAID_USAGE_ALLOWED' : 'UNKNOWN_PRICING_DISABLED'), latencyMs: Math.round(performance.now() - started), modelId: testedSource.modelId, capabilities, toolStatus };
   } catch (error) { return { status: error.name === 'AbortError' ? 'TIMEOUT' : 'OFFLINE', latencyMs: Math.round(performance.now() - started) }; }
   finally { clearTimeout(timeout); }
 }

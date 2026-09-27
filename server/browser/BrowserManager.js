@@ -155,6 +155,18 @@ export class BrowserManager {
   screenshot() { return this.execute('screenshot'); }
   waitFor(selector, timeout) { return this.execute('waitFor', { selector, timeout }); }
   evaluate(code) { return this.execute('evaluate', { code }); }
+  openHeaded(url) { return this.serial(async () => {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new BrowserError('NAVIGATION_FAILED', 'Only HTTP and HTTPS URLs are allowed.');
+    const engine = this.engine ? await this.ensure('firefox') : await this.start('firefox', true);
+    if (!engine.headed) await engine.relaunchHeaded();
+    await engine.navigate(parsed.href);
+    await engine.bringToFront();
+    this.currentUrl = engine.url();
+    this.state = 'FIREFOX_ACTIVE';
+    clearTimeout(this.idleTimer); // Keep the headed window open for interactive sign-in.
+    return { status: this.getStatus() };
+  }); }
   handoff() { return this.serial(async () => { if (this.state !== 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'No human verification is pending.'); if (!this.engine.headed) await this.engine.relaunchHeaded(); if (!/^https?:\/\//i.test(this.engine.url() || '') && this.pending.url) await this.engine.navigate(this.pending.url); await this.engine.bringToFront(); this.pending.headed = true; this.pending.handoffError = null; return { status: this.getStatus() }; }); }
   resume() { return this.serial(async () => { if (this.state !== 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'No human verification is pending.'); if (await this.engine.challenge()) return { code: 'HUMAN_ACTION_REQUIRED', humanActionRequired: true, status: this.getStatus() }; const resumed = this.pending; this.pending = null; this.state = 'FIREFOX_ACTIVE'; this.scheduleIdle(); this.log('resumed after human handoff'); return { resumed, status: this.getStatus() }; }); }
   close() { return this.serial(async () => { clearTimeout(this.idleTimer); await this.engine?.close().catch(() => {}); this.engine = null; this.pending = null; this.currentUrl = null; this.lastEngine = null; this.lastFields = []; this.lastActionAt = 0; this.state = 'IDLE'; return { status: this.getStatus() }; }); }

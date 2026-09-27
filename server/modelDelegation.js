@@ -10,7 +10,7 @@ const assignments = {
   'deepseek-v4-flash': 'Act as the primary JARVIS brain. Synthesize the grounded specialist result into a concise answer.',
 };
 
-export async function executeModelDelegation({ route, request, context = [], continuationState = null, state, attachments = [], allowFallback = true, execute = executeModelPool }) {
+export async function executeModelDelegation({ route, request, context = [], continuationState = null, state, attachments = [], allowFallback = true, sourceTier = 'all', execute = executeModelPool }) {
   const sequence = [...new Set([route.primaryModel, ...(route.supportModels || [])])];
   const stages = [];
   const executedToolCalls = [];
@@ -27,6 +27,7 @@ export async function executeModelDelegation({ route, request, context = [], con
       continuationState: { ...continuationState, delegationStage: index, delegationSequence: sequence, completedSpecialists: prior },
       state,
       allowFallback,
+      sourceTier,
       attachments: index === 0 ? attachments : [],
       requiredModality: index === 0 && attachments.length ? attachments[0].type || 'text' : 'text',
       requiredCapability: logicalModel === 'minimax-m3' ? 'computer_use' : logicalModel === 'laguna-s-2.1' ? 'tools' : 'text',

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { modelRegistry } from './modelRouting.js';
 import { presetFor, providerPresetRegistry } from './providerPresets.js';
+import { paidApiUsageEnabled } from './spendPolicy.js';
 
 const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
 const sourceFile = path.join(dataDir, 'brain-sources.json');
@@ -69,7 +70,11 @@ export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = sec
   }
   const save = () => { writePrivate(secretsPath, secrets); writePrivate(sourcesPath, sources); };
   const find = (id) => { const source = sources.find((entry) => entry.id === id); if (!source) fail('BRAIN_SOURCE_NOT_FOUND', 'Brain source not found'); return source; };
-  const exposed = (source, health = {}) => ({ ...source, health: health[`brain-${source.id}`]?.status || 'UNKNOWN', credentials: source.credentials.map((credential) => ({ ...credential, hint: mask(secretFor(credential)), status: health[`brain-${credential.id}`]?.status || 'UNKNOWN', retryAfter: health[`brain-${credential.id}`]?.retryAfter || null })), secretConfigured: source.type !== 'API' || source.credentials.some((item) => Boolean(secretFor(item))) });
+  const exposed = (source, health = {}) => ({ ...source, health: health[`brain-${source.id}`]?.status || 'UNKNOWN', credentials: source.credentials.map((credential) => {
+    const checked = health[`brain-${credential.id}`] || {};
+    const status = source.type === 'API' && !paidApiUsageEnabled() && checked.status === 'HEALTHY' && checked.pricingType !== 'FREE_MODEL' ? 'UNKNOWN_PRICING_DISABLED' : checked.status || 'UNKNOWN';
+    return { ...credential, hint: mask(secretFor(credential)), status, pricingType: checked.pricingType || 'UNKNOWN_PRICING_DISABLED', retryAfter: checked.retryAfter || null };
+  }), secretConfigured: source.type !== 'API' || source.credentials.some((item) => Boolean(secretFor(item))) });
   const envKeys = () => Object.keys(env).filter((key) => (Object.values(providerPresetRegistry).some((preset) => preset.envNames.some((name) => key === name || key.startsWith(`${name}_`) && /^\d+$/.test(key.slice(name.length + 1)))) || /^(?:CUSTOM|MODEL|OPENCODE_ZEN|NINEROUTER)_API_KEY(?:_\d+)?$/.test(key)) && env[key]);
   const list = (health = {}) => sources.map((source) => exposed(source, health));
   const publicStatus = (health = {}) => {

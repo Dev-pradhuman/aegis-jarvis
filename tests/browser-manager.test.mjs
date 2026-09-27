@@ -62,6 +62,16 @@ test('visual screenshot routes directly to Firefox and avoids Lightpanda', async
   assert.equal(manager.getStatus().engine, 'firefox'); assert.equal(events.includes('lightpanda:start'), false); await manager.close();
 });
 
+test('authorized website sign-in opens headed Firefox without Lightpanda', async () => {
+  const { manager, events } = harness();
+  const result = await manager.openHeaded('https://chatgpt.com/');
+  assert.equal(result.status.engine, 'firefox');
+  assert.equal(result.status.headed, true);
+  assert.ok(events.includes('firefox:front'));
+  assert.equal(events.some((event) => event.startsWith('lightpanda:')), false);
+  await manager.close();
+});
+
 test('Firefox launch failure has a structured error', async () => {
   const { manager } = harness({ firefox: { startError: 'binary unavailable' } });
   await assert.rejects(manager.screenshot(), (error) => error instanceof BrowserError && error.code === 'FIREFOX_START_FAILED');

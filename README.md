@@ -2,6 +2,8 @@
 
 The console is a Vite React client for one assistant identity: JARVIS. The local service in `server/` provides the durable execution boundary for tasks, approvals, activity, capability discovery, and chat command handling.
 
+For the consolidated record of completed work, verified behavior, and remaining gaps, see [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
+
 ## Run locally
 
 From this directory:
@@ -82,15 +84,11 @@ Research, calendar, messaging, and hardware are provider adapters. Their endpoin
 
 ## Multi-model routing
 
-Settings exposes three JARVIS modes:
+The current automatic path is: exact deterministic command → canonical tool; ordinary conversation → local Ollama; clear complex or explicitly selected strong-AI request → authorized ChatGPT/Claude normal website through BrowserManager; unavailable web tier → compatible, currently verified zero-price API model. When appropriate, a compatible local model is the final offline fallback. CLI agents remain optional sources for explicit/manual use; **they are not the automatic headless tier**. Legacy logical-model IDs remain internally for existing routing and Run compatibility, but do not name the actual execution tier. The Brain window and Run telemetry show the selected tier.
 
-- **Normal**: Muse Spark 1.2 is the conversational agent brain; agentic/tool-heavy work can route to DeepSeek V4 Flash.
-- **Coding**: Laguna S 2.1 is selected for all model-backed requests.
-- **Deep Thinking**: GLM-5.2 is selected for all model-backed requests.
+`ZERO_SPEND_MODE=true` is the default. Paid API completions, hosted media, hosted TTS, and hosted STT are disabled unless both `ZERO_SPEND_MODE=false` and `ALLOW_PAID_API_USAGE=true` are explicitly set. Vercel AI Gateway and OpenRouter API models are eligible automatically only when their current `/models` catalog reports zero price for every published usage dimension. Unknown pricing is disabled. Monthly promotional credits are not treated as a guaranteed hard zero-spend allowance. Browser/system speech synthesis remains a no-API-cost speech fallback.
 
-Manual model selection remains available and overrides the mode. In Normal mode deterministic tools still execute first. Automatic specialists include MiniMax M3 for GUI work, Nemotron 3 Nano Omni followed by MiMo V2.5 for media perception/reasoning, Laguna for repository coding, and GLM for exceptional reasoning. Same-model provider entries are exhausted before the acyclic GLM-5.2 terminal fallback is used.
-
-Requests such as `create an image of ...` and `make a video of ...` bypass the chat model and call Gemini media generation directly. The defaults are `gemini-3.1-flash-image` for images and `veo-3.1-generate-preview` for video; both can be replaced with `GEMINI_IMAGE_MODEL` and `GEMINI_VIDEO_MODEL`. Video creation is asynchronous and returns a durable job that can be polled without restarting the chat Run.
+ChatGPT and Claude website access uses visible page controls in a reusable Firefox session. Open **Galaxy → Brain → Headless Web → Open session** to sign in yourself. JARVIS never reads browser cookies or bypasses human verification. Session status is `UNVERIFIED` until tested through the normal UI. The website adapter cannot currently select the strongest available model or attach media reliably, so it reports the model as unverified and routes attached media to compatible API/local sources instead. Website layout changes can make the adapter unavailable until its selectors are updated.
 
 Configure model sources from **Galaxy → Brain** or **Legacy → Brain**. Brain sources can be API providers, local OpenAI-compatible endpoints, or supported AI CLIs. Add as many API keys as needed; saved secrets remain in the private, gitignored `server/data/brain-secrets.json`, while nonsecret source settings are in `server/data/brain-sources.json`. Both files are written with owner-only permissions. Set `JARVIS_AUTH_TOKEN` before editing Brain sources. The Brain window opens automatically when no model source is configured.
 
@@ -98,7 +96,7 @@ Brain's **Add provider** catalog fills in official endpoints and credential vari
 
 Existing `.env.local`, `server/data/credentials.env`, and `MODEL_PROVIDER_POOLS` configurations still work. Their keys appear as masked, read-only imports in Brain and are not copied to the new store. `MODEL_PROVIDER_POOLS` entries must provide the exact provider model ID and backend `credentialRef`. The old numbered environment slots remain compatible; the Brain UI has no slot limit. New sources are included in the existing canonical model pool immediately after saving. Set source priority and assign one or more routing roles in Brain. AUTO uses the configured priority and compatible healthy sources; a strict source lock is available for debugging. A local endpoint without TLS must use loopback; remote model endpoints require HTTPS.
 
-Brain connection tests use the provider's `/models` endpoint where available. A successful metadata check verifies connectivity, not inference quality or tool support. CLI detection checks executable/version only and reports authentication as unverified until an actual model request succeeds. Codex and Claude CLI text requests run with tools disabled or read-only sandboxing; they cannot execute JARVIS tools outside the canonical runtime.
+Brain connection tests use the provider's `/models` endpoint where available. A successful metadata check verifies connectivity, not inference quality or tool support. Cloud test completions also obey zero-spend eligibility. CLI detection checks executable/version only and reports authentication as unverified until an actual model request succeeds. Codex and Claude CLI text requests run with tools disabled or read-only sandboxing when manually selected; they cannot execute JARVIS tools outside the canonical runtime.
 
 Provider health, bounded retries, cooldowns, API rotations, final-model selection, token/cost usage, and latency are persisted with each Run. A non-provider 4xx request error does not rotate credentials. Set `JARVIS_ROUTER_DEBUG=true` to return routing diagnostics in chat responses; secrets are never included.
 

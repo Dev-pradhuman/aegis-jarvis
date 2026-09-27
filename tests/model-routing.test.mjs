@@ -12,6 +12,9 @@ const success = (text = 'ok') => response(200, { choices: [{ message: { content:
 const isolatedCatalog = { list: () => [], poolEntries: () => [], credentialSecret: () => '' };
 
 test.after(() => { if (originalPools === undefined) delete process.env.MODEL_PROVIDER_POOLS; else process.env.MODEL_PROVIDER_POOLS = originalPools; delete process.env.TEST_KEY_1; delete process.env.TEST_KEY_2; delete process.env.TEST_KEY_3; });
+// These provider calls use mocked responses. Explicitly opt into the paid-policy path here.
+process.env.ZERO_SPEND_MODE = 'false';
+process.env.ALLOW_PAID_API_USAGE = 'true';
 
 test('DeepSeek API1 succeeds without rotation', async () => { const state = setup(); let calls = 0; const result = await executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'hello', state, fetchImpl: async () => { calls += 1; return success(); } }); assert.equal(calls, 1); assert.equal(result.routingTelemetry.apiRotationCount, 0); assert.equal(result.logicalModel, 'deepseek-v4-flash'); });
 test('model requests use a bounded output-token budget', async () => { const state = setup(); let sent; await executeModelPool({ logicalModel: 'deepseek-v4-flash', request: 'hello', state, fetchImpl: async (_url, init) => { sent = JSON.parse(init.body); return success(); } }); assert.equal(sent.max_tokens, 2048); });

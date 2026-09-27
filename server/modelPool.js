@@ -2,6 +2,7 @@ import { modelRegistry } from './modelRouting.js';
 import { brainCatalog } from './brainSources.js';
 import { resolveAutoBrainModels } from './brainService.js';
 import { presetFor } from './providerPresets.js';
+import { paidApiUsageEnabled, zeroSpendEligible } from './spendPolicy.js';
 import { spawn } from 'node:child_process';
 
 const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Object.keys(process.env).filter((key) => /^OPENROUTER_API_KEY_\d+$/.test(key)).sort((a, b) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, priority: 500, ...extra }));
@@ -114,7 +115,10 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
       return item;
     }) : messages;
     const maxTokens = Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048)));
-    const body = ollama ? { model: provider.modelId, messages: [{ role: 'system', content: '/no_think' }, ...messages], stream: false, think: false, options: { num_predict: Math.min(512, maxTokens) }, ...(toolSpecs.length ? { tools: toolSpecs } : {}) } : anthropic ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) } : { model: provider.modelId, messages, max_tokens: maxTokens, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
+    // Some installed Qwen templates prefill a thinking block even with think:false.
+    // JSON-constrained final answers keep internal deliberation out of ordinary chat.
+    const structuredOllamaAnswer = ollama && !toolSpecs.length && messages.every((item) => typeof item.content === 'string');
+    const body = ollama ? { model: provider.modelId, messages: [{ role: 'system', content: '/no_think\nReturn only the final answer.' }, ...messages], stream: false, think: false, options: { num_predict: Math.min(512, maxTokens) }, ...(structuredOllamaAnswer ? { format: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false } } : {}), ...(toolSpecs.length ? { tools: toolSpecs } : {}) } : anthropic ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) } : { model: provider.modelId, messages, max_tokens: maxTokens, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
     const endpoint = ollama ? `${new URL(provider.baseUrl).origin}/api/chat` : `${provider.baseUrl.replace(/\/$/, '')}${anthropic ? '/messages' : '/chat/completions'}`;
     const response = await fetchImpl(endpoint, {
       method: 'POST',
@@ -124,7 +128,14 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
     });
     if ((!anthropic && !ollama) || !response.ok) return response;
     const payload = await response.json().catch(() => ({}));
-    if (ollama) return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content: String(payload.message?.content || '').split('</think>').at(-1).trim(), tool_calls: payload.message?.tool_calls?.map((item, index) => ({ id: item.id || `ollama-tool-${index}`, type: 'function', function: { name: item.function?.name || item.name, arguments: JSON.stringify(item.function?.arguments || item.arguments || {}) } })) || [] } }], usage: { prompt_tokens: payload.prompt_eval_count || 0, completion_tokens: payload.eval_count || 0, total_tokens: Number(payload.prompt_eval_count || 0) + Number(payload.eval_count || 0) } }) };
+    if (ollama) {
+      let answer = String(payload.message?.content || '').split('</think>').at(-1).trim();
+      if (structuredOllamaAnswer) {
+        try { const parsed = JSON.parse(answer); answer = typeof parsed.answer === 'string' ? parsed.answer.trim() : ''; }
+        catch { answer = ''; }
+      }
+      return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content: answer, tool_calls: payload.message?.tool_calls?.map((item, index) => ({ id: item.id || `ollama-tool-${index}`, type: 'function', function: { name: item.function?.name || item.name, arguments: JSON.stringify(item.function?.arguments || item.arguments || {}) } })) || [] } }], usage: { prompt_tokens: payload.prompt_eval_count || 0, completion_tokens: payload.eval_count || 0, total_tokens: Number(payload.prompt_eval_count || 0) + Number(payload.eval_count || 0) } }) };
+    }
     const content = payload.content?.filter((item) => item.type === 'text').map((item) => item.text).join('') || '';
     const toolCalls = payload.content?.filter((item) => item.type === 'tool_use').map((item) => ({ id: item.id, type: 'function', function: { name: item.name, arguments: JSON.stringify(item.input || {}) } })) || [];
     return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content, tool_calls: toolCalls } }], usage: { prompt_tokens: payload.usage?.input_tokens, completion_tokens: payload.usage?.output_tokens, total_tokens: Number(payload.usage?.input_tokens || 0) + Number(payload.usage?.output_tokens || 0) } }) };
@@ -173,7 +184,7 @@ function userContent(request, attachments, modality) {
   return content;
 }
 
-export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null, catalog = brainCatalog }) {
+export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', sourceTier = 'all', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null, catalog = brainCatalog }) {
   if (catalog.list().some((source) => source.modelId === 'auto' && source.secretConfigured)) await resolveAutoBrainModels({ catalog, fetchImpl });
   const registry = modelRegistry();
   const pools = configuredPools(catalog);
@@ -184,14 +195,22 @@ export async function executeModelPool({ logicalModel, request, context = [], co
   const messages = messagesOverride || [...context, ...(continuation ? [continuation] : []), { role: 'user', content: userContent(request, attachments, modality) }];
   const telemetry = { requestedModel: logicalModel, selectedModel: logicalModel, finalModel: null, providerAttempts: [], apiRotationCount: 0, modelFallbackUsed: false, fallbackFrom: null, fallbackTo: null };
   const visited = new Set();
+  let spendBlocked = false;
 
   async function attemptModel(model) {
     if (visited.has(model)) return null;
     visited.add(model);
-    const available = (pools[model] || [])
+    const candidates = (pools[model] || [])
       .filter((provider) => !(routing.modelMode === 'manual' && routing.lockedSourceId) || provider.sourceId === routing.lockedSourceId)
+      .filter((provider) => sourceTier === 'all' || sourceTier === 'local' && provider.type === 'LOCAL' || sourceTier === 'api' && provider.type !== 'LOCAL' && provider.type !== 'CLI')
       .filter((provider) => (provider.type === 'LOCAL' || provider.type === 'CLI' || provider.credentialId && catalog.credentialSecret(provider.credentialId) || process.env[provider.credentialRef]) && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)) && (!provider.type || ((!toolSpecs.length || provider.type !== 'CLI' && provider.capabilities?.includes('tools')) && (!requiredCapability || requiredCapability === 'text' || provider.capabilities?.includes(requiredCapability)))))
       .sort((a, b) => (a.priority ?? 500) - (b.priority ?? 500) || (inFlight.get(a.id) || 0) - (inFlight.get(b.id) || 0));
+    const available = [];
+    for (const provider of candidates) {
+      const secret = provider.credentialId ? catalog.credentialSecret(provider.credentialId) : process.env[provider.credentialRef];
+      if (await zeroSpendEligible(provider, { fetchImpl, now: now(), secret })) available.push(provider);
+      else if (provider.type !== 'LOCAL' && !paidApiUsageEnabled()) spendBlocked = true;
+    }
 
     for (const provider of available) {
       inFlight.set(provider.id, (inFlight.get(provider.id) || 0) + 1);
@@ -262,8 +281,8 @@ export async function executeModelPool({ logicalModel, request, context = [], co
 
   const result = await attemptModel(logicalModel);
   if (result) return result;
-  const error = new Error(`All providers exhausted for ${logicalModel}${telemetry.fallbackTo ? ` and ${telemetry.fallbackTo}` : ''}`);
-  error.code = 'MODEL_CAPACITY_EXHAUSTED';
+  const error = new Error(spendBlocked ? 'No compatible model has verified zero-cost pricing' : `All providers exhausted for ${logicalModel}${telemetry.fallbackTo ? ` and ${telemetry.fallbackTo}` : ''}`);
+  error.code = spendBlocked ? 'NO_ZERO_COST_MODEL_AVAILABLE' : 'MODEL_CAPACITY_EXHAUSTED';
   error.routingTelemetry = telemetry;
   throw error;
 }

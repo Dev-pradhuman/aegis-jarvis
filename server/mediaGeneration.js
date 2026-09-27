@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchWithCredentialRotation } from './credentialPool.js';
+import { assertPaidApiAllowed } from './spendPolicy.js';
 
 const generatedRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data', 'generated');
 const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
@@ -23,6 +24,7 @@ function imageExtension(mimeType) {
 }
 
 export async function generateMedia(kind, prompt, fetchImpl = fetch) {
+  assertPaidApiAllowed('Hosted media generation');
   const cleanPrompt = String(prompt || '').trim().slice(0, 8000);
   if (!cleanPrompt) throw new Error('A media-generation prompt is required');
   if (kind === 'image') {

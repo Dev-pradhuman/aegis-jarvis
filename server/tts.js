@@ -1,10 +1,14 @@
+import { assertPaidApiAllowed, paidApiUsageEnabled } from './spendPolicy.js';
+
 const textValue = (value, max = 5000) => String(value || '').trim().slice(0, max);
 
 export function ttsStatus() {
   const provider = process.env.TTS_PROVIDER || 'browser';
   return {
     provider,
-    sttProvider: process.env.STT_PROVIDER || 'groq',
+    apiSpeechDisabledByZeroSpend: !paidApiUsageEnabled(),
+    sttProvider: paidApiUsageEnabled() ? process.env.STT_PROVIDER || 'groq' : 'browser',
+    configuredSttProvider: process.env.STT_PROVIDER || 'groq',
     elevenlabs: {
       configured: Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID),
       modelId: process.env.ELEVENLABS_MODEL_ID || process.env.ELEVENLABS_MODEL_ID_EN || 'eleven_multilingual_v2',
@@ -20,6 +24,7 @@ export function ttsStatus() {
 }
 
 async function synthesizeOne(input = {}) {
+  assertPaidApiAllowed('Hosted TTS');
   const provider = input.provider || process.env.TTS_PROVIDER;
   const text = textValue(input.text);
   if (!text) throw new Error('text is required');
@@ -57,6 +62,7 @@ export async function synthesizeSpeech(input = {}) {
 }
 
 export async function transcribeAudio(input = {}) {
+  assertPaidApiAllowed('Hosted speech recognition');
   const bytes = Buffer.from(String(input.audio || ''), 'base64'); if (!bytes.length) throw new Error('audio is required'); if (bytes.length > 25 * 1024 * 1024) throw new Error('audio exceeds the 25 MB limit');
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 30_000);
   try { const { response, credentialRef } = await fetchWithCredentialRotation('GROQ_API_KEY', (key) => { const form = new FormData(); form.append('file', new Blob([bytes], { type: input.mimeType || 'audio/webm' }), input.fileName || 'speech.webm'); form.append('model', process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo'); form.append('response_format', 'json'); return fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method: 'POST', signal: controller.signal, headers: { authorization: `Bearer ${key}` }, body: form }); }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error?.message || `Groq transcription returned HTTP ${response.status}`); return { text: String(data.text || '').trim(), model: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo', credentialSlot: credentialRef }; } finally { clearTimeout(timer); }

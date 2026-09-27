@@ -3,6 +3,9 @@ import { unlink } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { generateMedia } from '../server/mediaGeneration.js';
+// Mocked provider responses exercise the explicit paid-policy path without spending.
+process.env.ZERO_SPEND_MODE = 'false';
+process.env.ALLOW_PAID_API_USAGE = 'true';
 
 test('image generation uses Gemini generateContent with image response modality', async () => {
   process.env.GEMINI_API_KEY = 'test';

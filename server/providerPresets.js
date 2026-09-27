@@ -8,6 +8,7 @@ const api = (id, displayName, envName, defaultBaseUrl, documentationUrl, extra =
 });
 
 export const providerPresetRegistry = Object.freeze({
+  vercel: api('vercel', 'Vercel AI Gateway', 'AI_GATEWAY_API_KEY', 'https://ai-gateway.vercel.sh/v1', 'https://vercel.com/docs/ai-gateway/openai-compat/rest-api'),
   openai: api('openai', 'OpenAI', 'OPENAI_API_KEY', 'https://api.openai.com/v1', 'https://platform.openai.com/docs/api-reference/models/list'),
   anthropic: api('anthropic', 'Claude / Anthropic', 'ANTHROPIC_API_KEY', 'https://api.anthropic.com/v1', 'https://platform.claude.com/docs/en/api/overview', { apiFormat: 'anthropic-messages', authType: 'anthropic', capabilities: ['text', 'tools'] }),
   gemini: api('gemini', 'Google Gemini', 'GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai', 'https://ai.google.dev/gemini-api/docs/openai'),

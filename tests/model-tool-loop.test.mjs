@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { executeModelToolLoop } from '../server/modelToolLoop.js';
 import { executeModelPool } from '../server/modelPool.js';
+// These provider calls use mocked responses. Explicitly opt into the paid-policy path here.
+process.env.ZERO_SPEND_MODE = 'false';
+process.env.ALLOW_PAID_API_USAGE = 'true';
 
 test('model native tool call executes a grounded tool and continues to final answer', async () => {
   const requests = [];

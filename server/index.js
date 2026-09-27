@@ -3,10 +3,11 @@ import { getState, updateState, activityEntry } from './store.js';
 import { getTool, listCapabilities, listTools } from './registry.js';
 import { validateToolInput } from './toolSchema.js';
 import { publicPools } from './modelPool.js';
-import { executeModelDelegation } from './modelDelegation.js';
 import { assembleModelContext } from './contextAssembler.js';
-import { modelRegistry } from './modelRouting.js';
-import { selectLogicalModelWithClassifier } from './modelRouterService.js';
+import { modelRegistry, selectLogicalModel } from './modelRouting.js';
+import { executeBrainWorkflow } from './brainWorkflow.js';
+import { openWebAiSession, webAiStatus } from './webAiProvider.js';
+import { paidApiUsageEnabled } from './spendPolicy.js';
 import { executeTool } from './toolExecutor.js';
 import { runWorkflow, workflowSummary } from './workflowEngine.js';
 import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchMemory } from './systemModules.js';
@@ -66,6 +67,8 @@ function recordActivity(state, entry) {
 }
 
 function modelFailureReply(error, runId) {
+  if (error?.code === 'NO_ZERO_COST_MODEL_AVAILABLE') return 'No compatible local model, authorized web session, or verified zero-cost API model is available. No paid API call was made.';
+  if (error?.code === 'HUMAN_ACTION_REQUIRED') return 'Human verification is required in the browser before JARVIS can continue.';
   if (error?.code === 'REQUEST_ERROR') return `The model request was rejected before execution: ${error.message}`;
   if (error?.code === 'CAPABILITY_UNAVAILABLE') return `The required capability is temporarily unavailable. Run ${runId} was preserved without claiming the action succeeded.`;
   return `Model capacity is currently unavailable. Run ${runId} was preserved and can be resumed when a provider becomes available.`;
@@ -124,17 +127,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'PATCH' && url.pathname === '/api/config') { const config = saveConfig(await body(req)); return json(res, 200, config); }
     if (req.method === 'GET' && url.pathname === '/api/brain') {
       const runtime = await ollamaRuntimeStatus();
+      const voice = ttsStatus();
       const status = brainCatalog.publicStatus(state.modelRouting?.providerHealth);
       if (runtime.status !== 'MODEL_AVAILABLE') for (const source of status.sources) if (source.presetId === 'ollama') source.health = runtime.status;
       if (runtime.status !== 'MODEL_AVAILABLE' && status.sources.every((source) => source.type === 'LOCAL')) status.status = runtime.status;
-      return json(res, 200, { ...status, configurationLocked: !process.env.JARVIS_AUTH_TOKEN, localRuntime: runtime, presets: publicProviderPresets(), cli: detectedCliSources(), models: modelRegistry(), routing: { modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || null, lockedSourceId: state.modelRouting?.lockedSourceId || null, manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false }, events: (state.modelRouting?.telemetry || []).flatMap((item) => item.providerAttempts || []).slice(-30) });
+      return json(res, 200, { ...status, configurationLocked: !process.env.JARVIS_AUTH_TOKEN, localRuntime: runtime, headlessWeb: webAiStatus(), voice: { provider: voice.provider, sttProvider: voice.sttProvider, apiSpeechDisabledByZeroSpend: voice.apiSpeechDisabledByZeroSpend }, spendPolicy: { zeroSpendMode: !paidApiUsageEnabled(), allowPaidApiUsage: paidApiUsageEnabled(), freeCreditsAutomatic: false }, presets: publicProviderPresets(), cli: detectedCliSources(), models: modelRegistry(), routing: { modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || null, lockedSourceId: state.modelRouting?.lockedSourceId || null, manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false }, events: (state.modelRouting?.telemetry || []).flatMap((item) => item.providerAttempts || []).slice(-30) });
+    }
+    if (req.method === 'POST' && /^\/api\/brain\/web\/(chatgpt|claude)\/open$/.test(url.pathname)) {
+      const site = url.pathname.split('/')[4];
+      return json(res, 200, await openWebAiSession(site));
     }
     if (url.pathname.startsWith('/api/brain/') && !process.env.JARVIS_AUTH_TOKEN && req.method !== 'GET') return json(res, 403, { code: 'BRAIN_AUTH_REQUIRED', error: 'Configure JARVIS_AUTH_TOKEN before editing Brain sources' });
     if (req.method === 'POST' && url.pathname === '/api/brain/test-all') {
       const tasks = brainCatalog.list().flatMap((source) => source.type === 'API' ? source.credentials.filter((key) => key.enabled).map((key) => ({ source, credentialId: key.id })) : [{ source, credentialId: null }]);
       const results = await Promise.all(tasks.map(async ({ source, credentialId }) => {
         const result = await testBrainSource(source.id, credentialId);
-        await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || source.id}`] = { status: result.status, lastCheckedAt: new Date().toISOString() }; return draft; });
+        await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || source.id}`] = { status: result.status, pricingType: result.pricingType || null, lastCheckedAt: new Date().toISOString() }; return draft; });
         return { sourceId: source.id, credentialId, ...result };
       }));
       return json(res, 200, { results });
@@ -148,7 +156,7 @@ const server = http.createServer(async (req, res) => {
         const source = brainCatalog.addPresetSource(presetId);
         const credential = preset.providerType === 'API' ? brainCatalog.addCredential(source.id, { secret: input.secret }) : null;
         const result = await testBrainSource(source.id, credential?.id || null);
-        await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credential?.id || source.id}`] = { status: result.status, lastCheckedAt: new Date().toISOString() }; return draft; });
+        await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credential?.id || source.id}`] = { status: result.status, pricingType: result.pricingType || null, lastCheckedAt: new Date().toISOString() }; return draft; });
         return json(res, 200, { sourceId: source.id, credentialId: credential?.id || null, result });
       } catch (error) { if (error.code?.startsWith('BRAIN_')) return json(res, 400, { code: error.code, error: error.message }); throw error; }
     }
@@ -163,7 +171,7 @@ const server = http.createServer(async (req, res) => {
         if (action === 'credentials' && !credentialId && req.method === 'POST') return json(res, 201, { credential: brainCatalog.addCredential(sourceId, await body(req)) });
         if (action === 'credentials' && credentialId && req.method === 'PATCH') return json(res, 200, { credential: brainCatalog.updateCredential(sourceId, credentialId, await body(req)) });
         if (action === 'credentials' && credentialId && req.method === 'DELETE') { brainCatalog.removeCredential(sourceId, credentialId); return json(res, 200, { removed: true }); }
-        if ((action === 'test' || action === 'credentials' && trailing === 'test') && req.method === 'POST') { const result = await testBrainSource(sourceId, action === 'credentials' ? credentialId : null); await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || sourceId}`] = { status: result.status, lastCheckedAt: new Date().toISOString() }; return draft; }); return json(res, 200, { result }); }
+        if ((action === 'test' || action === 'credentials' && trailing === 'test') && req.method === 'POST') { const result = await testBrainSource(sourceId, action === 'credentials' ? credentialId : null); await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || sourceId}`] = { status: result.status, pricingType: result.pricingType || null, lastCheckedAt: new Date().toISOString() }; return draft; }); return json(res, 200, { result }); }
         if (action === 'models' && req.method === 'GET') return json(res, 200, await discoverBrainModels(sourceId));
       } catch (error) { if (error.code?.startsWith('BRAIN_')) return json(res, error.code.endsWith('NOT_FOUND') ? 404 : 400, { code: error.code, error: error.message }); throw error; }
     }
@@ -525,16 +533,18 @@ const server = http.createServer(async (req, res) => {
       let providerResult = null; let modelRoute = null; let modelFailure = null;
       if (!createdTask) {
         const modelStarted = performance.now();
-        modelRoute = await selectLogicalModelWithClassifier(text, state.modelRouting || {}, { hasMedia: Boolean(input.attachments?.length) }, state);
+        modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: Boolean(input.attachments?.length) });
         const assembledContext = assembleModelContext({ query: text, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
         try {
-          providerResult = await executeModelDelegation({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
+          const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
+          providerResult = brain.result;
+          modelRoute.executionDecision = brain.decision;
           if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);
-          reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.logicalModel;
-          run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
+          reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.model || providerResult.logicalModel;
+          run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, actualModel: providerResult.model || null, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
         } catch (error) {
           let terminalError = error;
-          if (error.code === 'MODEL_CAPACITY_EXHAUSTED' && publicProvider(state.provider).configured) {
+          if (paidApiUsageEnabled() && error.code === 'MODEL_CAPACITY_EXHAUSTED' && publicProvider(state.provider).configured) {
             try {
               const intendedModel = error.routingTelemetry?.selectedModel || modelRoute.primaryModel;
               const emergencyProvider = providerForLogicalModel(state.provider, intendedModel);
@@ -561,7 +571,7 @@ const server = http.createServer(async (req, res) => {
         finishRun(run, { reply, task: createdTask }, providerResult ? { input: providerResult.inputTokens, output: providerResult.outputTokens, total: providerResult.tokens } : { total: 0 });
       }
       await updateState((draft) => { const stored = draft.runs?.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
-      return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: true, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
+      return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : modelFailure.code === 'HUMAN_ACTION_REQUIRED' ? 409 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: !modelFailure && !run.routing?.site, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
     }
     return json(res, 404, { error: 'Not found' });
   } catch (error) { if (!desktopErrorStatus(error.code)) console.error(error); return json(res, desktopErrorStatus(error.code) || (error.code === 'PAYLOAD_TOO_LARGE' ? 413 : error.code === 'INVALID_JSON' || error.code === 'TOOL_INPUT_INVALID' ? 400 : error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500), { error: desktopErrorStatus(error.code) ? error.message : 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }
