@@ -21,6 +21,7 @@ import { validateToolInput, validateToolOutput } from './toolSchema.js';
 import { actionFingerprint } from './idempotency.js';
 import { diagnostics, researchSearch, searchMemory } from './systemModules.js';
 import { generateMedia } from './mediaGeneration.js';
+import { reminderAction } from './reminders.js';
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -64,6 +65,7 @@ export const implementedToolIds = [
   'browser.wait', 'browser.evaluate', 'browser.status', 'browser.handoff',
   'browser.resume', 'browser.close', 'apps.list', 'apps.open', 'project.inspect',
   'files.read', 'command.execute', 'composio.execute', 'tasks.list', 'tasks.manage',
+  'reminders.list', 'reminders.create', 'reminders.update', 'reminders.complete', 'reminders.snooze', 'reminders.cancel',
   'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest',
   'media.generate', 'research.search', 'calendar.create', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
@@ -82,6 +84,7 @@ function requireExactApproval(toolId, input, approval, runId = null, hash = acti
 }
 
 async function runTool(toolId, input = {}, context = {}) {
+  if (toolId.startsWith('reminders.')) return { ok: true, toolId, data: reminderAction(context.state || {}, toolId.split('.')[1], input) };
   if (toolId === 'tasks.list') return { ok: true, toolId, data: { tasks: context.state?.tasks || [] } };
   if (toolId === 'tasks.manage') {
     if (!context.state) throw new Error('Task state is unavailable');

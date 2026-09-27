@@ -1,5 +1,21 @@
 export function routeRequest(text) {
   const value = String(text).trim();
+  const relativeReminder = value.match(/^(?:jarvis[, ]+)?remind me in (\d{1,4}) (minutes?|hours?|days?) to (.{1,300})$/i);
+  if (relativeReminder) {
+    const count = Number(relativeReminder[1]);
+    const unit = relativeReminder[2].toLowerCase().startsWith('minute') ? 60_000 : relativeReminder[2].toLowerCase().startsWith('hour') ? 3_600_000 : 86_400_000;
+    if (count > 0) return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: relativeReminder[3], dueAt: new Date(Date.now() + count * unit).toISOString() }, confidence: 0.99 };
+  }
+  const clockReminder = value.match(/^(?:jarvis[, ]+)?remind me at (\d{1,2})(?::(\d{2}))?\s*(am|pm) to (.{1,300})$/i);
+  if (clockReminder) {
+    const hour = Number(clockReminder[1]), minute = Number(clockReminder[2] || 0);
+    if (hour >= 1 && hour <= 12 && minute <= 59) {
+      const due = new Date(); due.setHours(hour % 12 + (clockReminder[3].toLowerCase() === 'pm' ? 12 : 0), minute, 0, 0);
+      if (due.getTime() <= Date.now()) due.setDate(due.getDate() + 1);
+      return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: clockReminder[4], dueAt: due.toISOString() }, confidence: 0.99 };
+    }
+  }
+  if (/^(?:show|list|what are)\s+(?:my\s+)?reminders\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
   const targetedType = value.match(/^(?:jarvis[, ]+)?type\s+(.{1,500}?)\s+into\s+(.{2,120})[.!]?$/i);
   if (targetedType) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: targetedType[1], target: { name: targetedType[2].trim() } }, confidence: 0.99 };
   const targetedPress = value.match(/^(?:jarvis[, ]+)?press\s+([A-Za-z0-9+ ]{1,60})\s+in\s+(.{2,120})[.!]?$/i);

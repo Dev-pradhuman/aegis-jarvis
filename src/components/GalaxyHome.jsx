@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, AudioLines, Bot, BrainCircuit, ChevronRight, Database, Expand, FlaskConical, FolderKanban, Globe2, Home, ListTodo, MemoryStick, MessageCircle, Moon, PanelLeftClose, PanelLeftOpen, Phone, PlugZap, Radio, RotateCcw, Settings2, ShieldCheck, Shrink, Sparkles, Sun, Workflow, Wrench } from 'lucide-react';
+import { Activity, AudioLines, Bell, Bot, BrainCircuit, ChevronRight, Database, Expand, FlaskConical, FolderKanban, Globe2, Home, ListTodo, MemoryStick, MessageCircle, Moon, PanelLeftClose, PanelLeftOpen, Phone, PlugZap, Radio, RotateCcw, Settings2, ShieldCheck, Shrink, Sparkles, Sun, Workflow, Wrench } from 'lucide-react';
 import useTelemetry from '../hooks/useTelemetry.js';
 import { pollWithBackoff } from '../hooks/pollWithBackoff.js';
 import useVisualState from '../galaxy/useVisualState.js';
@@ -10,7 +10,7 @@ import '../styles/galaxy-immersive.css';
 const NAV = [
   { id: 'home', label: 'Home', icon: Home }, { id: 'chat', label: 'Chat', icon: MessageCircle },
   { id: 'brain', label: 'Brain', icon: BrainCircuit },
-  { id: 'tasks', label: 'Tasks', icon: ListTodo }, { id: 'runs', label: 'Runs', icon: Activity },
+  { id: 'tasks', label: 'Tasks', icon: ListTodo }, { id: 'reminders', label: 'Reminders', icon: Bell }, { id: 'runs', label: 'Runs', icon: Activity },
   { id: 'workflows', label: 'Workflows', icon: Workflow }, { id: 'memory', label: 'Memory', icon: Database },
   { id: 'browser', label: 'Browser', icon: Globe2 },
   { id: 'approvals', label: 'Approvals', icon: ShieldCheck }, { id: 'agents', label: 'Agents', icon: Bot },

@@ -12,6 +12,7 @@ const seed = {
   provider: { id: 'local', label: 'Local model', model: 'qwen3:4b', baseUrl: 'http://127.0.0.1:11434/v1', configured: false },
   modelRouting: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'muse-spark-1.2', manualFallbackAllowed: true, providerHealth: {}, telemetry: [] },
   tasks: [],
+  reminders: [],
   approvals: [],
   approvalPolicy: DEFAULT_APPROVAL_POLICY,
   activity: [],
@@ -68,7 +69,7 @@ async function load() {
       removedDemoSeed = true;
     }
     if (interrupted || removedDemoSeed) await writeJsonAtomically(file, parsed);
-    return { ...structuredClone(seed), ...parsed, approvalPolicy: { ...DEFAULT_APPROVAL_POLICY, ...(parsed.approvalPolicy || {}) }, runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
+    return { ...structuredClone(seed), ...parsed, approvalPolicy: { ...DEFAULT_APPROVAL_POLICY, ...(parsed.approvalPolicy || {}) }, reminders: parsed.reminders || [], runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
     await writeJsonAtomically(file, seed);

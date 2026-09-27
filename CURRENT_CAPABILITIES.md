@@ -27,7 +27,8 @@ Verified through 2026-09-27 on Ubuntu 26.04.1, KDE Plasma Wayland. This record d
 | Screen/camera vision | NOT_IMPLEMENTED | Desktop capture exists but no vision analysis path | Vision model adapter, grounded context and permission UX |
 | Remote second laptop | NOT_IMPLEMENTED | Paired device event protocol exists, not a remote desktop host | Encrypted authenticated capability-scoped host agent and second machine QA |
 | Tasks | WORKING | Persisted canonical create/update/list; tests and live API | Reminders and calendar are separate |
-| Reminders and morning briefing | NOT_IMPLEMENTED | No actual reminder firing or source aggregation | Scheduler-backed implementation and source connectors |
+| Native reminders | WORKING_LIVE for one-time | Canonical create/list/update/snooze/complete/cancel tools, persisted due claim, Galaxy panel and Linux desktop notification request; live harmless reminder fired once and was completed | Voice announcement, recurring/cron jobs and cross-device delivery |
+| Morning briefing | NOT_IMPLEMENTED | No configured source aggregation or scheduled briefing | Scheduler-backed briefing workflow and connected sources |
 | Calendar, Gmail, Instagram, Edunext | CONFIGURATION_REQUIRED or NOT_IMPLEMENTED | Calendar/Gmail/Instagram adapters require accounts; Edunext adapter absent | Provider credentials, supported API access, Edunext specification |
 | Research and media | PARTIAL | Grounded source planning and configured media generator adapters exist | Research synthesis and end-to-end source→media workflow remain |
 | Android/SIM calls/WhatsApp | NOT_IMPLEMENTED | Device event/pairing foundation and UI status exist; no phone companion or real control | Android app, user-granted roles, supported WhatsApp integration |

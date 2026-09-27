@@ -7,9 +7,10 @@ import BrowserPanel from './BrowserPanel.jsx';
 import BrainManager from '../components/BrainManager.jsx';
 import Approvals from '../components/Approvals.jsx';
 import ApprovalPolicyPanel from '../components/ApprovalPolicyPanel.jsx';
+import RemindersPanel from '../components/RemindersPanel.jsx';
 
 const TITLES = {
-  chat: 'Conversation', tasks: 'Tasks', approvals: 'Approvals', runs: 'Execution runs',
+  chat: 'Conversation', tasks: 'Tasks', reminders: 'Reminders', approvals: 'Approvals', runs: 'Execution runs',
   workflows: 'Workflows', memory: 'Memory', research: 'Research', mcp: 'MCP tools',
   agents: 'Agents', projects: 'Projects', media: 'Media', integrations: 'Integrations',
   system: 'System', settings: 'Settings', phone: 'Phone', messaging: 'Messaging', browser: 'Browser', brain: 'JARVIS Brain',
@@ -53,6 +54,7 @@ function WindowBody({ id }) {
   if (id === 'browser') return <BrowserPanel />;
   if (id === 'brain') return <BrainManager />;
   if (id === 'approvals') return <div className="galaxy-approvals"><Approvals /><ApprovalPolicyPanel /></div>;
+  if (id === 'reminders') return <RemindersPanel />;
   if (id === 'settings') return <WorkspaceViews view="settings" />;
   return <LiveModule id={id} />;
 }

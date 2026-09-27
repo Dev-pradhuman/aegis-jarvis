@@ -16,6 +16,7 @@ import { capabilityStatus } from './capabilityStatus.js';
 import { publicApprovalPolicy, validateApprovalRules } from './approvalPolicy.js';
 import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchMemory } from './systemModules.js';
 import { tick } from './scheduler.js';
+import { claimDueReminders, deliverDesktopReminder } from './reminders.js';
 import crypto from 'node:crypto';
 import { adapterStatus, embed, extractDocument, mcpError, mcpResponse, vectorSearch } from './extendedAdapters.js';
 import { calendarRequest, createSession, validSession } from './liveAdapters.js';
@@ -49,6 +50,28 @@ const desktopErrorStatus = (code) => ({ WINDOW_NOT_FOUND: 404, AMBIGUOUS_TARGET:
 const schedulerEnabled = process.env.JARVIS_SCHEDULER !== '0';
 const schedulerInterval = Math.max(10_000, Number(process.env.JARVIS_SCHEDULER_INTERVAL_MS || 30_000));
 let lastSchedulerTick = null;
+let schedulerTickInFlight = null;
+async function processSchedulerTick() {
+  if (schedulerTickInFlight) return schedulerTickInFlight;
+  schedulerTickInFlight = (async () => {
+    const current = await getState();
+    const runs = await tick(current);
+    const reminders = claimDueReminders(current);
+    lastSchedulerTick = new Date().toISOString();
+    await updateState((draft) => draft);
+    for (const reminder of reminders) {
+      const delivered = await deliverDesktopReminder(reminder);
+      await updateState((draft) => {
+        const item = (draft.reminders || []).find((entry) => entry.id === reminder.id);
+        if (item?.status === 'due') item.desktopDelivery = delivered.status;
+        return draft;
+      });
+    }
+    return { runs, reminders };
+  })();
+  try { return await schedulerTickInFlight; }
+  finally { schedulerTickInFlight = null; }
+}
 const json = (res, status, body) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -352,7 +375,8 @@ const server = http.createServer(async (req, res) => {
       return run ? json(res, 200, { run }) : json(res, 404, { error: 'Workflow not found' });
     }
     if (req.method === 'GET' && url.pathname === '/api/scheduler') return json(res, 200, { enabled: schedulerEnabled, intervalSeconds: schedulerInterval / 1000, lastTickAt: lastSchedulerTick });
-    if (req.method === 'POST' && url.pathname === '/api/scheduler/tick') { const runs = await tick(state); await updateState((draft) => draft); return json(res, 200, { runs, tickedAt: new Date().toISOString() }); }
+    if (req.method === 'POST' && url.pathname === '/api/scheduler/tick') { const result = await processSchedulerTick(); return json(res, 200, { ...result, tickedAt: lastSchedulerTick }); }
+    if (req.method === 'GET' && url.pathname === '/api/reminders') return json(res, 200, { reminders: state.reminders || [] });
     if (req.method === 'POST' && url.pathname === '/api/tools/execute') {
       const result = await executeApiTool(state, await body(req));
       return json(res, result.status, result.body);
@@ -479,6 +503,8 @@ const server = http.createServer(async (req, res) => {
           data = result.data;
           reply = 'The desktop portal accepted the input. The focused application result has not been verified.';
         }
+        else if (route.capability === 'reminders.create') { data = (await invokeChatTool('reminders.create', route.args)).data; reply = `Reminder scheduled for ${new Date(data.reminder.dueAt).toLocaleString('en-IN')}: ${data.reminder.title}.`; }
+        else if (route.capability === 'reminders.list') { data = (await invokeChatTool('reminders.list')).data; const active = data.reminders.filter((item) => ['scheduled', 'due'].includes(item.status)); reply = active.length ? `${active.length} active reminders:\n${active.map((item) => `${item.title} — ${item.status === 'due' ? 'due now' : new Date(item.dueAt).toLocaleString('en-IN')}`).join('\n')}` : 'You have no active reminders.'; }
         else if (route.capability === 'tasks.list') { data = (await invokeChatTool('tasks.list')).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
         else if (route.capability === 'gmail.latest') {
           const tool = await invokeChatTool('gmail.latest', { limit: route.args.limit });
@@ -582,7 +608,7 @@ process.once('SIGTERM', shutdownBrowser);
 
 const schedulerTimer = setInterval(async () => {
   if (!schedulerEnabled) return;
-  try { const state = await getState(); await tick(state); lastSchedulerTick = new Date().toISOString(); await updateState((draft) => draft); } catch (error) { console.warn(`Scheduler tick failed: ${error.message}`); }
+  try { await processSchedulerTick(); } catch (error) { console.warn(`Scheduler tick failed: ${error.message}`); }
 }, schedulerInterval);
 schedulerTimer.unref();
 

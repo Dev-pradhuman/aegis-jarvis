@@ -4,13 +4,14 @@ Updated 2026-09-27 for the public `main` branch. This is the consolidated record
 
 ## Current repair milestone (starting commit `cb22b81`, 2026-09-27)
 
-- Baseline before edits: clean `main`, 172 tests passing, production build passing, local health responding. After edits: **187 tests passing, 0 failing**, build passing, `git diff --check` passing. This count includes 15 new tests; earlier tests were not removed.
+- Baseline before edits: clean `main`, 172 tests passing, production build passing, local health responding. After edits: **190 tests passing, 0 failing**, build passing, `git diff --check` passing. This count includes 18 new tests; earlier tests were not removed.
 - `POST /api/tools/execute` now creates a persisted canonical Run and step. A pending approval stores the exact normalized request, Run and step. Approving resumes that same action without a second prompt; duplicate idempotency keys replay the result. A live `node --version` action waited for approval in Run `run-1790531027279-016fdf`, then completed that Run and consumed the approval once. Deterministic chat actions now write their eventual approved/denied outcome to chat history without another user message. The focused tests cover parallel duplicate requests, workflow continuation, deny and expiry. This proves the direct tool and deterministic approval paths; **model continuation after an approved mutating tool has not been live verified**.
 - Workflow approval resumes the same workflow Run and subsequent steps. Rejected/expired approvals now mark the affected step failed rather than leaving it visually waiting. Workflows are still sequential and lack full persisted DAG scheduling, cancellation of an in-flight external step, and robust restart recovery.
 - Approval policy now has SAFE (default), CUSTOM scoped rules, and deliberate FULL activation. FULL requires a configured `JARVIS_AUTH_TOKEN` and a typed warning confirmation. These modes are unit/integration tested; FULL was not activated against the live machine. They govern JARVIS dialogs only and retain OS consent, exact target checks, idempotency, account authentication, CAPTCHA handoff, and zero-spend policy.
 - Galaxy and legacy Approvals now use real pending records with approve/deny controls; Galaxy also displays the policy editor. Empty Tasks, Agents, Goals, Skills, Connections and related legacy views no longer use decorative sample entries as live data. Agents remains delegation history, not an autonomous AgentManager.
 - Persisted local state is written atomically with `0600` file permissions; the pre-existing local state file was corrected from `0664` to `0600`. The model list no longer labels a model free by name alone or by absent pricing; only verified zero-price metadata earns that label.
 - Live QA: backend `/api/health` returned HTTP 200; Galaxy loaded from Vite and showed live CPU/RAM status; its Approvals window exposed the real pending action and policy controls. A previous pending approval was left untouched during UI QA. External account actions were not sent.
+- Native one-time reminders now use canonical `reminders.create/list/update/complete/snooze/cancel` tools, the existing scheduler tick, persisted due claims, desktop `notify-send` delivery attempts on Linux, and a Galaxy Reminders window. Live harmless reminders fired both through a manual scheduler tick and the automatic timer; each was accepted by desktop notifications and completed, with no duplicate claim. Recurring/cron scheduling, voice announcements, and cross-device delivery remain missing.
 
 ## Development history
 
@@ -39,7 +40,8 @@ Updated 2026-09-27 for the public `main` branch. This is the consolidated record
 | Galaxy and legacy frontend | WORKING | Galaxy at `/`, legacy at `/legacy`; 3D core, starfield, fullscreen, 360° camera, manual controls, auto drift, state animation, floating windows; previous visual QA and current build | Continue real-GPU visual checks after graphics changes |
 | Local service and auth | WORKING | Unified dev startup, health endpoint, authenticated session flow, offline backoff; local health check passed | Remote access remains disabled by default |
 | Canonical tools, approvals, idempotency | PARTIAL | Registry/handler/schema contract tests, exact one-use approvals, Run binding and duplicate-action protection | Some legacy direct API actions and tool-specific output schemas still need consolidation |
-| Tasks and Runs | WORKING | Durable tasks, canonical deterministic commands, Run telemetry, interrupted-Run recovery | Reminder delivery is separate and absent |
+| Tasks and Runs | WORKING | Durable tasks, canonical deterministic commands, Run telemetry, interrupted-Run recovery | More task scheduling and cross-device delivery are absent |
+| Local reminders | WORKING_LIVE for one-time | Canonical tools, Galaxy Reminders window, persistent scheduler claim and Linux desktop notification request; live create → due → no duplicate → complete | Voice announcement, recurrence, timezone-aware cron and remote delivery remain |
 | Workflows | PARTIAL | Canonical tool steps, dependencies, approval resume, observed results tested | No user workflows currently configured; cancellation during execution and richer graphs remain |
 | Ollama local Brain | WORKING | `qwen3:4b` installed and live text inference verified; structured final output prevents the observed reasoning-only reply | CPU inference is slow; live model tool-continuation QA remains |
 | Brain setup and provider credentials | PARTIAL | Galaxy Brain window, provider presets, backend-only masked secrets, dynamic credential arrays, health and cooldown tests | `JARVIS_AUTH_TOKEN` is needed to edit Brain config; no cloud credentials are configured here |
@@ -70,7 +72,7 @@ Updated 2026-09-27 for the public `main` branch. This is the consolidated record
 
 ## Current roadmap position
 
-1. **Daily local assistant: PARTIAL.** Deterministic commands, tasks, local chat, browser management, and controlled KDE desktop input work. The full second-laptop and grounded screen-understanding acceptance path does not.
+1. **Daily local assistant: PARTIAL.** Deterministic commands, tasks, one-time reminders, local chat, browser management, and controlled KDE desktop input work. The full second-laptop and grounded screen-understanding acceptance path does not.
 2. **Brain routing: PARTIAL.** Local and deterministic paths are live; web and free-API fallbacks have code and tests but need authenticated sessions/keys and live end-to-end QA.
 3. **Advanced research and projects: PARTIAL.** Real status and source planning exist; full synthesis and media execution are not complete.
 4. **Communications and physical devices: NOT IMPLEMENTED for real-world actions.** Protocol/UI foundations do not make phone calls, WhatsApp messages, smart lights or robots functional.
