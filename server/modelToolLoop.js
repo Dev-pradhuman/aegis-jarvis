@@ -28,8 +28,9 @@ export async function executeModelToolLoop(options, dependencies = {}) {
       try {
         if (!tool) throw Object.assign(new Error('Tool is not available to this model run'), { code: 'TOOL_UNAVAILABLE' });
         const args = JSON.parse(call.function.arguments || '{}');
-        const response = await invoke(options.state, { toolId: tool.id, input: args, runId: options.continuationState?.runId || null });
+        const response = await invoke(options.state, { toolId: tool.id, input: args, runId: options.continuationState?.runId || null, stepId: call.id, idempotencyKey: call.id, resumeOnApproval: true });
         output = response.body;
+        if (response.status === 202) return { ...result, ...usage, executedToolCalls: calls, approvalRequired: true, approval: output.approval };
         if (response.status !== 200) throw Object.assign(new Error(output?.error || output?.code || 'Tool execution failed'), { code: output?.code || 'TOOL_ERROR' });
         calls.push({ id: call.id, tool: tool.id, input: args, result: output, status: output.ok ? 'completed' : 'failed' });
       } catch (error) {

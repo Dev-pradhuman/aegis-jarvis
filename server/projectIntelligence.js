@@ -26,14 +26,16 @@ export async function inspectProject(project) {
   const { name, root } = project;
   try {
     if (!(await stat(root)).isDirectory()) throw new Error('Not a directory');
-    const [branch, head, changes, packageText] = await Promise.all([
+    const [branch, head, changes, packageText, ports, testLogs] = await Promise.all([
       git(root, ['branch', '--show-current']), git(root, ['rev-parse', '--short', 'HEAD']), git(root, ['status', '--porcelain=v1', '--untracked-files=normal']),
       readFile(path.join(root, 'package.json'), 'utf8').catch(() => null),
+      run('ss', ['-ltnp']).then(r => r.stdout).catch(() => ''),
+      run('npm', ['test'], { cwd: root, timeout: 5000 }).then(r => r.stdout).catch(e => e.stdout || e.message)
     ]);
     let packageInfo = null;
     try { if (packageText) { const parsed = JSON.parse(packageText); packageInfo = { name: parsed.name || null, version: parsed.version || null, scripts: Object.keys(parsed.scripts || {}) }; } } catch { /* Invalid metadata is reported as absent. */ }
     const lines = changes === null ? [] : changes.split('\n').filter(Boolean);
-    return { name, root, status: branch === null ? 'directory' : 'available', branch, head, changedFiles: changes === null ? null : lines.length, changes: lines.slice(0, 30), truncated: lines.length > 30, package: packageInfo, ...(project.configurationError ? { configurationError: project.configurationError } : {}) };
+    return { name, root, status: branch === null ? 'directory' : 'available', branch, head, changedFiles: changes === null ? null : lines.length, changes: lines.slice(0, 30), truncated: lines.length > 30, package: packageInfo, ports: (ports || '').split('\n').slice(0, 5), recentTests: (testLogs || '').slice(-500), ...(project.configurationError ? { configurationError: project.configurationError } : {}) };
   } catch (error) { return { name, root, status: 'unavailable', error: error.message }; }
 }
 

@@ -15,9 +15,15 @@ const sites = {
     send: ['button[aria-label="Send message"]', 'button[data-testid="send-button"]'],
     answer: '[data-testid="assistant-message"]',
   },
+  gemini: {
+    url: 'https://gemini.google.com/app',
+    composer: ['.rich-textarea', '[data-test-id="chat-input-text-area"]', 'rich-textarea'],
+    send: ['button[aria-label="Send message"]', '.send-button'],
+    answer: ['message-content', '.message-content', 'model-response'],
+  },
 };
 
-const states = { chatgpt: { status: 'UNVERIFIED', checkedAt: null }, claude: { status: 'UNVERIFIED', checkedAt: null } };
+const states = { chatgpt: { status: 'UNVERIFIED', checkedAt: null }, claude: { status: 'UNVERIFIED', checkedAt: null }, gemini: { status: 'UNVERIFIED', checkedAt: null } };
 let sequence = Promise.resolve();
 
 export function webAiStatus() { return structuredClone(states); }
@@ -57,11 +63,26 @@ async function inspect(manager, site) {
   return resultOf(await manager.evaluate(script));
 }
 
-async function executeOne(site, request, { manager, timeoutMs }) {
+function extractToolCalls(text) {
+  const calls = [];
+  let remaining = text;
+  while (true) {
+    const match = remaining.match(/<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/);
+    if (!match) break;
+    calls.push({ id: `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'function', function: { name: match[1], arguments: match[2].trim() } });
+    remaining = remaining.replace(match[0], '');
+  }
+  return { text: remaining.trim(), calls };
+}
+
+async function executeOne(site, options, { manager, timeoutMs }) {
   const definition = sites[site];
   try {
-    const navigation = await manager.navigate(definition.url, { mode: 'visual' });
-    if (navigation?.humanActionRequired) { setStatus(site, 'HUMAN_ACTION_REQUIRED'); return { status: 'HUMAN_ACTION_REQUIRED', site }; }
+    const isContinuation = options.continuationState?.runId && manager.currentUrl?.startsWith(definition.url);
+    if (!isContinuation) {
+      const navigation = await manager.navigate(definition.url, { mode: 'visual' });
+      if (navigation?.humanActionRequired) { setStatus(site, 'HUMAN_ACTION_REQUIRED'); return { status: 'HUMAN_ACTION_REQUIRED', site }; }
+    }
     const before = await inspect(manager, site);
     if (!before.composer || !before.send) {
       const login = /\b(log in|sign in|continue with google|create an account)\b/i.test(before.pageText);
@@ -69,7 +90,22 @@ async function executeOne(site, request, { manager, timeoutMs }) {
       setStatus(site, status);
       return { status, site };
     }
-    await manager.type(before.composer, request, { mode: 'visual' });
+    
+    let prompt = options.request;
+    if (options.messages && options.messages.length > 0) {
+      const lastMsg = options.messages[options.messages.length - 1];
+      if (lastMsg.role === 'tool') {
+        prompt = `Tool ${lastMsg.function?.name || lastMsg.tool_call_id} result:\n${lastMsg.content}`;
+      } else if (lastMsg.role === 'user') {
+        prompt = lastMsg.content;
+      }
+    }
+    
+    if (!isContinuation && options.toolSpecs?.length) {
+      prompt += `\n\nYou have access to the following tools:\n${JSON.stringify(options.toolSpecs, null, 2)}\nTo use a tool, output EXACTLY this XML format:\n<tool name="tool.name">{"arg": "value"}</tool>`;
+    }
+
+    await manager.type(before.composer, prompt, { mode: 'visual' });
     const submission = await manager.click(before.send, { mode: 'visual' });
     if (submission?.humanActionRequired) { setStatus(site, 'HUMAN_ACTION_REQUIRED'); return { status: 'HUMAN_ACTION_REQUIRED', site }; }
     let last = '';
@@ -82,7 +118,11 @@ async function executeOne(site, request, { manager, timeoutMs }) {
       if (current.answers.length > before.answers.length && answer.length > 2) {
         stable = answer === last ? stable + 1 : 0;
         last = answer;
-        if (stable >= 2) { setStatus(site, 'READY'); return { status: 'READY', site, reply: answer, model: 'UI_SELECTED_UNVERIFIED', provider: `${site}-web`, tokens: 0, cost: 0 }; }
+        if (stable >= 2) { 
+          setStatus(site, 'READY'); 
+          const { text, calls } = extractToolCalls(answer);
+          return { status: 'READY', site, reply: text, toolCalls: calls, model: 'UI_SELECTED_UNVERIFIED', provider: `${site}-web`, tokens: 0, cost: 0 }; 
+        }
       }
       if (/\b(usage limit|try again later|rate limit|message limit)\b/i.test(current.pageText)) { setStatus(site, 'RATE_LIMITED'); return { status: 'RATE_LIMITED', site }; }
     }
@@ -95,13 +135,16 @@ async function executeOne(site, request, { manager, timeoutMs }) {
   }
 }
 
-export function runWebAi(request, { preferred = 'chatgpt', manager = browserManager, timeoutMs = 60_000 } = {}) {
-  if (!String(request || '').trim()) return Promise.reject(failure('WEB_AI_REQUEST_INVALID', 'A prompt is required'));
-  const order = preferred === 'claude' ? ['claude', 'chatgpt'] : ['chatgpt', 'claude'];
+export function runWebAi(options, config = {}) {
+  const preferred = config.preferred || 'chatgpt';
+  const manager = config.manager || browserManager;
+  const timeoutMs = config.timeoutMs || 60_000;
+  
+  const order = preferred === 'claude' ? ['claude', 'gemini', 'chatgpt'] : preferred === 'gemini' ? ['gemini', 'chatgpt', 'claude'] : ['chatgpt', 'gemini', 'claude'];
   const work = async () => {
     const attempts = [];
     for (const site of order) {
-      const outcome = await executeOne(site, String(request), { manager, timeoutMs });
+      const outcome = await executeOne(site, options, { manager, timeoutMs });
       attempts.push({ site, status: outcome.status });
       if (outcome.status === 'READY') return { ...outcome, attempts };
       if (outcome.status === 'HUMAN_ACTION_REQUIRED') return { ...outcome, attempts };

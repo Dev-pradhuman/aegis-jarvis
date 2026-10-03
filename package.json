@@ -13,7 +13,10 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.80",
     "@lightpanda/browser": "^1.2.0",
+    "ai": "^7.0.122",
+    "dotenv": "^18.0.4",
     "lucide-react": "^1.47.0",
     "playwright": "^1.63.0",
     "puppeteer-core": "^25.12.0",
@@ -22,6 +25,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
     "vite": "^5.4.0"
   }
 }

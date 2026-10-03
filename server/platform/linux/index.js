@@ -5,6 +5,7 @@ import { createLinuxClipboard } from './clipboard.js';
 import { createLinuxScreen } from './screen.js';
 import { createLinuxInput } from './input.js';
 import { createLinuxWindows } from './windows.js';
+import { listCameras, captureCamera } from './camera.js';
 
 export function createLinuxPlatform(options = {}) {
   const displayServer = options.env?.XDG_SESSION_TYPE || process.env.XDG_SESSION_TYPE || (process.env.WAYLAND_DISPLAY ? 'wayland' : process.env.DISPLAY ? 'x11' : 'unknown');
@@ -20,5 +21,6 @@ export function createLinuxPlatform(options = {}) {
     clipboard: createLinuxClipboard({ run: options.run, displayServer }),
     screen: createLinuxScreen({ run: options.run, directory: options.screenshotDirectory }),
     input: createLinuxInput(options.inputOptions),
+    camera: { list: listCameras, capture: captureCamera },
   };
 }

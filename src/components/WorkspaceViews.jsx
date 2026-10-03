@@ -307,13 +307,110 @@ function LegacyBilingualVoicePanel() {
 
 function CredentialsPanel() {
   const fields = ['GROQ_STT_MODEL', 'GROQ_TTS_MODEL', 'GROQ_TTS_VOICE', 'GEMINI_IMAGE_MODEL', 'GEMINI_VIDEO_MODEL', 'TTS_PROVIDER', 'COMPOSIO_API_KEY', 'COMPOSIO_USER_ID', 'COMPOSIO_AUTH_CONFIGS', 'SLACK_BOT_TOKEN', 'SLACK_CHANNEL_ID', 'SLACK_WEBHOOK_URL', 'SEARCH_PROVIDER_URL', 'CALENDAR_API_URL', 'MESSAGING_API_URL', 'HARDWARE_ENDPOINT', 'JARVIS_AUTH_TOKEN'];
-  const [values, setValues] = useState(Object.fromEntries(fields.map((key) => [key, ''])));
-  const [status, setStatus] = useState({});
-  useEffect(() => { fetch('/api/config').then((response) => response.ok ? response.json() : null).then((data) => data && setStatus(data)).catch(() => {}); }, []);
-  async function save() { const payload = Object.fromEntries(Object.entries(values).filter(([, value]) => value)); const response = await fetch('/api/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }); if (response.ok) { setStatus(await response.json()); setValues(Object.fromEntries(fields.map((key) => [key, '']))); } }
-  return <section className="workspace-panel settings-section full"><div className="panel-label">Environment credentials</div><p className="setting-help">Use the Brain tab for model providers and any number of API keys. These other integration values are written to the server-only credentials file. Leave a field blank to keep its existing value.</p><div className="form-grid credential-grid">{fields.map((key) => <label key={key}>{key.replaceAll('_', ' ')}<input type={key.includes('KEY') || key.includes('TOKEN') ? 'password' : 'text'} value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} placeholder={status[key]?.configured ? 'Configured · enter to replace' : 'Not configured'} /></label>)}</div><button className="secondary-action" onClick={save}>Save credentials</button></section>;
-}
+  const providerPrefixes = ['GROQ', 'GEMINI', 'OPENROUTER', 'OPENCODE_ZEN', 'NINEROUTER', 'CUSTOM', 'MODEL'];
+  
+  // Create an extensive list of all possible fields including dynamic API key slots
+  const allFields = [...fields];
+  providerPrefixes.forEach(prefix => {
+    allFields.push(`${prefix}_API_KEY`);
+    for (let i = 1; i <= 12; i++) allFields.push(`${prefix}_API_KEY_${i}`);
+  });
 
+  const [values, setValues] = useState({});
+  const [status, setStatus] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data) {
+          setStatus(data);
+          // Initialize empty string for all keys present in data
+          const initValues = {};
+          Object.keys(data).forEach(k => initValues[k] = '');
+          setValues(initValues);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    const payload = Object.fromEntries(Object.entries(values).filter(([, value]) => value));
+    const response = await fetch('/api/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    if (response.ok) {
+      const data = await response.json();
+      setStatus(data);
+      const resetValues = {};
+      Object.keys(data).forEach(k => resetValues[k] = '');
+      setValues(resetValues);
+    }
+  }
+  
+  // Group configs for the card layout
+  const cards = [
+    { title: 'GROQ', type: 'API Key', baseKey: 'GROQ_API_KEY', desc: 'Fast LPU inference for speech and text.' },
+    { title: 'GEMINI', type: 'API Key', baseKey: 'GEMINI_API_KEY', desc: 'Google AI models for text, vision, and video.' },
+    { title: 'VERCEL AI', type: 'API Key', baseKey: 'AI_GATEWAY_API_KEY', single: true, desc: 'Centralized model routing via Vercel AI Gateway.' },
+    { title: 'COMPOSIO', type: 'API Key', baseKey: 'COMPOSIO_API_KEY', single: true, desc: 'Managed integrations for Gmail, Calendar, etc.' },
+    { title: 'OPENROUTER', type: 'API Key', baseKey: 'OPENROUTER_API_KEY', desc: 'Unified API for multiple LLM providers.' },
+    { title: 'OPENCODE ZEN', type: 'API Key', baseKey: 'OPENCODE_ZEN_API_KEY', desc: 'Zen API keys for OpenCode services.' },
+    { title: 'NINEROUTER', type: 'API Key', baseKey: 'NINEROUTER_API_KEY', desc: 'Alternative multi-model routing gateway.' },
+    { title: 'CUSTOM MODEL', type: 'API Key', baseKey: 'MODEL_API_KEY', max: 12, desc: 'Generic keys for custom OpenAI-compatible endpoints.' },
+    { title: 'SEARCH PROVIDER URL', type: 'URL', baseKey: 'SEARCH_PROVIDER_URL', single: true, desc: 'Endpoint for web search operations.' },
+    { title: 'JARVIS AUTH TOKEN', type: 'Token', baseKey: 'JARVIS_AUTH_TOKEN', single: true, desc: 'Token for local client authentication.' }
+  ];
+  
+  const getKeysForGroup = (baseKey, single, max = 4) => {
+    if (single) return [baseKey];
+    const keys = [baseKey];
+    for (let i = 1; i <= max; i++) keys.push(`${baseKey}_${i}`);
+    return keys;
+  };
+
+  const activeInputCount = (keys, groupTitle) => {
+    const count = keys.filter(k => status[k]?.configured || values[k]).length;
+    const expanded = expandedGroups[groupTitle] || 1;
+    return Math.max(1, count, expanded);
+  };
+
+  const addInput = (groupTitle) => {
+    setExpandedGroups(curr => ({ ...curr, [groupTitle]: (curr[groupTitle] || 1) + 1 }));
+  };
+
+  return (
+    <section className="workspace-panel settings-section full">
+      <div className="panel-label">Environment credentials</div>
+      <p className="setting-help">Use the Brain Tab for model providers and any number of API keys. These other Integration values are written to the server only credentials file. Leave a field blank to keep its existing value.</p>
+      
+      <div className="api-cards-grid">
+        {cards.map(card => {
+          const keys = getKeysForGroup(card.baseKey, card.single, card.max);
+          const showCount = activeInputCount(keys, card.title);
+          const visibleKeys = keys.slice(0, showCount);
+          const canAdd = !card.single && showCount < keys.length;
+
+          return (
+            <div key={card.title} className="api-card">
+              <div className="api-card-header">
+                <h3>{card.title}</h3>
+                <span className="api-type">{card.type}</span>
+              </div>
+              {card.desc && <p className="api-desc">{card.desc}</p>}
+              <div className="api-card-inputs"></div>
+              {canAdd && (
+                <button className="api-card-add" onClick={() => addInput(card.title)}>+</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="api-save-row">
+        <button className="secondary-action" onClick={save}>SAVE CREDENTIALS</button>
+      </div>
+    </section>
+  );
+}
 function ComposioPanel() {
   const [status, setStatus] = useState({ configured: false, toolkits: [] });
   const [accounts, setAccounts] = useState([]);

@@ -20,7 +20,7 @@ function fixture() {
 
 test('approve resumes the same deterministic Run and exact step once', async () => {
   const f = fixture();
-  const run = transitionRun(createRun({ request: 'Execute a harmless version check' }), 'running');
+  const run = transitionRun(createRun({ request: 'Execute a harmless version check', type: 'tool' }), 'running');
   const step = addRunStep(run, 'Version check', 'command.execute', true);
   run.origin = 'chat';
   f.state.runs.push(run);

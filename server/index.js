@@ -1,4 +1,10 @@
 import http from 'node:http';
+
+import { startHUDManager, toggleHUD } from './hudManager.js';
+
+import { createGoal, spawnAgent, updateAgentMemory, completeAgentTask } from './agentManager.js';
+
+
 import { getState, updateState, activityEntry } from './store.js';
 import { getTool, listCapabilities, listTools } from './registry.js';
 import { validateToolInput } from './toolSchema.js';
@@ -427,7 +433,46 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/activity') return json(res, 200, { activity: state.activity || [] });
     if (req.method === 'GET' && url.pathname === '/api/chats') return json(res, 200, { messages: state.conversations || [] });
+
+
+    if (req.method === 'POST' && url.pathname === '/api/hud/toggle') {
+      toggleHUD();
+      return json(res, 200, { ok: true });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/agents') return json(res, 200, { agents: state.agents || [], goals: state.goals || [] });
+    if (req.method === 'POST' && url.pathname === '/api/agents') {
+      const input = await body(req);
+      const agent = spawnAgent(state, input.role, input.goalId);
+      await updateState((draft) => { Object.assign(draft, state); return draft; });
+      return json(res, 200, { agent });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/goals') {
+      const input = await body(req);
+      const goal = createGoal(state, input.title, input.description);
+      await updateState((draft) => { Object.assign(draft, state); return draft; });
+      return json(res, 200, { goal });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/stop') {
+
+
+      const state = await getState();
+      for (const run of state.runs || []) {
+        if (run.status === 'running' || run.status === 'waiting_for_approval') {
+          transitionRun(run, 'cancelled');
+        }
+      }
+      try {
+        const { emergencyStop } = await import('./toolExecutor.js');
+        emergencyStop();
+      } catch (e) {
+        // Ignore
+      }
+      await updateState((draft) => { Object.assign(draft, state); return draft; });
+      return json(res, 200, { ok: true, message: 'All pending automation stopped' });
+    }
     if (req.method === 'POST' && url.pathname === '/api/chat') {
+
       const input = await body(req); const text = String(input.message || '').trim();
       if (!text) return json(res, 400, { error: 'message is required' });
       const routeStarted = performance.now(); const route = routeRequest(text);
@@ -557,6 +602,12 @@ const server = http.createServer(async (req, res) => {
           providerResult = brain.result;
           modelRoute.executionDecision = brain.decision;
           if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);
+          if (providerResult.approvalRequired) {
+            run.approvals.push(providerResult.approval.id);
+            transitionRun(run, 'waiting_for_approval');
+            await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+            return json(res, 202, { reply: 'Waiting for approval...', runId: run.id, approvalRequired: true, approval: providerResult.approval });
+          }
           reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.model || providerResult.logicalModel;
           run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, actualModel: providerResult.model || null, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
         } catch (error) {
@@ -598,7 +649,24 @@ server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') { console.error(`JARVIS could not start because port ${port} is already in use. If /api/health responds, JARVIS is already running.`); process.exitCode = 1; return; }
   console.error(`JARVIS server error: ${error.message}`); process.exitCode = 1;
 });
+
+startHUDManager(
+  async (text) => {
+    // Treat text as a new chat message
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request: text })
+      });
+    } catch(e) {}
+  },
+  () => {
+    // trigger voice listen logic here
+  }
+);
 server.listen(port, '127.0.0.1', () => console.log(`JARVIS service listening on http://127.0.0.1:${port}`));
+
 
 async function shutdownBrowser() {
   server.close();
@@ -638,3 +706,61 @@ function authorized(req) {
   if (validSession(token)) return true;
   return Boolean(token && token.length === expected.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected)));
 }
+
+process.on('jarvis_resume_chat', async (runId) => {
+  try {
+    const state = await getState();
+    const run = (state.runs || []).find((item) => item.id === runId);
+    if (!run || run.status !== 'running' || run.type !== 'chat') return;
+    const text = run.request;
+    const routeStarted = performance.now();
+
+    let providerResult = null; let modelRoute = null; let modelFailure = null; let reply = '';
+    const modelStarted = performance.now();
+    modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: false });
+    const assembledContext = assembleModelContext({ query: text, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
+    try {
+      const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed' || call.status === 'failed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
+      providerResult = brain.result;
+      modelRoute.executionDecision = brain.decision;
+      if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);
+      if (providerResult.approvalRequired) {
+        run.approvals.push(providerResult.approval.id);
+        transitionRun(run, 'waiting_for_approval');
+        await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+        return; // Pause again
+      }
+      reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.model || providerResult.logicalModel;
+      run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, actualModel: providerResult.model || null, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
+    } catch (error) {
+      let terminalError = error;
+      if (paidApiUsageEnabled() && error.code === 'MODEL_CAPACITY_EXHAUSTED' && publicProvider(state.provider).configured) {
+        try {
+          const intendedModel = error.routingTelemetry?.selectedModel || modelRoute.primaryModel;
+          const emergencyProvider = providerForLogicalModel(state.provider, intendedModel);
+          const emergency = await completeConfiguredProvider(emergencyProvider, text, assembledContext.context);
+          if (emergency) {
+            providerResult = { ...emergency, logicalModel: emergency.model, inputTokens: 0, outputTokens: Number(emergency.tokens || 0) };
+            reply = emergency.reply; run.provider = emergency.provider; run.model = emergency.model;
+            run.routing = { ...modelRoute, ...(error.routingTelemetry || {}), ...assembledContext.telemetry, finalModel: emergency.model, modelFallbackUsed: true, fallbackFrom: error.routingTelemetry?.selectedModel || modelRoute.primaryModel, fallbackTo: emergency.model, activeProviderFallback: true, providerAttempts: [...(error.routingTelemetry?.providerAttempts || []), { providerId: emergency.provider, modelId: emergency.model, attempt: Number(error.routingTelemetry?.providerAttempts?.length || 0) + 1, startedAt: new Date().toISOString(), latencyMs: Math.round(performance.now() - modelStarted), success: true, statusCode: 200 }], routingConfidence: modelRoute.confidence, routingReason: `${modelRoute.reason} Logical pools were unavailable, so the explicitly configured active provider was used.`, routerMs: 0, modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: 0, outputTokens: Number(emergency.tokens || 0), toolCalls: run.toolCalls.length };
+          }
+        } catch (fallbackError) { terminalError = Object.assign(fallbackError, { code: error.code, routingTelemetry: error.routingTelemetry }); }
+      }
+      if (!providerResult) {
+        modelFailure = terminalError;
+        run.provider = null;
+        run.model = null;
+        run.routing = { ...modelRoute, ...(terminalError.routingTelemetry || {}), ...assembledContext.telemetry, routingConfidence: modelRoute?.confidence || 0, routingReason: modelRoute?.reason || '', failureReason: terminalError.message, routerMs: (modelRoute?.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: 0, outputTokens: 0, toolCalls: run.toolCalls.length };
+        errorRun(run, terminalError); reply = modelFailureReply(terminalError, run.id);
+      }
+    }
+    await updateState((draft) => { draft.runtime ??= { startedAt: new Date().toISOString(), usage: { requests: 0, tokens: 0, cost: 0 } }; draft.runtime.usage ??= { requests: 0, tokens: 0, cost: 0 }; draft.runtime.usage.requests += 1; draft.runtime.usage.tokens += providerResult?.tokens || 0; draft.runtime.usage.cost += providerResult?.cost || 0; if (run.routing) { draft.modelRouting ??= { telemetry: [], providerHealth: {} }; draft.modelRouting.providerHealth = state.modelRouting?.providerHealth || {}; draft.modelRouting.telemetry = [{ requestId: run.id, runId: run.id, timestamp: new Date().toISOString(), ...run.routing, success: !modelFailure }, ...(draft.modelRouting.telemetry || [])].slice(0, 200); draft.runtime.lastModelRoute = run.routing; draft.runtime.latency ??= {}; Object.assign(draft.runtime.latency, { routerMs: run.routing.routerMs || 0, modelMs: run.routing.modelMs || 0, toolMs: run.routing.toolMs || 0, policyMs: run.routing.policyMs || 0, databaseMs: run.routing.databaseMs || 0, totalMs: run.routing.totalMs || 0, samples: Number(draft.runtime.latency.samples || 0) + 1 }); } draft.conversations ??= []; const modelIndicator = run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null; const routingDebug = process.env.JARVIS_ROUTER_DEBUG === 'true' && run.routing ? { taskType: run.routing.taskType, confidence: run.routing.routingConfidence, apiRotationCount: run.routing.apiRotationCount, modelFallbackUsed: run.routing.modelFallbackUsed, totalMs: run.routing.totalMs } : null; draft.conversations.push({ who: 'JARVIS', time: new Date().toISOString(), lines: [reply], modelIndicator, routingDebug }); draft.conversations = draft.conversations.slice(-100); return draft; });
+    if (!modelFailure) {
+      if (run.plan.intent === 'direct' && run.steps[0]?.status === 'queued') { run.steps[0].status = 'completed'; run.steps[0].startedAt = run.startedAt; run.steps[0].completedAt = new Date().toISOString(); }
+      finishRun(run, { reply }, providerResult ? { input: providerResult.inputTokens, output: providerResult.outputTokens, total: providerResult.tokens } : { total: 0 });
+    }
+    await updateState((draft) => { const stored = draft.runs?.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+  } catch (error) {
+    console.error('Chat resumption error:', error);
+  }
+});

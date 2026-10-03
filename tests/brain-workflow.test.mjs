@@ -21,7 +21,7 @@ test('local intent handles exact desktop actions before web or model inference',
 
 test('normal conversation uses local first and does not open web or API', async () => {
   const calls = [];
-  const result = await executeBrainWorkflow({ request: 'Explain RAM', route, state: {}, execute: async ({ sourceTier }) => { calls.push(sourceTier); return response(sourceTier); }, web: async () => { throw new Error('Web should not start'); } });
+  const result = await executeBrainWorkflow({ request: 'Explain RAM', route, state: {}, execute: async (options, deps) => { if (deps?.model) return deps.model(options); calls.push(options.sourceTier); return response(options.sourceTier); }, web: async () => { throw new Error('Web should not start'); } });
   assert.deepEqual(calls, ['local']);
   assert.equal(result.result.reply, 'local');
   assert.equal(result.result.routingTelemetry.executionTier, 'LOCAL_MODEL');
@@ -29,7 +29,7 @@ test('normal conversation uses local first and does not open web or API', async 
 
 test('complex request prefers authorized web and falls to zero-cost API only if needed', async () => {
   const calls = [];
-  const input = { request: 'Give me a deep architecture review of JARVIS', route, state: {}, execute: async ({ sourceTier }) => { calls.push(sourceTier); return response(sourceTier); } };
+  const input = { request: 'Give me a deep architecture review of JARVIS', route, state: {}, execute: async (options, deps) => { if (deps?.model) return deps.model(options); calls.push(options.sourceTier); return response(options.sourceTier); } };
   const webAnswer = await executeBrainWorkflow({ ...input, web: async () => ({ status: 'READY', site: 'chatgpt', reply: 'Web answer', provider: 'chatgpt-web', model: 'UI_SELECTED_UNVERIFIED', attempts: [{ site: 'chatgpt', status: 'READY' }] }) });
   assert.equal(webAnswer.result.reply, 'Web answer');
   assert.deepEqual(calls, []);
@@ -40,15 +40,16 @@ test('complex request prefers authorized web and falls to zero-cost API only if 
 
 test('hard request does not claim a text-only local answer when web and free APIs are unavailable', async () => {
   const calls = [];
-  await assert.rejects(executeBrainWorkflow({ request: 'Give me a deep architecture review of JARVIS', route, state: {}, execute: async ({ sourceTier }) => {
-    calls.push(sourceTier);
+  await assert.rejects(executeBrainWorkflow({ request: 'Give me a deep architecture review of JARVIS', route, state: {}, execute: async (options, deps) => {
+    if (deps?.model) return deps.model(options);
+    calls.push(options.sourceTier);
     throw Object.assign(new Error('No free API'), { code: 'NO_ZERO_COST_MODEL_AVAILABLE' });
   }, web: async () => ({ status: 'UNAVAILABLE' }) }), { code: 'NO_ZERO_COST_MODEL_AVAILABLE' });
   assert.deepEqual(calls, ['api']);
 });
 
 test('human verification pauses without silently falling through to another model', async () => {
-  await assert.rejects(executeBrainWorkflow({ request: 'Use Claude for this', route, state: {}, execute: async () => { throw new Error('Must not run'); }, web: async () => ({ status: 'HUMAN_ACTION_REQUIRED' }) }), { code: 'HUMAN_ACTION_REQUIRED' });
+  await assert.rejects(executeBrainWorkflow({ request: 'Use Claude for this', route, state: {}, execute: async (options, deps) => { if (deps?.model) return deps.model(options); throw new Error('Must not run'); }, web: async () => ({ status: 'HUMAN_ACTION_REQUIRED', attempts: [] }) }), { code: 'HUMAN_ACTION_REQUIRED' });
 });
 
 test('zero spend requires current zero price for all reported usage dimensions', async () => {
@@ -101,9 +102,9 @@ test('web adapter reports login required and never submits a prompt without visi
     type: async () => { submitted = true; },
     click: async () => { submitted = true; },
   };
-  const result = await runWebAi('A harmless test', { manager, timeoutMs: 100 });
+  const result = await runWebAi({ request: 'A harmless test' }, { manager, timeoutMs: 100 });
   assert.equal(result.status, 'UNAVAILABLE');
-  assert.deepEqual(result.attempts.map((item) => item.status), ['LOGIN_REQUIRED', 'LOGIN_REQUIRED']);
+  assert.deepEqual(result.attempts.map((item) => item.status), ['LOGIN_REQUIRED', 'LOGIN_REQUIRED', 'LOGIN_REQUIRED']);
   assert.equal(submitted, false);
 });
 
@@ -126,7 +127,7 @@ test('web adapter submits through visible controls and reads a completed visible
     type: async (selector, prompt) => { events.push([selector, prompt]); },
     click: async (selector) => { events.push([selector]); submitted = true; },
   };
-  const result = await runWebAi('Harmless question', { manager, timeoutMs: 5_000 });
+  const result = await runWebAi({ request: 'Harmless question' }, { manager, timeoutMs: 5_000 });
   assert.equal(result.status, 'READY');
   assert.equal(result.reply, 'Visible answer');
   assert.deepEqual(events, [['#prompt-textarea', 'Harmless question'], ['[data-testid="send-button"]']]);

@@ -300,3 +300,85 @@
   .gesture-guide > div { border-right: 0; border-bottom: 1px solid var(--border-orange-soft); }
   .brain-error { width: calc(100% - 32px); }
 }
+
+/* API Cards Redesign */
+.api-cards-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.api-card {
+  background: var(--bg-surface, #1e1e2e);
+  border: 1px solid var(--border-color, #313244);
+  border-radius: 8px;
+  padding: 16px;
+  width: calc(20% - 13px);
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-card-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-primary, #cdd6f4);
+}
+
+.api-card-header .api-type {
+  font-size: 12px;
+  color: var(--text-secondary, #a6adc8);
+}
+
+.api-card-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.api-card-inputs input {
+  width: 100%;
+  padding: 8px;
+  background: var(--bg-input, #11111b);
+  border: 1px solid var(--border-color, #313244);
+  border-radius: 4px;
+  color: var(--text-primary, #cdd6f4);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.api-card-add {
+  background: var(--bg-button, #313244);
+  color: var(--text-primary, #cdd6f4);
+  border: none;
+  border-radius: 4px;
+  padding: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.api-card-add:hover {
+  background: var(--bg-button-hover, #45475a);
+}
+
+.api-save-row {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.api-desc {
+  font-size: 11px;
+  color: var(--text-secondary, #a6adc8);
+  margin-bottom: 8px;
+  line-height: 1.3;
+}

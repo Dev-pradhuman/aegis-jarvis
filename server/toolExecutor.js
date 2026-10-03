@@ -23,6 +23,13 @@ import { diagnostics, researchSearch, searchMemory } from './systemModules.js';
 import { generateMedia } from './mediaGeneration.js';
 import { reminderAction } from './reminders.js';
 
+import { describeScreen, locateElement, readRegion } from './screenUnderstanding.js';
+
+import { describeCamera } from './cameraUnderstanding.js';
+import { generateMorningBriefing } from './morningBriefing.js';
+
+
+
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const blockedRoots = new Set(['node_modules', 'dist', '.git', 'server/data']);
@@ -70,7 +77,14 @@ export const implementedToolIds = [
   'media.generate', 'research.search', 'calendar.create', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
-  'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'screen.capture',
+  'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'pointer.move', 'pointer.click', 'pointer.scroll',
+
+  'screen.capture', 'screen.describe', 'screen.locate', 'screen.read_region',
+
+  'camera.list', 'camera.capture', 'camera.describe',
+  'routine.morning_briefing',
+
+
   'windows.list', 'windows.get_active', 'windows.find', 'windows.focus', 'windows.minimize', 'windows.maximize', 'windows.restore', 'windows.close',
 ];
 
@@ -85,6 +99,14 @@ function requireExactApproval(toolId, input, approval, runId = null, hash = acti
 
 async function runTool(toolId, input = {}, context = {}) {
   if (toolId.startsWith('reminders.')) return { ok: true, toolId, data: reminderAction(context.state || {}, toolId.split('.')[1], input) };
+
+  if (toolId === 'pointer.move') return { ok: true, toolId, data: await osPlatform.input.pointerMove(input.x, input.y) };
+  if (toolId === 'pointer.click') return { ok: true, toolId, data: await osPlatform.input.pointerClick(input.button) };
+  if (toolId === 'pointer.scroll') return { ok: true, toolId, data: await osPlatform.input.pointerScroll(input.dx, input.dy) };
+  if (toolId === 'screen.describe')
+ return { ok: true, toolId, data: await describeScreen(input) };
+  if (toolId === 'screen.locate') return { ok: true, toolId, data: await locateElement(input) };
+  if (toolId === 'screen.read_region') return { ok: true, toolId, data: await readRegion(input) };
   if (toolId === 'tasks.list') return { ok: true, toolId, data: { tasks: context.state?.tasks || [] } };
   if (toolId === 'tasks.manage') {
     if (!context.state) throw new Error('Task state is unavailable');

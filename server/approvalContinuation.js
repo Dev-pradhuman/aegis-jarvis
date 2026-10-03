@@ -69,9 +69,21 @@ export async function resolveApprovalRequest(id, outcome, dependencies = {}) {
       const succeeded = result.status === 200 && result.body?.ok;
       if (step) { step.status = succeeded ? 'completed' : 'failed'; step.result = result.body; step.completedAt = new Date().toISOString(); }
       run.toolCalls.push({ id: `tool-call-${crypto.randomUUID()}`, tool: approval.pendingRequest.toolId, status: succeeded ? 'completed' : 'failed', resultId: approval.pendingRequest.idempotencyKey });
-      if (succeeded) finishRun(run, { toolId: approval.pendingRequest.toolId, dispatch: result.body.data });
-      else errorRun(run, new Error(result.body?.error || 'Approved action failed'));
-      chatOutcome(draft, run, approval, result.body, succeeded);
+      if (succeeded) {
+        if (run.type !== 'chat') finishRun(run, { toolId: approval.pendingRequest.toolId, dispatch: result.body.data });
+        else {
+          transitionRun(run, 'running');
+          process.emit('jarvis_resume_chat', run.id);
+        }
+      }
+      else {
+        if (run.type !== 'chat') errorRun(run, new Error(result.body?.error || 'Approved action failed'));
+        else {
+          transitionRun(run, 'running');
+          process.emit('jarvis_resume_chat', run.id);
+        }
+      }
+      if (run.type !== 'chat') chatOutcome(draft, run, approval, result.body, succeeded);
       return draft;
     });
     return { status: result.status, body: { approval, result: result.body } };
@@ -81,8 +93,13 @@ export async function resolveApprovalRequest(id, outcome, dependencies = {}) {
       if (run?.status === 'waiting_for_approval') {
         const step = run.steps.find((item) => item.id === approval.stepId) || run.steps.find((item) => item.status === 'waiting_for_approval');
         if (step) { step.status = 'failed'; step.error = error.message; step.completedAt = new Date().toISOString(); }
-        errorRun(run, error);
-        chatOutcome(draft, run, approval, { code: error.code, error: error.message }, false);
+        if (run.type !== 'chat') {
+          errorRun(run, error);
+          chatOutcome(draft, run, approval, { code: error.code, error: error.message }, false);
+        } else {
+          transitionRun(run, 'running');
+          process.emit('jarvis_resume_chat', run.id);
+        }
       }
       return draft;
     });

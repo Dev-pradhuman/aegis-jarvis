@@ -60,52 +60,88 @@ export async function runWorkflow(state, workflow, options = {}) {
   } else if (!Array.isArray(workflow.steps) || !workflow.steps.length) {
     run.state = 'failed'; run.reason = 'Workflow requires at least one executable tool step';
   } else {
-    const completed = new Set(run.logs.filter((log) => log.state === 'completed').map((log) => log.id));
-    for (const [index, step] of workflow.steps.entries()) {
+    const evaluateCondition = (condition, logs) => {
+      if (!condition) return true;
+      try {
+        const ctx = logs.reduce((acc, log) => { if (log.result) acc[log.id] = log.result; return acc; }, {});
+        const keys = Object.keys(ctx);
+        const vals = Object.values(ctx);
+        return new Function(...keys, `return ${condition}`)(...vals);
+      } catch (err) {
+        return false;
+      }
+    };
+
+    while (run.state === 'running') {
       if (workflow.state === 'paused' || workflow.state === 'cancelled') { run.state = workflow.state; break; }
-      if (!step || typeof step !== 'object' || !step.tool || !getTool(step.tool)?.enabled) {
-        run.state = 'failed'; run.reason = `Step ${index + 1} has no available canonical tool`; break;
-      }
-      const id = step.id || String(index + 1);
-      if (completed.has(id)) continue;
-      if ((step.dependsOn || []).some((dependency) => !completed.has(dependency))) {
-        run.state = 'failed'; run.reason = `Step ${id} has unmet dependencies`; break;
-      }
-      run.step = index + 1;
-      const maxRetries = getTool(step.tool).sideEffects ? 0 : Math.max(0, Math.min(3, Number(step.maxRetries ?? options.maxRetries ?? 0)));
-      const pending = run.logs.findLast((log) => log.id === id && log.state === 'waiting_approval');
-      if (pending?.approvalId) {
-        const approval = (state.approvals || []).find((item) => item.id === pending.approvalId);
-        if (approval?.status === 'pending') { run.state = 'waiting_approval'; run.reason = `Step ${id} awaits approval`; break; }
+      
+      const latestLogs = new Map();
+      for (const log of run.logs) latestLogs.set(log.id, log);
+      const latest = [...latestLogs.values()];
+      
+      const completed = new Set(latest.filter((log) => log.state === 'completed' || log.state === 'skipped').map((log) => log.id));
+      const failed = latest.filter((log) => log.state === 'failed');
+      if (failed.length > 0) { run.state = 'failed'; run.reason = failed[0].error; break; }
+
+      const pendingApproval = latest.find((log) => log.state === 'waiting_approval');
+      if (pendingApproval) {
+        const approval = (state.approvals || []).find((item) => item.id === pendingApproval.approvalId);
+        if (approval?.status === 'pending') { run.state = 'waiting_approval'; run.reason = `Step ${pendingApproval.id} awaits approval`; break; }
         if (approval?.status !== 'approved') {
-          run.state = 'failed'; run.reason = `Step ${id} approval was rejected or expired`;
-          run.logs.push({ id, tool: step.tool, at: new Date().toISOString(), state: 'failed', error: run.reason });
+          run.state = 'failed'; run.reason = `Step ${pendingApproval.id} approval was rejected or expired`;
+          run.logs.push({ id: pendingApproval.id, tool: pendingApproval.tool, at: new Date().toISOString(), state: 'failed', error: run.reason });
           break;
         }
       }
-      for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
-        run.attempts += 1;
-        try {
-          const response = await invoke(state, {
-            toolId: step.tool, input: step.arguments || {}, runId: run.id, stepId: id,
-            approvalId: pending?.approvalId || null,
-            idempotencyKey: `${run.id}:${id}`,
-          });
-          if (response.status === 202 && response.body?.approvalRequired) {
-            run.logs.push({ id, tool: step.tool, attempt, at: new Date().toISOString(), state: 'waiting_approval', approvalId: response.body.approval.id });
-            run.state = 'waiting_approval'; run.reason = `Step ${id} awaits approval`;
+      
+      const readySteps = workflow.steps.map((step, idx) => ({ step, id: step.id || String(idx + 1) })).filter(({ step, id }) => {
+        if (completed.has(id)) return false;
+        if (latestLogs.get(id)?.state === 'waiting_approval') return true; // Needs resume
+        return (step.dependsOn || []).every((dep) => completed.has(dep));
+      });
+
+      if (readySteps.length === 0) {
+        if (workflow.steps.some((step, idx) => !completed.has(step.id || String(idx + 1)))) {
+          run.state = 'failed'; run.reason = 'Workflow deadlocked (unmet dependencies)';
+        }
+        break;
+      }
+
+      await Promise.all(readySteps.map(async ({ step, id }) => {
+        if (!step || typeof step !== 'object' || !step.tool || !getTool(step.tool)?.enabled) {
+          run.logs.push({ id, tool: step.tool || 'unknown', at: new Date().toISOString(), state: 'failed', error: `Step has no available canonical tool` });
+          return;
+        }
+        
+        if (step.condition && !evaluateCondition(step.condition, run.logs)) {
+          run.logs.push({ id, tool: step.tool, at: new Date().toISOString(), state: 'skipped', result: { ok: true, skipped: true } });
+          return;
+        }
+
+        const maxRetries = getTool(step.tool).sideEffects ? 0 : Math.max(0, Math.min(3, Number(step.maxRetries ?? options.maxRetries ?? 0)));
+        const pending = run.logs.findLast((log) => log.id === id && log.state === 'waiting_approval');
+        
+        for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
+          run.attempts += 1;
+          try {
+            const response = await invoke(state, {
+              toolId: step.tool, input: step.arguments || {}, runId: run.id, stepId: id,
+              approvalId: pending?.approvalId || null,
+              idempotencyKey: `${run.id}:${id}`,
+            });
+            if (response.status === 202 && response.body?.approvalRequired) {
+              run.logs.push({ id, tool: step.tool, attempt, at: new Date().toISOString(), state: 'waiting_approval', approvalId: response.body.approval.id });
+              return;
+            }
+            if (response.status !== 200 || !response.body?.ok) throw new Error(response.body?.error || response.body?.code || `Tool ${step.tool} failed`);
+            run.logs.push({ id, tool: step.tool, attempt, at: new Date().toISOString(), state: 'completed', result: response.body });
             break;
+          } catch (error) {
+            run.logs.push({ id, tool: step.tool, attempt, at: new Date().toISOString(), state: 'failed', error: error.message });
+            if (attempt > maxRetries) return;
           }
-          if (response.status !== 200 || !response.body?.ok) throw new Error(response.body?.error || response.body?.code || `Tool ${step.tool} failed`);
-          run.logs.push({ id, tool: step.tool, attempt, at: new Date().toISOString(), state: 'completed', result: response.body });
-          completed.add(id);
-          break;
-        } catch (error) {
-          run.logs.push({ id, tool: step.tool, attempt, at: new Date().toISOString(), state: 'failed', error: error.message });
-          if (attempt > maxRetries) { run.state = 'failed'; run.reason = error.message; }
         }
-      }
-      if (run.state !== 'running') break;
+      }));
     }
   }
   if (run.state === 'running') run.state = 'completed';

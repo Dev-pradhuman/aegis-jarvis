@@ -29,11 +29,20 @@ export async function executeBrainWorkflow({ request, route, context = [], conti
     catch (error) { attempts.push({ tier: 'LOCAL_MODEL', code: error.code }); return null; }
   };
   const runWeb = async () => {
-    if (attachments.length) return null; // The current web adapter cannot attach media through the normal UI.
-    const result = await web(request, { preferred: decision.preferredSite });
-    attempts.push({ tier: 'HEADLESS_WEB', status: result.status });
-    if (result.status === 'HUMAN_ACTION_REQUIRED') throw Object.assign(new Error('Complete verification in the browser, then resume'), { code: 'HUMAN_ACTION_REQUIRED', attempts });
-    return result.status === 'READY' ? webResult(result, decision) : null;
+    if (attachments.length) return null;
+    const webModelAdapter = async (options) => {
+      const result = await web(options, { preferred: decision.preferredSite });
+      if (result.status === 'HUMAN_ACTION_REQUIRED') throw Object.assign(new Error('Complete verification in the browser, then resume'), { code: 'HUMAN_ACTION_REQUIRED', attempts: result.attempts });
+      if (result.status !== 'READY') throw new Error('Web AI Unavailable');
+      return { reply: result.reply, toolCalls: result.toolCalls, provider: result.provider, model: result.model, logicalModel: result.model, tokens: 0, inputTokens: 0, outputTokens: 0, cost: 0, routingTelemetry: { requestedModel: 'headless-web', selectedModel: 'headless-web', finalModel: result.model, executionTier: 'HEADLESS_WEB', site: result.site, preferredSite: decision.preferredSite, providerAttempts: (result.attempts || []).map((attempt, index) => ({ providerId: `${attempt.site}-web`, attempt: index + 1, success: attempt.status === 'READY', status: attempt.status })), apiRotationCount: 0, modelFallbackUsed: (result.attempts || []).length > 1 } };
+    };
+    try {
+      return await execute({ request, context, continuationState, state, attachments, route, requiredModality: 'text' }, { model: webModelAdapter });
+    } catch (error) {
+      if (error.code === 'HUMAN_ACTION_REQUIRED') throw error;
+      attempts.push({ tier: 'HEADLESS_WEB', code: error.code || 'WEB_AI_UNAVAILABLE' });
+      return null;
+    }
   };
   const runApi = async () => { try { const result = await model('api'); result.routingTelemetry.executionTier = 'ZERO_COST_API'; return result; } catch (error) { attempts.push({ tier: 'ZERO_COST_API', code: error.code }); return null; } };
 

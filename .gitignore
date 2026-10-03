@@ -12,3 +12,20 @@ server/data/browser/
 .playwright-cli/
 # Local visual reference; the app renders its Galaxy procedurally.
 frontend-glaxy-ideas/Video-73210.mp4
+node_modules/
+.env
+.env.*
+*.pem
+*.key
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+dist/
+build/
+.next/
+.cache/
+*.log
+.DS_Store
+!.env.example
