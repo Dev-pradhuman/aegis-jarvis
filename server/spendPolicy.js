@@ -22,6 +22,7 @@ export function assertPaidApiAllowed(kind, env = process.env) {
 }
 
 const catalogCache = new Map();
+export const clearCatalogCache = () => catalogCache.clear();
 
 export async function discoverPricedModels(provider, { fetchImpl = fetch, now = Date.now(), ttlMs = 60_000, secret = '' } = {}) {
   const baseUrl = String(provider.baseUrl || '').replace(/\/$/, '');

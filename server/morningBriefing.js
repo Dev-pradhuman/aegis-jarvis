@@ -2,7 +2,7 @@ import { calendarRequest } from './liveAdapters.js';
 import { listProjectStatus } from './projectIntelligence.js';
 import { executeModelPool } from './modelPool.js';
 
-export async function generateMorningBriefing(state) {
+export async function generateMorningBriefing(state, { fetchImpl = fetch } = {}) {
   const tasks = state.tasks || [];
   const calendar = await calendarRequest('GET').catch(() => ({ events: [] }));
   const projects = await listProjectStatus().catch(() => []);
@@ -17,7 +17,8 @@ Make it readable, focused on today's priorities.`;
     logicalModel: 'muse-spark-1.2',
     request: prompt,
     attachments: [],
-    requiredModality: 'text'
+    requiredModality: 'text',
+    fetchImpl
   });
   
   return response.reply;

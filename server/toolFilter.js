@@ -4,6 +4,7 @@ import { embed } from './extendedAdapters.js';
 const DEFAULT_TOP_K = 12;
 const CORE_TOOLS = new Set(['tasks.list', 'memory.search', 'runtime.telemetry', 'diagnostics']);
 let cachedIndex = null;
+export const clearToolFilterCache = () => { cachedIndex = null; };
 
 function boundedInteger(value, fallback, minimum, maximum) {
   const parsed = Number(value);

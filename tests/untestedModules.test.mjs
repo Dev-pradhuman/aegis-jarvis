@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
+import { resetCaches } from './testHelper.mjs';
 
 test('scheduler.matchCron', async (t) => {
   const { matchCron } = await import('../server/scheduler.js');
@@ -38,20 +39,17 @@ test('agentManager functions', async (t) => {
 });
 
 test('cameraUnderstanding', async (t) => {
+  resetCaches();
   const { osPlatform } = await import('../server/platform/index.js');
   const { describeCamera } = await import('../server/cameraUnderstanding.js');
   
   const originalCapture = osPlatform.camera.capture;
   osPlatform.camera.capture = async () => ({ path: '/tmp/cam.jpg', timestamp: '2026-01-01' });
 
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url, options) => {
+  const mockFetch = async (url, options) => {
     if (url.endsWith('/models')) {
       return { ok: true, json: async () => ({ data: [
-        { id: 'nvidia/nemotron-3-nano-omni', pricing: { prompt: 0, completion: 0 } },
-        { id: 'deepseek/deepseek-v4-flash', pricing: { prompt: 0, completion: 0 } },
-        { id: 'muse/spark-1.2', pricing: { prompt: 0, completion: 0 } },
-        { id: 'z-ai/glm-5.2', pricing: { prompt: 0, completion: 0 } }
+        { id: 'nvidia/nemotron-3-nano-omni', pricing: { prompt: 0, completion: 0 } }
       ] }) };
     }
     return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'A test view' } }], usage: { total_tokens: 10 } }) };
@@ -59,30 +57,26 @@ test('cameraUnderstanding', async (t) => {
   process.env.OPENROUTER_API_KEY = 'test-key';
 
   try {
-    const res = await describeCamera({});
+    const res = await describeCamera({}, { fetchImpl: mockFetch });
     assert.strictEqual(res.description, 'A test view');
   } finally {
     osPlatform.camera.capture = originalCapture;
-    globalThis.fetch = originalFetch;
     delete process.env.OPENROUTER_API_KEY;
   }
 });
 
 test('screenUnderstanding', async (t) => {
+  resetCaches();
   const { osPlatform } = await import('../server/platform/index.js');
   const { describeScreen, locateElement, readRegion } = await import('../server/screenUnderstanding.js');
 
   const originalCapture = osPlatform.screen.capture;
   osPlatform.screen.capture = async () => ({ path: '/tmp/screen.png', timestamp: '2026-01-01' });
 
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url, options) => {
+  const mockFetch = async (url, options) => {
     if (url.endsWith('/models')) {
       return { ok: true, json: async () => ({ data: [
-        { id: 'nvidia/nemotron-3-nano-omni', pricing: { prompt: 0, completion: 0 } },
-        { id: 'deepseek/deepseek-v4-flash', pricing: { prompt: 0, completion: 0 } },
-        { id: 'muse/spark-1.2', pricing: { prompt: 0, completion: 0 } },
-        { id: 'z-ai/glm-5.2', pricing: { prompt: 0, completion: 0 } }
+        { id: 'nvidia/nemotron-3-nano-omni', pricing: { prompt: 0, completion: 0 } }
       ] }) };
     }
     const body = options.body ? JSON.parse(options.body) : {};
@@ -101,32 +95,28 @@ test('screenUnderstanding', async (t) => {
   process.env.OPENROUTER_API_KEY = 'test-key';
 
   try {
-    const desc = await describeScreen({});
+    const desc = await describeScreen({}, { fetchImpl: mockFetch });
     assert.strictEqual(desc.description, 'A test screen');
     
-    const loc = await locateElement({ description: 'button' });
+    const loc = await locateElement({ description: 'button' }, { fetchImpl: mockFetch });
     assert.strictEqual(loc.found, true);
     
-    const read = await readRegion({ x: 0, y: 0, width: 1, height: 1 });
+    const read = await readRegion({ x: 0, y: 0, width: 1, height: 1 }, { fetchImpl: mockFetch });
     assert.strictEqual(read.text, '');
   } finally {
     osPlatform.screen.capture = originalCapture;
-    globalThis.fetch = originalFetch;
     delete process.env.OPENROUTER_API_KEY;
   }
 });
 
 test('morningBriefing', async (t) => {
+  resetCaches();
   const { generateMorningBriefing } = await import('../server/morningBriefing.js');
 
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url, options) => {
-    console.log('MORNING BRIEFING FETCH:', url);
+  const mockFetch = async (url, options) => {
     if (url.endsWith('/models')) {
       return { ok: true, json: async () => ({ data: [
-        { id: 'deepseek/deepseek-v4-flash', pricing: { prompt: 0, completion: 0 } },
-        { id: 'muse/spark-1.2', pricing: { prompt: 0, completion: 0 } },
-        { id: 'z-ai/glm-5.2', pricing: { prompt: 0, completion: 0 } }
+        { id: 'muse/spark-1.2', pricing: { prompt: 0, completion: 0 } }
       ] }) };
     }
     if (url.includes('calendar')) return { ok: true, json: async () => ({ events: [] }) };
@@ -135,10 +125,9 @@ test('morningBriefing', async (t) => {
   process.env.OPENROUTER_API_KEY = 'test-key';
 
   try {
-    const res = await generateMorningBriefing({});
+    const res = await generateMorningBriefing({}, { fetchImpl: mockFetch });
     assert.strictEqual(res, 'Morning Briefing Test');
   } finally {
-    globalThis.fetch = originalFetch;
     delete process.env.OPENROUTER_API_KEY;
   }
 });
