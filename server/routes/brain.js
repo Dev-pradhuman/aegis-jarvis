@@ -70,7 +70,7 @@ export default async function brainRoutes(req, res, url, state, ctx) {
     if (req.method === 'POST' && url.pathname === '/api/brain/test-all') {
         const tasks = brainCatalog.list().flatMap((source) => source.type === 'API' ? source.credentials.filter((key) => key.enabled).map((key) => ({ source, credentialId: key.id })) : [{ source, credentialId: null }]);
         const results = await Promise.all(tasks.map(async ({ source, credentialId }) => {
-          const result = await testBrainSource(source.id, credentialId);
+          const result = await testBrainSource(source.id, credentialId, { force: true });
           await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credentialId || source.id}`] = { status: result.status, pricingType: result.pricingType || null, lastCheckedAt: new Date().toISOString() }; return draft; });
           return { sourceId: source.id, credentialId, ...result };
         }));
@@ -84,7 +84,7 @@ export default async function brainRoutes(req, res, url, state, ctx) {
         try {
           const source = brainCatalog.addPresetSource(presetId);
           const credential = preset.providerType === 'API' ? brainCatalog.addCredential(source.id, { secret: input.secret }) : null;
-          const result = await testBrainSource(source.id, credential?.id || null);
+          const result = await testBrainSource(source.id, credential?.id || null, { force: true });
           await updateState((draft) => { draft.modelRouting ??= {}; draft.modelRouting.providerHealth ??= {}; draft.modelRouting.providerHealth[`brain-${credential?.id || source.id}`] = { status: result.status, pricingType: result.pricingType || null, lastCheckedAt: new Date().toISOString() }; return draft; });
           return json(res, 200, { sourceId: source.id, credentialId: credential?.id || null, result });
         } catch (error) { if (error.code?.startsWith('BRAIN_')) return json(res, 400, { code: error.code, error: error.message }); throw error; }

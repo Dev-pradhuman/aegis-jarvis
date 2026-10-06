@@ -50,7 +50,7 @@ function capabilityMessage(tools) {
   return `Relevant JARVIS capabilities (discovery metadata only; never claim an action succeeded without a confirmed tool result):\n${JSON.stringify(compact)}`;
 }
 
-export function assembleModelContext({ query, conversations = [], memories = [], includeTools = false, tools = listTools() } = {}) {
+export function assembleModelContext({ query = '', toolResults = [], conversations = [], memories = [], includeTools = false, tools = listTools() } = {}) {
   const started = performance.now();
   const maxChars = boundedInteger(process.env.CONTEXT_MAX_CHARS, DEFAULT_MAX_CHARS, 1000, 50000);
   const recentTurns = boundedInteger(process.env.CONTEXT_RECENT_TURNS, DEFAULT_RECENT_TURNS, 1, 10);
@@ -80,7 +80,9 @@ export function assembleModelContext({ query, conversations = [], memories = [],
   }
   candidates.push(...history);
 
-  let remaining = maxChars;
+  const toolResultsChars = toolResults.reduce((sum, tr) => sum + String(tr.resultId || tr).length, 0);
+  const reservedChars = String(query || '').length + toolResultsChars;
+  let remaining = Math.max(0, maxChars - reservedChars);
   const context = [];
   for (const candidate of candidates) {
     if (remaining <= 0) break;
@@ -103,6 +105,7 @@ export function assembleModelContext({ query, conversations = [], memories = [],
       retrievedMemories: retrieved.length,
       toolFilter: filtered.telemetry,
       selectedToolIds: includeTools ? filtered.tools.map((tool) => tool.id) : [],
+      reservedChars,
     },
   };
 }

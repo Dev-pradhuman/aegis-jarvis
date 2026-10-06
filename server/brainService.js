@@ -92,7 +92,7 @@ async function quickInference(source, secret, fetchImpl, signal, tools = false) 
   return tools ? { status: toolCalls?.some((item) => (item.name || item.function?.name) === 'report_ready') ? 'HEALTHY' : 'UNSUPPORTED', ...metrics } : { status: source.type === 'LOCAL' ? String(content || '').trim().endsWith('JARVIS_LOCAL_OK') ? 'HEALTHY' : 'UNVERIFIED' : String(content || '').trim() ? 'HEALTHY' : 'UNVERIFIED', responseObserved: Boolean(content), ...metrics };
 }
 
-export async function testBrainSource(sourceId, credentialId = null, { catalog = brainCatalog, fetchImpl = fetch } = {}) {
+async function executeTestBrainSource(sourceId, credentialId = null, { catalog = brainCatalog, fetchImpl = fetch } = {}) {
   const source = catalog.find(sourceId);
   if (source.type === 'CLI') {
     const detected = detectedCliSources().find((entry) => entry.id === source.adapter);
@@ -174,3 +174,46 @@ export async function resolveAutoBrainModels({ catalog = brainCatalog, fetchImpl
 }
 
 const autoProbeAttempt = new Map();
+
+export async function warmUpLocalModels({ catalog = brainCatalog, fetchImpl = fetch } = {}) {
+  if (process.env.LOCAL_MODEL_WARMUP === 'false') return;
+  const localSources = catalog.list().filter(source => source.enabled && source.type === 'LOCAL');
+  await Promise.allSettled(localSources.map(async (source) => {
+    try {
+      // testBrainSource hits quickInference which hits the model
+      await testBrainSource(source.id, null, { catalog, fetchImpl });
+    } catch {}
+  }));
+}
+
+const probeCache = new Map();
+
+export async function testBrainSource(sourceId, credentialId = null, { catalog = brainCatalog, fetchImpl = fetch, force = false } = {}) {
+  const cacheKey = `${sourceId}:${credentialId || 'none'}`;
+  const now = Date.now();
+  if (!force && probeCache.has(cacheKey)) {
+    const cached = probeCache.get(cacheKey);
+    // 5 minutes TTL
+    if (now - cached.timestamp < 300_000) {
+      return cached.result;
+    }
+  }
+
+  // To prevent multiple parallel calls from hitting the provider simultaneously,
+  // we can cache the promise itself while it's running.
+  if (!force && probeCache.has(`pending:${cacheKey}`)) {
+    return probeCache.get(`pending:${cacheKey}`);
+  }
+
+  const promise = executeTestBrainSource(sourceId, credentialId, { catalog, fetchImpl }).then(result => {
+    probeCache.set(cacheKey, { timestamp: Date.now(), result });
+    probeCache.delete(`pending:${cacheKey}`);
+    return result;
+  }).catch(error => {
+    probeCache.delete(`pending:${cacheKey}`);
+    throw error;
+  });
+
+  probeCache.set(`pending:${cacheKey}`, promise);
+  return promise;
+}

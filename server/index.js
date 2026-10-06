@@ -47,7 +47,7 @@ import { executeModelPool } from './modelPool.js';
 import { invokeToolRequest } from './toolRuntime.js';
 import { unattendedTool, unattendedTools } from './toolPolicy.js';
 import { brainCatalog } from './brainSources.js';
-import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from './brainService.js';
+import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource, warmUpLocalModels } from './brainService.js';
 import { publicProviderPresets, presetFor } from './providerPresets.js';
 import systemRoutes from './routes/system.js';
 import chatRoutes from './routes/chat.js';
@@ -166,7 +166,10 @@ startHUDManager(
     // trigger voice listen logic here
   }
 );
-server.listen(port, '127.0.0.1', () => console.log(`JARVIS service listening on http://127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => {
+  console.log(`JARVIS service listening on http://127.0.0.1:${port}`);
+  warmUpLocalModels().catch(err => console.error('Failed to warm up local models:', err));
+});
 
 
 async function shutdownBrowser() {
@@ -219,7 +222,8 @@ process.on('jarvis_resume_chat', async (runId) => {
     let providerResult = null; let modelRoute = null; let modelFailure = null; let reply = '';
     const modelStarted = performance.now();
     modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: false });
-    const assembledContext = assembleModelContext({ query: text, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
+    const toolResults = run.toolCalls.filter((call) => call.status === 'completed' || call.status === 'failed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId }));
+    const assembledContext = assembleModelContext({ query: text, toolResults, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
     try {
       const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed' || call.status === 'failed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
       providerResult = brain.result;

@@ -37,3 +37,16 @@ test('tool capability context includes only enabled relevant tool metadata', () 
   assert.ok(result.telemetry.selectedToolIds.every((id) => id !== 'tool.19'));
   assert.match(result.context[0].content, /discovery metadata only/);
 });
+
+test('context budget reserves space for the current request and tool results', () => withContextEnv({ CONTEXT_MAX_CHARS: '1000' }, () => {
+  const conversations = Array.from({ length: 5 }, (_, index) => ({ who: index % 2 ? 'JARVIS' : 'YOU', lines: [`history-${index} ${'x'.repeat(300)}`] }));
+  const toolResults = [{ id: '1', tool: 'search', resultId: 'some long result '.repeat(30) }];
+  const query = 'y'.repeat(400); // 400 chars query
+  const result = assembleModelContext({ query, toolResults, conversations, memories: [], includeTools: false });
+  // Query (400) + Tool results (~500) = ~900 reserved out of 1000
+  // History should be trimmed down to fit in the remaining 100 chars
+  assert.ok(result.telemetry.reservedChars > 800);
+  assert.ok(result.telemetry.contextChars <= 1000 - result.telemetry.reservedChars);
+  // Max remaining budget must not be negative
+  assert.ok(result.telemetry.contextChars >= 0);
+}));
