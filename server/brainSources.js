@@ -45,7 +45,7 @@ function sourceInput(input, current = {}) {
   }
   const modelId = String(input.modelId ?? current.modelId ?? '').trim().slice(0, 160);
   if (!modelId) fail('BRAIN_SOURCE_INVALID', 'Model ID is required');
-  const logicalModels = [...new Set((Array.isArray(input.logicalModels) ? input.logicalModels : current.logicalModels || ['muse-spark-1.2']).map(String))];
+  const logicalModels = [...new Set((Array.isArray(input.logicalModels) ? input.logicalModels : current.logicalModels || ['agent_brain']).map(String))];
   if (!logicalModels.length || logicalModels.some((item) => !modelRegistry()[item])) fail('BRAIN_SOURCE_INVALID', 'Select valid routing roles');
   const adapter = type === 'CLI' ? String(input.adapter ?? current.adapter ?? '') : null;
   if (type === 'CLI' && !cliAdapters[adapter]) fail('BRAIN_SOURCE_INVALID', 'Unsupported CLI adapter');
@@ -63,7 +63,7 @@ export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = sec
     if (!references.length) continue;
     let source = sources.find((item) => item.presetId === preset.id);
     if (!source) {
-      source = sourceInput({ name: preset.displayName, type: 'API', provider: preset.id, presetId: preset.id, baseUrl: preset.defaultBaseUrl, modelId: 'auto', logicalModels: ['muse-spark-1.2', 'deepseek-v4-flash', 'glm-5.2', 'laguna-s-2.1'], capabilities: preset.capabilities, priority: 20 });
+      source = sourceInput({ name: preset.displayName, type: 'API', provider: preset.id, presetId: preset.id, baseUrl: preset.defaultBaseUrl, modelId: 'auto', logicalModels: ['agent_brain', 'deepseek-v4-flash', 'fallback', 'laguna-s-2.1'], capabilities: preset.capabilities, priority: 20 });
       sources.push(source);
     }
     for (const reference of references) if (!source.credentials.some((item) => item.envRef === reference)) source.credentials.push({ id: crypto.randomUUID(), envRef: reference, label: `Environment · ${reference}`, enabled: true, priority: source.credentials.length });
@@ -96,7 +96,7 @@ export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = sec
     const existing = sources.find((item) => item.presetId === presetId);
     if (existing) return exposed(existing);
     const local = preset.providerType === 'LOCAL';
-    const source = sourceInput({ name: local ? 'Local Qwen' : preset.displayName, type: preset.providerType, provider: preset.id, presetId, baseUrl: preset.defaultBaseUrl, modelId: local ? 'qwen3:4b' : 'auto', logicalModels: ['muse-spark-1.2', 'deepseek-v4-flash', 'glm-5.2', 'laguna-s-2.1'], capabilities: preset.capabilities, priority: local ? 0 : 20, rolePriorities: local ? { 'muse-spark-1.2': 0, 'deepseek-v4-flash': 900, 'glm-5.2': 900, 'laguna-s-2.1': 900 } : {}, ...overrides });
+    const source = sourceInput({ name: local ? 'Local Qwen' : preset.displayName, type: preset.providerType, provider: preset.id, presetId, baseUrl: preset.defaultBaseUrl, modelId: local ? 'qwen3:4b' : 'auto', logicalModels: ['agent_brain', 'deepseek-v4-flash', 'fallback', 'laguna-s-2.1'], capabilities: preset.capabilities, priority: local ? 0 : 20, rolePriorities: local ? { 'agent_brain': 0, 'deepseek-v4-flash': 900, 'fallback': 900, 'laguna-s-2.1': 900 } : {}, ...overrides });
     sources.push(source); save(); return exposed(source);
   };
   const updateSource = (id, input) => { const index = sources.findIndex((entry) => entry.id === id); if (index < 0) fail('BRAIN_SOURCE_NOT_FOUND', 'Brain source not found'); sources[index] = sourceInput(input, sources[index]); save(); return exposed(sources[index]); };

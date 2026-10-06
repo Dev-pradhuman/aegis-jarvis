@@ -7,7 +7,7 @@ import { routeRequest } from '../server/router.js';
 import { paidApiUsageEnabled, pricingClass, zeroSpendEligible } from '../server/spendPolicy.js';
 import { executeModelPool } from '../server/modelPool.js';
 
-const route = { primaryModel: 'muse-spark-1.2', supportModels: [] };
+const route = { primaryModel: 'agent_brain', supportModels: [] };
 const response = (tier) => ({ reply: tier, provider: tier, logicalModel: tier, routingTelemetry: { providerAttempts: [] } });
 
 test('local intent handles exact desktop actions before web or model inference', () => {
@@ -69,22 +69,22 @@ test('zero spend requires current zero price for all reported usage dimensions',
 
 test('model pool never sends a paid completion under default zero-spend mode', async () => {
   const provider = { id: 'brain-paid-fixture', sourceId: 'paid-fixture', type: 'API', provider: 'vercel', presetId: 'vercel', baseUrl: 'https://ai-gateway.vercel.sh/v1', modelId: 'paid-fixture', credentialId: 'paid-fixture-key', capabilities: ['text'], modalities: ['text'], priority: 1 };
-  const catalog = { list: () => [], poolEntries: () => [{ ...provider, logicalModel: 'muse-spark-1.2' }], credentialSecret: () => 'fixture-secret' };
+  const catalog = { list: () => [], poolEntries: () => [{ ...provider, logicalModel: 'agent_brain' }], credentialSecret: () => 'fixture-secret' };
   let completions = 0;
   const fetchImpl = async (url) => {
     if (url.endsWith('/models')) return { ok: true, json: async () => ({ data: [{ id: 'paid-fixture', pricing: { input: '0.2', output: '0.8' } }] }) };
     completions += 1;
     throw new Error('A paid completion must never be sent');
   };
-  await assert.rejects(executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'test', state: {}, catalog, fetchImpl, allowFallback: false, sourceTier: 'api' }), { code: 'NO_ZERO_COST_MODEL_AVAILABLE' });
+  await assert.rejects(executeModelPool({ logicalModel: 'agent_brain', request: 'test', state: {}, catalog, fetchImpl, allowFallback: false, sourceTier: 'api' }), { code: 'NO_ZERO_COST_MODEL_AVAILABLE' });
   assert.equal(completions, 0);
 });
 
 test('model pool sends a completion only after live catalog verifies a free model', async () => {
   const provider = { id: 'brain-free-fixture', sourceId: 'free-fixture', type: 'API', provider: 'vercel', presetId: 'vercel', baseUrl: 'https://ai-gateway.vercel.sh/v1', modelId: 'free-fixture', credentialId: 'free-fixture-key', capabilities: ['text'], modalities: ['text'], priority: 1 };
-  const catalog = { list: () => [], poolEntries: () => [{ ...provider, logicalModel: 'muse-spark-1.2' }], credentialSecret: () => 'fixture-secret' };
+  const catalog = { list: () => [], poolEntries: () => [{ ...provider, logicalModel: 'agent_brain' }], credentialSecret: () => 'fixture-secret' };
   const urls = [];
-  const result = await executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'test', state: {}, catalog, allowFallback: false, sourceTier: 'api', fetchImpl: async (url) => {
+  const result = await executeModelPool({ logicalModel: 'agent_brain', request: 'test', state: {}, catalog, allowFallback: false, sourceTier: 'api', fetchImpl: async (url) => {
     urls.push(url);
     return url.endsWith('/models')
       ? { ok: true, json: async () => ({ data: [{ id: 'free-fixture', pricing: { input: '0', output: '0' } }] }) }

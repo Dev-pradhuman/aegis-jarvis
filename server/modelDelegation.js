@@ -1,10 +1,10 @@
 import { executeModelPool } from './modelPool.js';
 
 const assignments = {
-  'muse-spark-1.2': 'Act as the primary JARVIS agent brain. Understand the request, use grounded context, and respond concisely.',
-  'nemotron-3-nano-omni': 'Perceive the supplied media and return a precise structured description. Do not claim to perform downstream actions.',
+  'agent_brain': 'Act as the primary JARVIS agent brain. Understand the request, use grounded context, and respond concisely.',
+  'perception': 'Perceive the supplied media and return a precise structured description. Do not claim to perform downstream actions.',
   'mimo-v2.5': 'Reason over the structured multimodal perception and determine the meaning, intent, and best downstream action.',
-  'glm-5.2': 'Reason carefully about the difficult parts and produce a concrete plan or conclusion for the next specialist.',
+  'fallback': 'Reason carefully about the difficult parts and produce a concrete plan or conclusion for the next specialist.',
   'laguna-s-2.1': 'Act as the software-engineering specialist. Use the prior specialist result as context and produce the implementation-oriented result.',
   'minimax-m3': 'Act as the computer-operation specialist. Use the plan/perception context and report only operations that the available tools actually confirm.',
   'deepseek-v4-flash': 'Act as the primary JARVIS brain. Synthesize the grounded specialist result into a concise answer.',

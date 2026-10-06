@@ -5,7 +5,7 @@ import { selectLogicalModelWithClassifier } from '../server/modelRouterService.j
 test('obvious general request uses Muse Spark in Normal mode without a classifier call', async () => {
   let calls = 0;
   const route = await selectLogicalModelWithClassifier('Summarize this paragraph', {}, {}, {}, async () => { calls += 1; });
-  assert.equal(route.primaryModel, 'muse-spark-1.2');
+  assert.equal(route.primaryModel, 'agent_brain');
   assert.equal(calls, 0);
 });
 
@@ -20,6 +20,6 @@ test('ambiguous request can use Lightning structured classification', async () =
 
 test('Lightning failure retains deterministic Normal-mode route', async () => {
   const route = await selectLogicalModelWithClassifier('Please handle this', {}, {}, {}, async () => { const error = new Error('offline'); error.code = 'MODEL_CAPACITY_EXHAUSTED'; throw error; });
-  assert.equal(route.primaryModel, 'muse-spark-1.2');
+  assert.equal(route.primaryModel, 'agent_brain');
   assert.equal(route.classifierFallback, true);
 });

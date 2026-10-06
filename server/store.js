@@ -11,7 +11,7 @@ const file = path.join(root, 'state.json');
 const seed = {
   runtime: { startedAt: new Date().toISOString(), usage: { requests: 0, tokens: 0, cost: 0 }, latency: { routerMs: 0, modelMs: 0, toolMs: 0, policyMs: 0, databaseMs: 0, totalMs: 0, samples: 0 } },
   provider: { id: 'local', label: 'Local model', model: 'qwen3:4b', baseUrl: 'http://127.0.0.1:11434/v1', configured: false },
-  modelRouting: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'muse-spark-1.2', manualFallbackAllowed: true, providerHealth: {}, telemetry: [] },
+  modelRouting: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'agent_brain', manualFallbackAllowed: true, providerHealth: {}, telemetry: [] },
   tasks: [],
   reminders: [],
   approvals: [],
@@ -70,7 +70,27 @@ async function load() {
       parsed.demoSeedRemoved = true;
       removedDemoSeed = true;
     }
-    if (interrupted || removedDemoSeed || expiredApprovals.length) await writeJsonAtomically(file, parsed);
+    
+    let migratedModels = false;
+    const aliases = {
+      'muse-spark-1.2': 'agent_brain',
+      'nemotron-3-nano-omni': 'perception',
+      'glm-5.2': 'fallback'
+    };
+    if (parsed.modelRouting?.manualModel && aliases[parsed.modelRouting.manualModel]) {
+      parsed.modelRouting.manualModel = aliases[parsed.modelRouting.manualModel];
+      migratedModels = true;
+    }
+    if (parsed.runs) {
+      for (const run of parsed.runs) {
+        if (run.logicalModel && aliases[run.logicalModel]) {
+          run.logicalModel = aliases[run.logicalModel];
+          migratedModels = true;
+        }
+      }
+    }
+    if (interrupted || removedDemoSeed || expiredApprovals.length || migratedModels) await writeJsonAtomically(file, parsed);
+
     return { ...structuredClone(seed), ...parsed, approvalPolicy: { ...DEFAULT_APPROVAL_POLICY, ...(parsed.approvalPolicy || {}) }, reminders: parsed.reminders || [], runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;

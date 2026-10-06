@@ -2,9 +2,9 @@ const keyFor = { openrouter: 'OPENROUTER_API_KEY', 'opencode-zen': 'OPENCODE_ZEN
 const defaults = { groq: ['Groq', 'https://api.groq.com/openai/v1', 'GROQ_CHAT_MODEL', 'openai/gpt-oss-20b'], openrouter: ['OpenRouter', 'https://openrouter.ai/api/v1', 'OPENROUTER_MODEL', 'openai/gpt-oss-20b'], 'opencode-zen': ['OpenCode Zen', 'https://opencode.ai/zen/v1', 'OPENCODE_ZEN_MODEL', 'openai/gpt-oss-20b'], '9router': ['9router', 'https://9router.com/v1', 'NINEROUTER_MODEL', 'openai/gpt-oss-20b'] };
 
 const opencodeLogicalModels = {
-  'muse-spark-1.2': 'muse-spark-1.2',
+  'agent_brain': 'agent_brain',
   'deepseek-v4-flash': 'deepseek-v4-flash',
-  'glm-5.2': 'glm-5.2',
+  'fallback': 'fallback',
   'laguna-s-2.1': 'laguna-s-2.1-free',
   'minimax-m3': 'minimax-m3',
   'mimo-v2.5': 'mimo-v2.5-free',
@@ -12,7 +12,7 @@ const opencodeLogicalModels = {
 };
 
 const opencodeFreeLogicalModels = {
-  'muse-spark-1.2': 'muse-spark-1.2-contributor-free',
+  'agent_brain': 'agent_brain-contributor-free',
   'deepseek-v4-flash': 'deepseek-v4-flash-free',
   'laguna-s-2.1': 'laguna-s-2.1-free',
   'mimo-v2.5': 'mimo-v2.5-free',

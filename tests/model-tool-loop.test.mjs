@@ -22,7 +22,7 @@ test('model native tool call executes a grounded tool and continues to final ans
     calls.push(request);
     return { status: 200, body: { ok: true, toolId: request.toolId, data: { tasks: state.tasks } } };
   };
-  const result = await executeModelToolLoop({ request: 'What tasks do I have?', context: [], state, logicalModel: 'muse-spark-1.2', continuationState: { runId: 'run-real' } }, { model, invoke });
+  const result = await executeModelToolLoop({ request: 'What tasks do I have?', context: [], state, logicalModel: 'agent_brain', continuationState: { runId: 'run-real' } }, { model, invoke });
   assert.equal(result.reply, 'One real task is pending.');
   assert.equal(result.tokens, 12);
   assert.equal(result.executedToolCalls[0].status, 'completed');
@@ -49,7 +49,7 @@ test('model pool accepts a native tool-call response without treating it as empt
       assert.equal(sent.tools[0].function.name, 'tasks__list');
       return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: null, tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'tasks__list', arguments: '{}' } }] } }], usage: { total_tokens: 3 } }) };
     };
-    const result = await executeModelPool({ logicalModel: 'muse-spark-1.2', request: 'tasks?', state: {}, fetchImpl, toolSpecs: [{ type: 'function', function: { name: 'tasks__list', parameters: { type: 'object' } } }] });
+    const result = await executeModelPool({ logicalModel: 'agent_brain', request: 'tasks?', state: {}, fetchImpl, toolSpecs: [{ type: 'function', function: { name: 'tasks__list', parameters: { type: 'object' } } }] });
     assert.equal(result.toolCalls.length, 1);
   } finally {
     if (original === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = original;

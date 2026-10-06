@@ -7,12 +7,12 @@ import { spawn } from 'node:child_process';
 
 const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Object.keys(process.env).filter((key) => /^OPENROUTER_API_KEY_\d+$/.test(key)).sort((a, b) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, priority: 500, ...extra }));
 const DEFAULT_POOL_MODELS = {
-  'muse-spark-1.2': ['muse', 'muse/spark-1.2'],
+  'agent_brain': ['muse', 'muse/spark-1.2'],
   'deepseek-v4-flash': ['deepseek', 'deepseek/deepseek-v4-flash'],
-  'glm-5.2': ['glm', 'z-ai/glm-5.2'],
+  'fallback': ['glm', 'z-ai/fallback'],
   'laguna-s-2.1': ['laguna', 'laguna-s-2.1'],
   'minimax-m3': ['minimax', 'minimax/minimax-m3'],
-  'nemotron-3-nano-omni': ['nano-omni', 'nvidia/nemotron-3-nano-omni', { modalities: ['text', 'image', 'audio', 'video'] }],
+  'perception': ['nano-omni', 'nvidia/perception', { modalities: ['text', 'image', 'audio', 'video'] }],
   'mimo-v2.5': ['mimo', 'xiaomi/mimo-v2.5', { modalities: ['text', 'image', 'audio', 'video'] }],
   'nemotron-3.5-lightning': ['lightning', 'nvidia/nemotron-3.5-lightning'],
 };
@@ -92,7 +92,7 @@ function cooldownMs(response, kind) {
   return kind === 'QUOTA_EXHAUSTED' ? 15 * 60_000 : kind === 'RATE_LIMITED' ? 60_000 : 15_000;
 }
 
-async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = [], catalog = brainCatalog) {
+async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = [], catalog = brainCatalog, onToken = null) {
   if (provider.type === 'CLI') return callCliProvider(provider, messages, timeoutMs);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), provider.presetId === 'ollama' ? Math.max(timeoutMs, 90_000) : timeoutMs);
@@ -118,7 +118,8 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
     // Some installed Qwen templates prefill a thinking block even with think:false.
     // JSON-constrained final answers keep internal deliberation out of ordinary chat.
     const structuredOllamaAnswer = ollama && !toolSpecs.length && messages.every((item) => typeof item.content === 'string');
-    const body = ollama ? { model: provider.modelId, messages: [{ role: 'system', content: '/no_think\nReturn only the final answer.' }, ...messages], stream: false, think: false, options: { num_predict: Math.min(512, maxTokens) }, ...(structuredOllamaAnswer ? { format: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false } } : {}), ...(toolSpecs.length ? { tools: toolSpecs } : {}) } : anthropic ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) } : { model: provider.modelId, messages, max_tokens: maxTokens, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
+    const stream = !!onToken && !toolSpecs.length;
+    const body = ollama ? { model: provider.modelId, messages: [{ role: 'system', content: '/no_think\nReturn only the final answer.' }, ...messages], stream, think: false, options: { num_predict: Math.min(512, maxTokens) }, ...(structuredOllamaAnswer ? { format: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false } } : {}), ...(toolSpecs.length ? { tools: toolSpecs } : {}) } : anthropic ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, stream, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) } : { model: provider.modelId, messages, max_tokens: maxTokens, stream, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
     const endpoint = ollama ? `${new URL(provider.baseUrl).origin}/api/chat` : `${provider.baseUrl.replace(/\/$/, '')}${anthropic ? '/messages' : '/chat/completions'}`;
     const response = await fetchImpl(endpoint, {
       method: 'POST',
@@ -127,6 +128,53 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
       body: JSON.stringify(body),
     });
     if ((!anthropic && !ollama) || !response.ok) return response;
+    
+    if (stream && response.body) {
+      let accumulatedContent = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === 'data: [DONE]') continue;
+            if (ollama || trimmed.startsWith('data: ')) {
+              try {
+                const data = ollama ? JSON.parse(trimmed) : JSON.parse(trimmed.slice(6));
+                let chunkText = '';
+                if (ollama) {
+                  chunkText = data.message?.content || '';
+                } else if (anthropic) {
+                  if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
+                    chunkText = data.delta.text || '';
+                  }
+                } else {
+                  chunkText = data.choices?.[0]?.delta?.content || '';
+                }
+                if (chunkText) {
+                  accumulatedContent += chunkText;
+                  onToken(chunkText);
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      if (ollama) {
+        let answer = accumulatedContent.split('</think>').at(-1).trim();
+        return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content: answer, tool_calls: [] } }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }) };
+      }
+      return { ok: true, status: response.status, headers: response.headers, json: async () => ({ choices: [{ message: { content: accumulatedContent, tool_calls: [] } }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }) };
+    }
+
     const payload = await response.json().catch(() => ({}));
     if (ollama) {
       let answer = String(payload.message?.content || '').split('</think>').at(-1).trim();
@@ -184,7 +232,7 @@ function userContent(request, attachments, modality) {
   return content;
 }
 
-export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', sourceTier = 'all', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null, catalog = brainCatalog }) {
+export async function executeModelPool({ logicalModel, request, context = [], continuationState = null, attachments = [], state = {}, fetchImpl = fetch, now = () => Date.now(), allowFallback = true, requiredModality = 'text', requiredCapability = 'text', sourceTier = 'all', timeoutMs = 20_000, toolSpecs = [], messagesOverride = null, catalog = brainCatalog, onToken = null }) {
   if (catalog.list().some((source) => source.modelId === 'auto' && source.secretConfigured)) await resolveAutoBrainModels({ catalog, fetchImpl });
   const registry = modelRegistry();
   const pools = configuredPools(catalog);
@@ -219,7 +267,7 @@ export async function executeModelPool({ logicalModel, request, context = [], co
         while (true) {
           const startedAt = new Date(now()).toISOString();
           const started = performance.now();
-          const response = await callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs, catalog);
+          const response = await callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs, catalog, onToken);
           const payload = await response.json().catch(() => ({}));
           const attempt = telemetry.providerAttempts.length + 1;
           const messageResult = payload.choices?.[0]?.message;

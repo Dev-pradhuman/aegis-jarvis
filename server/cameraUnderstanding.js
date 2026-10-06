@@ -6,7 +6,7 @@ export async function describeCamera(input, { fetchImpl = fetch } = {}) {
   const capture = await osPlatform.camera.capture(devicePath);
   const prompt = input.prompt || `Please describe the contents of this camera view in detail.`;
   const response = await executeModelPool({
-    logicalModel: 'nemotron-3-nano-omni',
+    logicalModel: 'perception',
     request: prompt,
     attachments: [{ type: 'image/jpeg', url: `file://${capture.path}` }],
     requiredModality: 'image',

@@ -14,7 +14,7 @@ Projects: ${JSON.stringify(projects)}
 Make it readable, focused on today's priorities.`;
 
   const response = await executeModelPool({
-    logicalModel: 'muse-spark-1.2',
+    logicalModel: 'agent_brain',
     request: prompt,
     attachments: [],
     requiredModality: 'text',

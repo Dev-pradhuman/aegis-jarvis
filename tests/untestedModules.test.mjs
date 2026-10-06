@@ -49,7 +49,7 @@ test('cameraUnderstanding', async (t) => {
   const mockFetch = async (url, options) => {
     if (url.endsWith('/models')) {
       return { ok: true, json: async () => ({ data: [
-        { id: 'nvidia/nemotron-3-nano-omni', pricing: { prompt: 0, completion: 0 } }
+        { id: 'nvidia/perception', pricing: { prompt: 0, completion: 0 } }
       ] }) };
     }
     return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'A test view' } }], usage: { total_tokens: 10 } }) };
@@ -76,7 +76,7 @@ test('screenUnderstanding', async (t) => {
   const mockFetch = async (url, options) => {
     if (url.endsWith('/models')) {
       return { ok: true, json: async () => ({ data: [
-        { id: 'nvidia/nemotron-3-nano-omni', pricing: { prompt: 0, completion: 0 } }
+        { id: 'nvidia/perception', pricing: { prompt: 0, completion: 0 } }
       ] }) };
     }
     const body = options.body ? JSON.parse(options.body) : {};
