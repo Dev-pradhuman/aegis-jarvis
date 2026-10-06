@@ -115,7 +115,7 @@ function modelFailureReply(error, runId) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (!requestOriginAllowed(req.headers)) return json(res, 403, { error: 'Origin or host is not allowed' });
+  if (!requestOriginAllowed(req)) return json(res, 403, { error: 'Origin or host is not allowed' });
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': req.headers.origin || '', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type,authorization', vary: 'Origin' }); return res.end(); }
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {

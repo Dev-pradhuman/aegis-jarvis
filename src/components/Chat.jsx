@@ -55,13 +55,71 @@ export default function Chat() {
     visual('thinking');
 
     try {
-      const response = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: val }) });
-      const data = await response.json();
-      if (data.action?.action === 'open_url' && !openedImmediately) window.open(data.action.url, '_blank', 'noopener,noreferrer');
-      const reply = data.reply || data.error || 'Request could not be completed.';
-      const routingDebug = data.routing ? { taskType: data.routing.taskType, confidence: data.routing.routingConfidence, apiRotationCount: data.routing.apiRotationCount, modelFallbackUsed: data.routing.modelFallbackUsed, totalMs: data.routing.totalMs } : null;
-      setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media }]);
-      if (speak) void speakReply(reply);
+      const response = await fetch('/api/chat', { 
+        method: 'POST', 
+        headers: { 'content-type': 'application/json', 'Accept': 'text/event-stream' }, 
+        body: JSON.stringify({ message: val }) 
+      });
+
+      if (response.headers.get('content-type')?.includes('text/event-stream')) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let reply = '';
+        let messageIndex = -1;
+
+        setMessages((prev) => {
+          const next = [...prev, { who: 'JARVIS', time: nowTime(), lines: [''] }];
+          messageIndex = next.length - 1;
+          return next;
+        });
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(trimmed.slice(6));
+                  if (data.type === 'token') {
+                    reply += data.text;
+                    setMessages((prev) => {
+                      const next = [...prev];
+                      if (next[messageIndex]) next[messageIndex] = { ...next[messageIndex], lines: [reply] };
+                      return next;
+                    });
+                  } else if (data.type === 'done') {
+                    if (data.action?.action === 'open_url' && !openedImmediately) window.open(data.action.url, '_blank', 'noopener,noreferrer');
+                    const finalReply = data.reply || data.error || reply || 'Request could not be completed.';
+                    const routingDebug = data.routing ? { taskType: data.routing.taskType, confidence: data.routing.routingConfidence, apiRotationCount: data.routing.apiRotationCount, modelFallbackUsed: data.routing.modelFallbackUsed, totalMs: data.routing.totalMs } : null;
+                    
+                    setMessages((prev) => {
+                      const next = [...prev];
+                      if (next[messageIndex]) next[messageIndex] = { ...next[messageIndex], lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media };
+                      return next;
+                    });
+                    if (speak) void speakReply(finalReply);
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } else {
+        const data = await response.json();
+        if (data.action?.action === 'open_url' && !openedImmediately) window.open(data.action.url, '_blank', 'noopener,noreferrer');
+        const reply = data.reply || data.error || 'Request could not be completed.';
+        const routingDebug = data.routing ? { taskType: data.routing.taskType, confidence: data.routing.routingConfidence, apiRotationCount: data.routing.apiRotationCount, modelFallbackUsed: data.routing.modelFallbackUsed, totalMs: data.routing.totalMs } : null;
+        setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media }]);
+        if (speak) void speakReply(reply);
+      }
     } catch {
       setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: ['Local service unavailable. I retained your request in this session.'] }]);
     } finally {

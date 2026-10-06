@@ -316,8 +316,21 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: Boolean(input.attachments?.length) });
           const toolResults = run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId }));
           const assembledContext = assembleModelContext({ query: text, toolResults, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
+          const isSSE = req.headers.accept === 'text/event-stream';
+          if (isSSE) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders?.();
+            res.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
+          }
           try {
-            const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
+            const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => {
+                if (isSSE) {
+                  options.onToken = (chunk) => res.write(`data: ${JSON.stringify({ type: 'token', text: chunk })}\n\n`);
+                }
+                return modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options);
+              } });
             providerResult = brain.result;
             modelRoute.executionDecision = brain.decision;
             if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);
@@ -325,7 +338,13 @@ export default async function chatRoutes(req, res, url, state, ctx) {
               run.approvals.push(providerResult.approval.id);
               transitionRun(run, 'waiting_for_approval');
               await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
-              return json(res, 202, { reply: 'Waiting for approval...', runId: run.id, approvalRequired: true, approval: providerResult.approval });
+              const approvalPayload = { reply: 'Waiting for approval...', runId: run.id, approvalRequired: true, approval: providerResult.approval };
+              if (isSSE) {
+                res.write(`data: ${JSON.stringify({ type: 'done', ...approvalPayload })}\n\n`);
+                res.end();
+                return true;
+              }
+              return json(res, 202, approvalPayload);
             }
             reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.model || providerResult.logicalModel;
             run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, actualModel: providerResult.model || null, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
@@ -358,7 +377,13 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           finishRun(run, { reply, task: createdTask }, providerResult ? { input: providerResult.inputTokens, output: providerResult.outputTokens, total: providerResult.tokens } : { total: 0 });
         }
         await updateState((draft) => { const stored = draft.runs?.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
-        return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : modelFailure.code === 'HUMAN_ACTION_REQUIRED' ? 409 : 503) : 200, { reply, task: createdTask, assistant: 'JARVIS', grounded: !modelFailure && !run.routing?.site, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined });
+        const payload = { reply, task: createdTask, assistant: 'JARVIS', grounded: !modelFailure && !run.routing?.site, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined, ...(modelFailure ? { error: modelFailure.message, code: modelFailure.code } : {}) };
+        if (isSSE) {
+          res.write(`data: ${JSON.stringify({ type: 'done', ...payload })}\n\n`);
+          res.end();
+          return true;
+        }
+        return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : modelFailure.code === 'HUMAN_ACTION_REQUIRED' ? 409 : 503) : 200, payload);
       }
 
   return false;

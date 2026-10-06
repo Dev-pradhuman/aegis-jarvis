@@ -27,8 +27,23 @@ test('exact approval cannot be reused for a different command', async () => {
 });
 
 test('local API accepts local frontend origins and rejects foreign origins and hosts', () => {
-  assert.equal(requestOriginAllowed({ host: '127.0.0.1:8787', origin: 'http://localhost:5173' }), true);
-  assert.equal(requestOriginAllowed({ host: '[::1]:8787', origin: 'http://[::1]:5173' }), true);
-  assert.equal(requestOriginAllowed({ host: '127.0.0.1:8787', origin: 'https://evil.example' }), false);
-  assert.equal(requestOriginAllowed({ host: 'evil.example:8787' }), false);
+  assert.equal(requestOriginAllowed({ headers: { host: '127.0.0.1:8787', origin: 'http://localhost:5173' } }), true);
+  assert.equal(requestOriginAllowed({ headers: { host: '[::1]:8787', origin: 'http://[::1]:5173' } }), true);
+  assert.equal(requestOriginAllowed({ headers: { host: '127.0.0.1:8787', origin: 'https://evil.example' } }), false);
+  assert.equal(requestOriginAllowed({ headers: { host: 'evil.example:8787' } }), false);
+test('requestOriginAllowed rejects foreign Origin', () => {
+  assert.equal(requestOriginAllowed({ headers: { host: 'localhost:8787', origin: 'https://evil.com' } }), false);
+});
+
+test('requestOriginAllowed rejects rebinding-style Host header', () => {
+  assert.equal(requestOriginAllowed({ headers: { host: 'malicious-local-dns-rebind.com:8787' } }), false);
+});
+
+test('requestOriginAllowed requires Referer for state-changing browser requests without Origin', () => {
+  assert.equal(requestOriginAllowed({ method: 'POST', headers: { host: 'localhost:8787', 'sec-fetch-mode': 'cors' } }), false); // Missing Referer
+  assert.equal(requestOriginAllowed({ method: 'POST', headers: { host: 'localhost:8787', 'sec-fetch-mode': 'cors', referer: 'https://evil.com/page' } }), false); // Foreign Referer
+  assert.equal(requestOriginAllowed({ method: 'POST', headers: { host: 'localhost:8787', 'sec-fetch-mode': 'cors', referer: 'http://localhost:5173/page' } }), true); // Local Referer
+  assert.equal(requestOriginAllowed({ method: 'POST', headers: { host: 'localhost:8787' } }), true); // Non-browser request
+});
+
 });
