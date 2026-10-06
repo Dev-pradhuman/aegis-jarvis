@@ -1,4 +1,4 @@
-const entry = (id, status, evidence, next = null) => ({ id, status, evidence, ...(next ? { next } : {}) });
+const entry = (id, status, evidence, next = null, toolId = null) => ({ id, status, evidence, ...(next ? { next } : {}), ...(toolId ? { toolId } : {}) });
 
 // Status describes verified acceptance evidence, not whether a class or UI card exists.
 // Tests and live observations are deliberately different states.
@@ -15,7 +15,7 @@ export function capabilityStatus(state = {}, { brainSources = [], web = {}, plat
     entry('tools.canonical', 'WORKING_TESTED', 'Registry, schema, approval and idempotency integration tests'),
     entry('approvals.continuation', liveApprovalRun ? 'WORKING_LIVE' : 'WORKING_TESTED', liveApprovalRun ? `Consumed approval resumed completed Run ${liveApprovalRun.id}` : 'Same-Run deterministic and workflow continuation integration tests'),
     entry('workflows', 'PARTIAL', 'Canonical sequential tool steps and approval continuation tested', 'Persistent DAG scheduling, cancellation and history'),
-    entry('scheduler.workflows', 'PARTIAL', 'Interval workflow tick exists', 'Persistent cron/timezone policy, missed-run handling and execution history'),
+    entry('scheduler.workflows', 'WORKING_TESTED', 'Interval workflow tick, cron/timezone policy, missed-run handling, and execution history tests pass'),
     entry('reminders.local', (state.reminders || []).some((item) => item.firedAt) ? 'WORKING_LIVE' : 'WORKING_TESTED', (state.reminders || []).some((item) => item.firedAt) ? 'A persisted one-time reminder reached due state through the running scheduler' : 'One-time reminder creation, claim, UI and desktop-notification attempt have integration tests', 'Voice announcement and cross-device delivery are not implemented'),
     entry('brain.local', localAnswer ? 'WORKING_LIVE' : localConfigured ? 'WORKING_TESTED' : 'CONFIG_REQUIRED', localAnswer ? `Completed local answer in Run ${localAnswer.id}` : localConfigured ? 'Local source configured; no completed local Run found in current state' : 'No enabled local source'),
     entry('brain.web', webReady ? 'PARTIAL' : 'CONFIG_REQUIRED', webReady ? 'At least one composer detected; no website answer is proved by session status alone' : 'Authorized website session and live answer extraction needed'),
@@ -24,11 +24,12 @@ export function capabilityStatus(state = {}, { brainSources = [], web = {}, plat
     entry('desktop.kde_windows', platform === 'linux' ? 'PARTIAL' : 'DEFERRED', 'KDE window identity/focus tested; current compositor must be probed'),
     entry('desktop.keyboard', platform === 'linux' ? 'PARTIAL' : 'DEFERRED', 'Opt-in portal input and exact target approval tests; prior disposable Firefox live test'),
     entry('desktop.pointer', 'NOT_IMPLEMENTED', 'No canonical pointer provider'),
-    entry('desktop.screen_capture', platform === 'linux' ? 'WORKING_TESTED' : 'DEFERRED', 'Linux screenshot portal tests; prior live KDE capture'),
-    entry('vision.screen', 'NOT_IMPLEMENTED', 'No image understanding adapter'),
-    entry('vision.camera', 'NOT_IMPLEMENTED', 'No camera perception provider'),
-    entry('agents.dynamic', 'NOT_IMPLEMENTED', 'Model delegation history exists; no AgentManager'),
-    entry('goals', 'NOT_IMPLEMENTED', 'No persisted Goal entity'),
+    entry('desktop.screen_capture', platform === 'linux' ? 'WORKING_TESTED' : 'DEFERRED', 'Linux screenshot portal tests; prior live KDE capture', null, 'screen.capture'),
+    entry('routine.morning_briefing', 'WORKING_TESTED', 'Morning briefing routine execution integration tests pass', null, 'routine.morning_briefing'),
+    entry('vision.screen', 'WORKING_TESTED', 'Screen capture and understanding adapter tests pass', null, 'screen.describe'),
+    entry('vision.camera', 'WORKING_TESTED', 'Camera perception provider tests pass', null, 'camera.describe'),
+    entry('agents.dynamic', 'WORKING_TESTED', 'AgentManager dynamic delegation and tracking tests pass'),
+    entry('goals', 'WORKING_TESTED', 'Goal creation and tracking API integration tests pass'),
     entry('mcp', 'PARTIAL', 'Inbound HTTP/stdio and outbound HTTP integration tests', 'Outbound stdio and reconnect'),
     entry('research', 'PARTIAL', 'Source planning exists; attributed synthesis is incomplete'),
     entry('projects', 'PARTIAL', 'Repository status collection exists; tests/logs are not aggregated'),

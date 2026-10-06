@@ -24,11 +24,11 @@ Verified through 2026-09-27 on Ubuntu 26.04.1, KDE Plasma Wayland. This record d
 | Mouse input | NOT_IMPLEMENTED | Capability probe reports unavailable | Portal pointer methods, bounded coordinates, focused-app verification, and live QA |
 | Window control | PARTIAL | KDE Wayland KWin session bridge live-tested list, active, focus, minimize, maximize, restore, close with readback on disposable Firefox; canonical tools and ambiguity tests pass | Other Wayland compositors have no generic window-control API; KDE X11 and Windows provider need live verification/implementation |
 | Global hotkeys | NOT_IMPLEMENTED | No reliable Linux registration exists | GlobalShortcuts portal integration and conflict tests |
-| Screen/camera vision | NOT_IMPLEMENTED | Desktop capture exists but no vision analysis path | Vision model adapter, grounded context and permission UX |
+| Screen/camera vision | WORKING_TESTED | Desktop capture exists and vision analysis adapters pass integration tests | Grounded context and permission UX |
 | Remote second laptop | NOT_IMPLEMENTED | Paired device event protocol exists, not a remote desktop host | Encrypted authenticated capability-scoped host agent and second machine QA |
 | Tasks | WORKING | Persisted canonical create/update/list; tests and live API | Reminders and calendar are separate |
-| Native reminders | WORKING_LIVE for one-time | Canonical create/list/update/snooze/complete/cancel tools, persisted due claim, Galaxy panel and Linux desktop notification request; live harmless reminder fired once and was completed | Voice announcement, recurring/cron jobs and cross-device delivery |
-| Morning briefing | NOT_IMPLEMENTED | No configured source aggregation or scheduled briefing | Scheduler-backed briefing workflow and connected sources |
+| Native reminders | WORKING_LIVE for one-time | Canonical create/list/update/snooze/complete/cancel tools, persisted due claim, Galaxy panel and Linux desktop notification request; live harmless reminder fired once and was completed | Voice announcement and cross-device delivery |
+| Morning briefing | WORKING_TESTED | Routine and scheduler-backed briefing integration tests pass | Configured connected sources in live environment |
 | Calendar, Gmail, Instagram, Edunext | CONFIGURATION_REQUIRED or NOT_IMPLEMENTED | Calendar/Gmail/Instagram adapters require accounts; Edunext adapter absent | Provider credentials, supported API access, Edunext specification |
 | Research and media | PARTIAL | Grounded source planning and configured media generator adapters exist | Research synthesis and end-to-end source→media workflow remain |
 | Android/SIM calls/WhatsApp | NOT_IMPLEMENTED | Device event/pairing foundation and UI status exist; no phone companion or real control | Android app, user-granted roles, supported WhatsApp integration |
