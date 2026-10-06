@@ -29,3 +29,11 @@ build/
 *.log
 .DS_Store
 !.env.example
+
+# Ruflo local secrets and runtime data
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+
+scripts/archive/

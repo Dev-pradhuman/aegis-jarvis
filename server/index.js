@@ -210,6 +210,7 @@ const server = http.createServer(async (req, res) => {
         if (action === 'models' && req.method === 'GET') return json(res, 200, await discoverBrainModels(sourceId));
       } catch (error) { if (error.code?.startsWith('BRAIN_')) return json(res, error.code.endsWith('NOT_FOUND') ? 404 : 400, { code: error.code, error: error.message }); throw error; }
     }
+    if (req.method === 'GET' && url.pathname === '/api/voice/status') return json(res, 200, { enabled: process.env.JARVIS_VOICE === '1', wakeword: process.env.JARVIS_WAKEWORD_MODEL || 'hey_jarvis', stt: process.env.JARVIS_STT_MODEL || 'whisper-small', tts: process.env.JARVIS_TTS || 'piper' });
     if (req.method === 'GET' && url.pathname === '/api/voice/tts') return json(res, 200, ttsStatus());
     if (req.method === 'POST' && url.pathname === '/api/voice/tts') {
       const result = await synthesizeSpeech(await body(req));
