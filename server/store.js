@@ -6,7 +6,7 @@ import { failRun } from './runEngine.js';
 import { DEFAULT_APPROVAL_POLICY } from './approvalPolicy.js';
 import { expirePendingApprovals } from './approvalExpiry.js';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data');
+const root = process.env.JARVIS_DATA_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'data');
 const file = path.join(root, 'state.json');
 const seed = {
   runtime: { startedAt: new Date().toISOString(), usage: { requests: 0, tokens: 0, cost: 0 }, latency: { routerMs: 0, modelMs: 0, toolMs: 0, policyMs: 0, databaseMs: 0, totalMs: 0, samples: 0 } },
