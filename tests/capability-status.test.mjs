@@ -8,8 +8,8 @@ test('capability status never promotes configured providers or UI scaffolding to
   assert.equal(status['brain.local'].status, 'WORKING_TESTED');
   assert.equal(status['brain.web'].status, 'PARTIAL');
   assert.equal(status['brain.zero_cost_api'].status, 'PARTIAL');
-  assert.equal(status['agents.dynamic'].status, 'NOT_IMPLEMENTED');
-  assert.equal(status.goals.status, 'NOT_IMPLEMENTED');
+  assert.equal(status['agents.dynamic'].status, 'WORKING_TESTED');
+  assert.equal(status.goals.status, 'WORKING_TESTED');
   assert.equal(status['integrations.whatsapp'].status, 'NOT_IMPLEMENTED');
   assert.equal(status['phone.android'].status, 'DEFERRED');
 });
