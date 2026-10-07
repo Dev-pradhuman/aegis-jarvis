@@ -29,11 +29,12 @@ export default function GlobalVoice() {
   }, []);
 
   useEffect(() => {
-    let isShiftDown = false;
+    let isPttDown = false;
     const handleKeyDown = async (e) => {
-      if (e.key === 'Shift' && !e.repeat && !isShiftDown) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        isShiftDown = true;
+      if (e.ctrlKey && e.code === 'Space' && !e.repeat && !isPttDown) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+        isPttDown = true;
+        e.preventDefault(); // Prevent page scroll
         try {
           await fetch('/api/voice/ptt', {
             method: 'POST',
@@ -46,8 +47,8 @@ export default function GlobalVoice() {
       }
     };
     const handleKeyUp = async (e) => {
-      if (e.key === 'Shift') {
-        isShiftDown = false;
+      if (e.code === 'Space' && isPttDown) {
+        isPttDown = false;
         try {
           await fetch('/api/voice/ptt', {
             method: 'POST',
