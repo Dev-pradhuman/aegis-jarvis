@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 export class WhisperProvider {
   constructor(options = {}) {
-    this.modelPath = options.modelPath || join(process.cwd(), 'server/data/whisper-tiny.bin');
+    this.modelPath = options.modelPath || process.env.WHISPER_MODEL_PATH || join(process.cwd(), '.cache/voice/whisper-tiny.en.bin');
     this.binaryPath = options.binaryPath || join(process.cwd(), 'bin/whisper');
     this.timeoutMs = options.timeoutMs || 10000;
   }
@@ -44,6 +44,7 @@ export class WhisperProvider {
         reject(Object.assign(new Error(`Spawn error: ${err.message}`), { code: 'SPAWN_ERROR' }));
       });
 
+      child.stdin.on('error', () => {});
       child.stdin.write(audioBuffer);
       child.stdin.end();
     });

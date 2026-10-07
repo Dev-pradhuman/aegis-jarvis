@@ -28,13 +28,46 @@ export default function GlobalVoice() {
     return () => { active = false; clearInterval(timer); };
   }, []);
 
+  const [pttKeyCombo, setPttKeyCombo] = useState(() => {
+    try {
+      return localStorage.getItem('jarvis_ptt_key') || 'Ctrl+Space';
+    } catch {
+      return 'Ctrl+Space';
+    }
+  });
+
   useEffect(() => {
     let isPttDown = false;
+
+    const matchesCombo = (e, comboStr) => {
+      const parts = comboStr.toLowerCase().split('+').map(p => p.trim());
+      const needCtrl = parts.includes('ctrl') || parts.includes('control');
+      const needAlt = parts.includes('alt');
+      const needShift = parts.includes('shift');
+      const needMeta = parts.includes('meta') || parts.includes('cmd');
+      const baseKey = parts[parts.length - 1];
+
+      if (Boolean(e.ctrlKey) !== needCtrl) return false;
+      if (Boolean(e.altKey) !== needAlt) return false;
+      if (Boolean(e.shiftKey) !== needShift) return false;
+      if (Boolean(e.metaKey) !== needMeta) return false;
+
+      if (baseKey === 'space' && (e.code === 'Space' || e.key === ' ')) return true;
+      return e.key.toLowerCase() === baseKey || e.code.toLowerCase() === baseKey;
+    };
+
+    const isBaseKeyRelease = (e, comboStr) => {
+      const parts = comboStr.toLowerCase().split('+').map(p => p.trim());
+      const baseKey = parts[parts.length - 1];
+      if (baseKey === 'space' && (e.code === 'Space' || e.key === ' ')) return true;
+      return e.key.toLowerCase() === baseKey || e.code.toLowerCase() === baseKey;
+    };
+
     const handleKeyDown = async (e) => {
-      if (e.ctrlKey && e.code === 'Space' && !e.repeat && !isPttDown) {
+      if (matchesCombo(e, pttKeyCombo) && !e.repeat && !isPttDown) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
         isPttDown = true;
-        e.preventDefault(); // Prevent page scroll
+        e.preventDefault(); // Prevent page scroll / IME conflict
         try {
           await fetch('/api/voice/ptt', {
             method: 'POST',
@@ -46,8 +79,9 @@ export default function GlobalVoice() {
         }
       }
     };
+
     const handleKeyUp = async (e) => {
-      if (e.code === 'Space' && isPttDown) {
+      if (isBaseKeyRelease(e, pttKeyCombo) && isPttDown) {
         isPttDown = false;
         try {
           await fetch('/api/voice/ptt', {
@@ -60,13 +94,14 @@ export default function GlobalVoice() {
         }
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [pttKeyCombo]);
 
   let indicatorClass = 'global-voice-indicator';
   if (state === 'capturing') indicatorClass += ' capturing';

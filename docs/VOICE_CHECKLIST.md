@@ -6,6 +6,9 @@ This checklist is for manually verifying the Voice Pipeline end-to-end. Since re
 1. Ensure you have run `npm run verify:voice`.
 2. Ensure your microphone is correctly set as the default system input.
 3. Ensure your speakers are turned on and the volume is audible.
+4. **Push-to-Talk (Primary Path):** Default shortcut is `Ctrl+Space`.
+   - **Warning:** `Ctrl+Space` conflicts with input-method editor (IME) switching on many Linux/Windows desktops. If so, configure `localStorage.setItem('jarvis_ptt_key', 'Alt+Space')`.
+5. **Wake Word Status:** Real wake word engine is currently `NOT_IMPLEMENTED`. Tests 1-3 apply when an opt-in wake model is loaded; otherwise Push-to-Talk is the verified path.
 
 ## Test 1: Basic Wake Word Detection
 - **Setup**: Start the pipeline in idle mode.

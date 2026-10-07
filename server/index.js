@@ -118,14 +118,14 @@ import { VoicePipeline } from './voicePipeline.js';
 import { AudioCapture, AudioPlayback } from './audioIo.js';
 import { WhisperProvider } from './sttProvider.js';
 import { PiperProvider } from './ttsProvider.js';
-import { MockWakeWordProvider } from './wakeWordProvider.js';
+import { WakeWordProvider } from './wakeWordProvider.js';
 import { EnergyVADProvider } from './vadProvider.js';
 import { voiceRoutes } from './routes/voice.js';
 
 const voicePipeline = new VoicePipeline({
   audioSource: new AudioCapture(),
   audioPlayback: new AudioPlayback(),
-  wakeWordProvider: new MockWakeWordProvider(),
+  wakeWordProvider: new WakeWordProvider(),
   vadProvider: new EnergyVADProvider(),
   sttProvider: new WhisperProvider(),
   ttsProvider: new PiperProvider({ audioPlayback: new AudioPlayback() })

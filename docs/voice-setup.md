@@ -17,3 +17,12 @@ The setup script creates stub files in `bin/` if the binaries are missing. For a
 2. Download Piper TTS release for your OS and place `piper` at `bin/piper`.
 
 The system uses `arecord` / `pw-record` and `aplay` / `pw-play` for audio capture and playback. Ensure these standard Linux audio tools are installed via your package manager.
+
+## Push-to-Talk (PTT) Configuration
+- **Default Key Combo:** `Ctrl+Space` (hold down to talk, release to transcribe).
+- **IME / Input-Method Switching Conflict Warning:** On many Linux (ibus/fcitx), macOS, and Windows desktop configurations, `Ctrl+Space` is assigned to system-wide Input Method Editor (IME) switching.
+- **Customizing Key Combo:** You can customize the shortcut by setting `localStorage.setItem('jarvis_ptt_key', 'Alt+Space')` (or `Shift+Space`, `F8`) in the browser console.
+
+## Wake Word Status
+- Local wake word engine (openWakeWord) is currently marked **`NOT_IMPLEMENTED`** in production runtime.
+- Push-to-talk is the primary, safe interaction mode. Any heuristic wake word mocks are restricted to tests and never selected by production configuration.

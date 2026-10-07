@@ -5,7 +5,7 @@ set -e
 # Downloads missing models and sets up binaries for local voice processing.
 # All downloads are well under the 500MB limit.
 
-DATA_DIR="server/data"
+DATA_DIR=".cache/voice"
 BIN_DIR="bin"
 mkdir -p "$DATA_DIR"
 mkdir -p "$BIN_DIR"

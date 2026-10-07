@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 export class PiperProvider {
   constructor(options = {}) {
-    this.modelPath = options.modelPath || join(process.cwd(), 'server/data/piper-voice.onnx');
+    this.modelPath = options.modelPath || process.env.PIPER_MODEL_PATH || join(process.cwd(), '.cache/voice/piper-voice.onnx');
     this.binaryPath = options.binaryPath || join(process.cwd(), 'bin/piper');
     this.audioPlayback = options.audioPlayback || null;
     this.currentProcess = null;
@@ -36,6 +36,7 @@ export class PiperProvider {
 
       this.currentProcess.on('error', err => reject(err));
 
+      this.currentProcess.stdin.on('error', () => {});
       this.currentProcess.stdin.write(text);
       this.currentProcess.stdin.end();
       

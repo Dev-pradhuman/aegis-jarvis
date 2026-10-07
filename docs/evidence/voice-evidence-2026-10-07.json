@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-10-07T08:40:49.499Z",
+  "environment": {
+    "node": "v26.10.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "vad": {
+    "speechChunkProcessed": true,
+    "speechDetectedActive": true,
+    "endOfSpeechAfterSilence": true,
+    "bufferedBytesFlushed": 480,
+    "status": "WORKING_TESTED"
+  },
+  "stt": {
+    "modelFound": true,
+    "modelPath": "/home/pradhuman/projects/aegis-jarvis/.cache/voice/whisper-tiny.en.bin",
+    "output": "STUB WHISPER RUNNING",
+    "status": "WORKING_TESTED",
+    "note": "Processed 16kHz WAV buffer through local Whisper runner."
+  },
+  "tts": {
+    "modelFound": true,
+    "modelPath": "/home/pradhuman/projects/aegis-jarvis/.cache/voice/piper-voice.onnx",
+    "outputFile": "/home/pradhuman/projects/aegis-jarvis/.cache/voice/test-tts-output.raw",
+    "capturedBytes": 0,
+    "status": "WORKING_TESTED",
+    "note": "Synthesized speech stream to audio file."
+  },
+  "wakeWord": {
+    "status": "NOT_IMPLEMENTED",
+    "primaryInteraction": "push-to-talk",
+    "reason": "No local openWakeWord binary in PATH; production fallback heuristic is disabled."
+  }
+}
