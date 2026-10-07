@@ -318,13 +318,23 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           const toolResults = run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId }));
           const assembledContext = assembleModelContext({ query: text, toolResults, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
           
+          let ackTimer = null;
           if (isSSE) {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
             res.flushHeaders?.();
             res.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
-            if (modelRoute.requiresTools) res.write(`data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
+            if (modelRoute.requiresTools && input.source === 'voice') {
+              const delay = parseInt(process.env.VOICE_ACK_DELAY_MS || '500', 10);
+              if (delay <= 0) {
+                res.write(`data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
+              } else {
+                ackTimer = setTimeout(() => {
+                  res.write(`data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
+                }, delay);
+              }
+            }
           }
           try {
             const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => {
@@ -333,6 +343,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
                 }
                 return modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options);
               } });
+            clearTimeout(ackTimer);
             providerResult = brain.result;
             modelRoute.executionDecision = brain.decision;
             if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);
@@ -351,6 +362,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             reply = providerResult.reply; run.provider = providerResult.provider; run.model = providerResult.model || providerResult.logicalModel;
             run.routing = { ...modelRoute, ...providerResult.routingTelemetry, ...assembledContext.telemetry, actualModel: providerResult.model || null, routingConfidence: modelRoute.confidence, routingReason: modelRoute.reason, routerProviderAttempts: modelRoute.classifierTelemetry?.providerAttempts || [], routerMs: (modelRoute.classifierTelemetry?.providerAttempts || []).reduce((sum, attempt) => sum + Number(attempt.latencyMs || 0), 0), modelMs: Math.round(performance.now() - modelStarted), toolMs: 0, policyMs: 0, databaseMs: assembledContext.telemetry.memoryMs, totalMs: Math.round(performance.now() - routeStarted), inputTokens: providerResult.inputTokens || 0, outputTokens: providerResult.outputTokens || 0, toolCalls: run.toolCalls.length };
           } catch (error) {
+            clearTimeout(ackTimer);
             let terminalError = error;
             if (paidApiUsageEnabled() && error.code === 'MODEL_CAPACITY_EXHAUSTED' && publicProvider(state.provider).configured) {
               try {
