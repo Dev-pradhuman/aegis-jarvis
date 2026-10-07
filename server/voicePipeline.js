@@ -38,6 +38,8 @@ export class VoicePipeline extends EventEmitter {
       if (endOfSpeech) {
         this.stopCapturing(this.vadProvider.flush());
       }
+    } else if (this.state === 'speaking') {
+      // Ignore audio or optionally perform barge-in detection if needed
     }
   }
 
@@ -76,7 +78,9 @@ export class VoicePipeline extends EventEmitter {
     if (this.ttsProvider) {
       try {
          await this.ttsProvider.speak(text);
-         this.transition('idle');
+         if (this.state === 'speaking') {
+             this.transition('idle');
+         }
       } catch (err) {
          this.emit('error', err);
          this.transition('error');
@@ -85,8 +89,51 @@ export class VoicePipeline extends EventEmitter {
       this.transition('idle');
     }
   }
+
+  async streamSpeak(textStream) {
+    this.transition('speaking');
+    let buffer = '';
+    const sentenceRegex = /([.?!])\s+/;
+    
+    for await (const chunk of textStream) {
+      if (this.state !== 'speaking') break; // barged in
+      buffer += chunk;
+      const match = sentenceRegex.exec(buffer);
+      if (match) {
+        const sentence = buffer.substring(0, match.index + match[1].length);
+        buffer = buffer.substring(match.index + match[1].length).trimStart();
+        if (this.ttsProvider && this.state === 'speaking') {
+           await this.ttsProvider.speak(sentence);
+        }
+      }
+    }
+    
+    if (buffer.trim() && this.state === 'speaking' && this.ttsProvider) {
+      await this.ttsProvider.speak(buffer.trim());
+    }
+    
+    if (this.state === 'speaking') {
+      this.transition('idle');
+    }
+  }
+  
+  stopSpeaking() {
+    if (this.state === 'speaking') {
+      if (this.ttsProvider && this.ttsProvider.stop) {
+        this.ttsProvider.stop();
+      }
+      this.transition('idle');
+    }
+  }
   
   mute() {
     this.transition('muted');
+  }
+  
+  handleBargeIn() {
+    if (this.state === 'speaking') {
+      this.stopSpeaking();
+      this.transition('wake_listening');
+    }
   }
 }
