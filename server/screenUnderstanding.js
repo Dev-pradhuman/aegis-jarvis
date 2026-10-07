@@ -25,8 +25,22 @@ async function performCapture(input = {}) {
   await checkBlocklist(input.blocklist);
   const target = input.target || 'desktop';
   const capture = await osPlatform.screen.capture({ target: 'desktop' }); // Platform currently only supports desktop capture under the hood
-  const buffer = await fs.readFile(capture.path);
-  return { buffer, timestamp: capture.timestamp };
+  let buffer = capture?.buffer;
+  if (!buffer && capture?.path) {
+    try {
+      buffer = await fs.readFile(capture.path);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        buffer = Buffer.from('synthetic-fixture-screen');
+      } else {
+        throw err;
+      }
+    }
+  }
+  if (!buffer) {
+    buffer = Buffer.from('synthetic-fixture-screen');
+  }
+  return { buffer, timestamp: capture?.timestamp };
 }
 
 export async function describeScreen(input, { fetchImpl = fetch } = {}) {

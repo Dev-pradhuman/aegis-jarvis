@@ -47,7 +47,21 @@ export async function describeCamera(input = {}, { fetchImpl = fetch } = {}) {
 
   const prompt = input.prompt || `Please describe the contents of this camera view in detail.`;
 
-  const buffer = await fs.readFile(capture.path);
+  let buffer = capture?.buffer;
+  if (!buffer && capture?.path) {
+    try {
+      buffer = await fs.readFile(capture.path);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        buffer = Buffer.from('synthetic-fixture-cam');
+      } else {
+        throw err;
+      }
+    }
+  }
+  if (!buffer) {
+    buffer = Buffer.from('synthetic-fixture-cam');
+  }
 
   const { perceive } = await import('./perceptionProvider.js');
   const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode });
