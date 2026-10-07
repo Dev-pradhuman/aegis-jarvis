@@ -13,7 +13,8 @@
     "test": "node --test tests server src",
     "smoke": "node scripts/smoke.mjs",
     "verify:live": "node scripts/verify-live.mjs",
-    "verify:voice": "node scripts/verify-voice.mjs"
+    "verify:voice": "node scripts/verify-voice.mjs",
+    "verify:vision": "node scripts/verify-vision.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.80",
