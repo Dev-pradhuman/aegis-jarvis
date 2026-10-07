@@ -51,6 +51,13 @@ export class VoicePipeline extends EventEmitter {
     return false;
   }
 
+  pushToTalk() {
+    // Push-to-talk overrides wake word and works even if idle or no wake word model installed
+    this.handleBargeIn(); // Stop speaking if currently speaking
+    this.transition('capturing');
+    return true;
+  }
+
   stopCapturing(audioBuffer) {
     if (this.state === 'capturing') {
       this.transition('transcribing');
