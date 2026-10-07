@@ -324,6 +324,9 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: Boolean(input.attachments?.length) });
           const toolResults = run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId }));
           const assembledContext = assembleModelContext({ query: text, toolResults, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
+          if (input.source === 'voice') {
+            assembledContext.context.push({ role: 'system', content: 'Reply concisely for speech. Do not output markdown, code blocks, or URLs.' });
+          }
           
           let ackTimer = null;
           if (isSSE) {

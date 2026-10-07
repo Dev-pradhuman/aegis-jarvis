@@ -42,7 +42,16 @@ export function voiceRoutes(voicePipeline) {
     }
 
     if (req.url.startsWith('/api/voice/ptt') && req.method === 'POST') {
-      const data = await req.json().catch(() => ({}));
+      let data = {};
+      if (typeof req.json === 'function') {
+        data = await req.json().catch(() => ({}));
+      } else {
+        try {
+          let bodyData = '';
+          for await (const chunk of req) bodyData += chunk;
+          if (bodyData) data = JSON.parse(bodyData);
+        } catch(e) {}
+      }
       if (data.action === 'start') {
         voicePipeline.pushToTalk();
       } else if (data.action === 'stop' && voicePipeline.state === 'capturing') {

@@ -23,6 +23,14 @@ export default function Chat() {
   useEffect(() => () => { try { recorderRef.current?.stop(); } catch {} recorderRef.current = null; }, []);
 
   useEffect(() => {
+    const handleError = (e) => {
+      setMessages((prev) => [...prev, { who: 'JARVIS', time: nowTime(), lines: [`Voice Pipeline Error: ${e.detail.message}`] }]);
+    };
+    window.addEventListener('jarvis:voice_error', handleError);
+    return () => window.removeEventListener('jarvis:voice_error', handleError);
+  }, []);
+
+  useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
