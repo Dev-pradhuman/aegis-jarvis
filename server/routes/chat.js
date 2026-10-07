@@ -192,6 +192,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
     if (req.method === 'POST' && url.pathname === '/api/chat') {
   
         const input = await body(req); const text = String(input.message || '').trim();
+        const isSSE = req.headers.accept === 'text/event-stream';
         if (!text) return json(res, 400, { error: 'message is required' });
         const routeStarted = performance.now(); const route = routeRequest(text);
         if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
@@ -316,7 +317,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: Boolean(input.attachments?.length) });
           const toolResults = run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId }));
           const assembledContext = assembleModelContext({ query: text, toolResults, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
-          const isSSE = req.headers.accept === 'text/event-stream';
+          
           if (isSSE) {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');

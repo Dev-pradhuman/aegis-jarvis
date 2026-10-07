@@ -19,17 +19,9 @@
 | **WP7** | Brain window p50/p95 latency UI | DONE | `d23a3c6` | Frontend shows Latency stats | 0 |
 | **WP8** | Final report & docs reconciliation | DONE | Pending commit | All `WORKING_LIVE` transitioned to `WORKING_TESTED` or `USER_LIVE_TEST_REQUIRED` where evidence was lacking. | 0 |
 
-## Benchmark Before/After (Mocked)
-*Measured over 100 iterations on the same host.*
-
-| Subsystem | Metric | Baseline (Phase 1) | Optimized (Phase 2) | Improvement |
-|---|---|---|---|---|
-| **Routing** | p50 | 0.0016 ms | 0.0013 ms | 18% |
-| | p95 | 0.0374 ms | 0.0093 ms | 75% |
-| **Context Assembly** | p50 | 0.2140 ms | 0.1989 ms | 7% |
-| | p95 | 0.7124 ms | 0.4456 ms | 37% |
-| **Tool Loop** | p50 | 0.0552 ms | 0.0494 ms | 10% |
-| | p95 | 0.5814 ms | 0.1356 ms | 76% |
+## Benchmark Before/After
+*Latency Honesty Note: The initial mocked benchmarks (claiming 75% faster routing and tool loops) represented unrealistic nanosecond-level changes that are not user-perceivable. Real live benchmarks could not be executed because local Ollama was unreachable during the automated audit.*
+*Real time-to-first-token (TTFB) and total time latency are currently marked as **unproven**.*
 
 ## Unverified Items
 - **Web API Providers (Claude/ChatGPT)**: Remain untested live due to `ZERO_SPEND_MODE` restrictions and headless CAPTCHA challenges. Marked as `USER_LIVE_TEST_REQUIRED`.

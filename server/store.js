@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, unlink, writeFile, readdir } from 'node:fs/promises';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,17 +77,31 @@ async function load() {
       'nemotron-3-nano-omni': 'perception',
       'glm-5.2': 'fallback'
     };
-    if (parsed.modelRouting?.manualModel && aliases[parsed.modelRouting.manualModel]) {
-      parsed.modelRouting.manualModel = aliases[parsed.modelRouting.manualModel];
-      migratedModels = true;
-    }
-    if (parsed.runs) {
-      for (const run of parsed.runs) {
-        if (run.logicalModel && aliases[run.logicalModel]) {
-          run.logicalModel = aliases[run.logicalModel];
-          migratedModels = true;
+    let needsMigration = false;
+    if (parsed.modelRouting?.manualModel && aliases[parsed.modelRouting.manualModel]) needsMigration = true;
+    if (parsed.runs?.some(run => run.logicalModel && aliases[run.logicalModel])) needsMigration = true;
+
+    if (needsMigration) {
+      const rawContent = await readFile(file, 'utf8');
+      const backupFile = path.join(root, `state.backup-${Date.now()}.json`);
+      await writeJsonAtomically(backupFile, JSON.parse(rawContent));
+      try {
+        const files = await readdir(root);
+        const backups = files.filter(f => f.startsWith('state.backup-')).sort();
+        while (backups.length > 5) await unlink(path.join(root, backups.shift())).catch(() => {});
+      } catch (err) {}
+
+      if (parsed.modelRouting?.manualModel && aliases[parsed.modelRouting.manualModel]) {
+        parsed.modelRouting.manualModel = aliases[parsed.modelRouting.manualModel];
+      }
+      if (parsed.runs) {
+        for (const run of parsed.runs) {
+          if (run.logicalModel && aliases[run.logicalModel]) {
+            run.logicalModel = aliases[run.logicalModel];
+          }
         }
       }
+      migratedModels = true;
     }
     if (interrupted || removedDemoSeed || expiredApprovals.length || migratedModels) await writeJsonAtomically(file, parsed);
 

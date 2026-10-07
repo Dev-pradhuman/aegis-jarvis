@@ -130,3 +130,7 @@ The Galaxy modules now read real project, MCP, agent-run, research, media-job, p
 - Keep the server bound to localhost unless a separate authenticated, encrypted transport is configured. Do not place real pairing codes or tokens in source control.
 - `COMMUNICATION_SIGNATURES` is an optional JSON map such as `{ "generic": "By JARVIS on behalf of Master Pradyuman" }`. A signature is appended only when a send request explicitly sets `assistantAuthored: true` and a signature is configured for the chosen platform. No WhatsApp sender exists yet.
 - Sending through `/api/messages/send` or the canonical `messages.send` tool now creates an exact-action approval when one is not supplied. Approve it through the existing approvals API, then retry with its ID. The approval is consumed before the external request, so a retry cannot silently duplicate an uncertain send.
+
+## Safety Guidelines
+
+**Pre-push safety note:** Always run `git diff` to ensure no `.env` credentials, API tokens, or `server/data` state files are committed before pushing to a remote repository.
