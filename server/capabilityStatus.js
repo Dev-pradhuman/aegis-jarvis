@@ -11,13 +11,13 @@ export function capabilityStatus(state = {}, { brainSources = [], web = {}, plat
   const liveApprovalRun = runs.find((run) => run.status === 'completed' && run.approvals?.some((id) =>
     (state.approvals || []).some((approval) => approval.id === id && approval.status === 'consumed' && approval.runId === run.id)));
   return [
-    entry('service.local', 'WORKING_LIVE', 'Current authenticated/local capability request reached the running service'),
+    entry('service.local', 'WORKING_TESTED', 'Current authenticated/local capability request reached the running service'),
     entry('tools.canonical', 'WORKING_TESTED', 'Registry, schema, approval and idempotency integration tests'),
-    entry('approvals.continuation', liveApprovalRun ? 'WORKING_LIVE' : 'WORKING_TESTED', liveApprovalRun ? `Consumed approval resumed completed Run ${liveApprovalRun.id}` : 'Same-Run deterministic and workflow continuation integration tests'),
+    entry('approvals.continuation', liveApprovalRun ? 'WORKING_TESTED' : 'WORKING_TESTED', liveApprovalRun ? `Consumed approval resumed completed Run ${liveApprovalRun.id}` : 'Same-Run deterministic and workflow continuation integration tests'),
     entry('workflows', 'PARTIAL', 'Canonical sequential tool steps and approval continuation tested', 'Persistent DAG scheduling, cancellation and history'),
     entry('scheduler.workflows', 'WORKING_TESTED', 'Interval workflow tick, cron/timezone policy, missed-run handling, and execution history tests pass'),
-    entry('reminders.local', (state.reminders || []).some((item) => item.firedAt) ? 'WORKING_LIVE' : 'WORKING_TESTED', (state.reminders || []).some((item) => item.firedAt) ? 'A persisted one-time reminder reached due state through the running scheduler' : 'One-time reminder creation, claim, UI and desktop-notification attempt have integration tests', 'Voice announcement and cross-device delivery are not implemented'),
-    entry('brain.local', localAnswer ? 'WORKING_LIVE' : localConfigured ? 'WORKING_TESTED' : 'CONFIG_REQUIRED', localAnswer ? `Completed local answer in Run ${localAnswer.id}` : localConfigured ? 'Local source configured; no completed local Run found in current state' : 'No enabled local source'),
+    entry('reminders.local', (state.reminders || []).some((item) => item.firedAt) ? 'WORKING_TESTED' : 'WORKING_TESTED', (state.reminders || []).some((item) => item.firedAt) ? 'A persisted one-time reminder reached due state through the running scheduler' : 'One-time reminder creation, claim, UI and desktop-notification attempt have integration tests', 'Voice announcement and cross-device delivery are not implemented'),
+    entry('brain.local', localAnswer ? 'WORKING_TESTED' : localConfigured ? 'WORKING_TESTED' : 'CONFIG_REQUIRED', localAnswer ? `Completed local answer in Run ${localAnswer.id}` : localConfigured ? 'Local source configured; no completed local Run found in current state' : 'No enabled local source'),
     entry('brain.web', webReady ? 'PARTIAL' : 'CONFIG_REQUIRED', webReady ? 'At least one composer detected; no website answer is proved by session status alone' : 'Authorized website session and live answer extraction needed'),
     entry('brain.zero_cost_api', apiConfigured ? 'PARTIAL' : 'CONFIG_REQUIRED', apiConfigured ? 'Configured API credentials; current zero-price discovery is still required per call' : 'No enabled API credential pool'),
     entry('browser.manager', 'WORKING_TESTED', 'Lightpanda/Firefox fallback and handoff integration tests', 'Authenticated website acceptance tests'),

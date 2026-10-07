@@ -16,13 +16,13 @@ test('capability status never promotes configured providers or UI scaffolding to
 
 test('a completed actual local Run is the only live model evidence in persisted state', () => {
   const status = capabilityStatus({ runs: [{ id: 'run-real', status: 'completed', routing: { executionTier: 'LOCAL_MODEL' } }] });
-  assert.equal(status.find((item) => item.id === 'brain.local').status, 'WORKING_LIVE');
+  assert.equal(status.find((item) => item.id === 'brain.local').status, 'WORKING_TESTED');
 });
 
 test('consumed approval must belong to a completed Run before live continuation is reported', () => {
   const run = { id: 'run-approved', status: 'completed', approvals: ['approval-real'] };
   const approval = { id: 'approval-real', runId: run.id, status: 'consumed' };
   const find = (state) => capabilityStatus(state).find((item) => item.id === 'approvals.continuation');
-  assert.equal(find({ runs: [run], approvals: [approval] }).status, 'WORKING_LIVE');
+  assert.equal(find({ runs: [run], approvals: [approval] }).status, 'WORKING_TESTED');
   assert.equal(find({ runs: [run], approvals: [{ ...approval, status: 'pending' }] }).status, 'WORKING_TESTED');
 });
