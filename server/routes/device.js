@@ -45,11 +45,19 @@ import { unattendedTool, unattendedTools } from '../toolPolicy.js';
 import { brainCatalog } from '../brainSources.js';
 import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from '../brainService.js';
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
+import { isCameraActive, engageKillSwitch, resetKillSwitch } from '../cameraUnderstanding.js';
 
 export default async function deviceRoutes(req, res, url, state, ctx) {
   const { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
 
   if (req.method === 'GET' && url.pathname === '/api/device/status') return json(res, 200, deviceStatus(state));
+  if (req.method === 'GET' && url.pathname === '/api/camera/status') return json(res, 200, { active: isCameraActive() });
+  if (req.method === 'POST' && url.pathname === '/api/camera/kill') {
+      const input = await body(req);
+      if (input.action === 'engage') engageKillSwitch();
+      else if (input.action === 'reset') resetKillSwitch();
+      return json(res, 200, { ok: true });
+  }
     if (req.method === 'GET' && url.pathname === '/api/media/jobs') return json(res, 200, { jobs: (state.mediaJobs || []).map(({ operationName, credentialSlot, downloadUri, ...job }) => ({ ...job, downloadUri: downloadUri ? `/api/media/jobs/${job.id}/download` : null })), configured: Boolean(process.env.GEMINI_API_KEY) });
     if (req.method === 'POST' && url.pathname === '/api/device/pair') {
         const input = await body(req); let result;

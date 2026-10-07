@@ -45,6 +45,6 @@ export class FakePerceptionProvider {
 export async function perceive(prompt, imageBuffer, options = {}) {
   const { fetchImpl = fetch, testMode = false } = options;
   const provider = testMode ? new FakePerceptionProvider() : new LocalOllamaMultimodalProvider(options);
-  
+
   return provider.generate(prompt, imageBuffer, fetchImpl);
 }

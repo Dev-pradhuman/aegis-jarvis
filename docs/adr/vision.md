@@ -17,15 +17,15 @@ Hardware probe results:
 - **RAM**: 16 GB total (~5.8 GB available)
 - **GPU**: Intel Arc Graphics (Integrated GPU, shares system memory)
 
-With no dedicated VRAM and limited available RAM, large multi-modal models (e.g. LLaVA 13B, 34B) are ruled out. 
+With no dedicated VRAM and limited available RAM, large multi-modal models (e.g. LLaVA 13B, 34B) are ruled out.
 
 ## Model Options
-1. **Moondream2 (via Ollama)**: 
+1. **Moondream2 (via Ollama)**:
    - Size: ~1.7 GB (q4/fp16).
    - License: Apache 2.0 (permissive).
    - Speed: Extremely fast on iGPUs and CPUs.
    - Capability: High text and object recognition efficiency for its size.
-2. **LLaVA 7B (via Ollama)**: 
+2. **LLaVA 7B (via Ollama)**:
    - Size: ~4.7 GB (q4_0).
    - License: Apache 2.0.
    - Speed: Slow to moderate on this Intel iGPU. High RAM usage.

@@ -13,7 +13,7 @@ export async function ingestImage(buffer, options = {}) {
   // Validate type (mock implementation)
   const isJpeg = buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
   const isPng = buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
-  
+
   if (!isJpeg && !isPng) {
     throw new Error('Unsupported image format. Only JPEG and PNG are allowed.');
   }

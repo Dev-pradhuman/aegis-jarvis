@@ -32,10 +32,10 @@ async function performCapture(input = {}) {
 export async function describeScreen(input, { fetchImpl = fetch } = {}) {
   const { buffer, timestamp } = await performCapture(input);
   const prompt = `Please describe the contents of this screenshot in detail. Identify the main applications open, any visible text, and the general layout. Respond with a concise summary.`;
-  
+
   const { perceive } = await import('./perceptionProvider.js');
   const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode });
-  
+
   return { description: response.reply, timestamp };
 }
 
@@ -50,7 +50,7 @@ Use normalized screen coordinates (0.0 to 1.0). Do not include markdown code blo
 
   const { perceive } = await import('./perceptionProvider.js');
   const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode });
-  
+
   try {
     const text = response.reply.replace(/```json/g, '').replace(/```/g, '').trim();
     return { ...JSON.parse(text), timestamp };
@@ -61,7 +61,7 @@ Use normalized screen coordinates (0.0 to 1.0). Do not include markdown code blo
 
 export async function readRegion(input, { fetchImpl = fetch, ocrProvider = null } = {}) {
   const { buffer, timestamp } = await performCapture(input);
-  
+
   if (ocrProvider && typeof ocrProvider.read === 'function') {
     const text = await ocrProvider.read(buffer, input);
     return { text, timestamp };
@@ -72,6 +72,6 @@ Respond ONLY with the transcribed text. If none, respond with 'EMPTY'.`;
 
   const { perceive } = await import('./perceptionProvider.js');
   const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode });
-  
+
   return { text: response.reply === 'EMPTY' ? '' : response.reply, timestamp };
 }
