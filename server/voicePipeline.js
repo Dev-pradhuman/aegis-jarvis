@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 export class VoicePipeline extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.state = 'idle'; // idle, wake_listening, capturing, transcribing, thinking, speaking, muted, error
+    this.state = 'idle'; // idle, wake_listening, capturing, transcribing, thinking, speaking, muted, error, confirm_listening
     
     // Providers
     this.audioSource = options.audioSource || null;
@@ -28,7 +28,7 @@ export class VoicePipeline extends EventEmitter {
   }
   
   handleAudioData(chunk) {
-    if (this.state === 'wake_listening' && this.wakeWordProvider) {
+    if ((this.state === 'wake_listening' || this.state === 'confirm_listening') && this.wakeWordProvider) {
       const detected = this.wakeWordProvider.process(chunk);
       if (detected) {
         this.triggerWakeWord();
@@ -44,7 +44,7 @@ export class VoicePipeline extends EventEmitter {
   }
 
   triggerWakeWord() {
-    if (this.state === 'wake_listening' || this.state === 'idle') {
+    if (this.state === 'wake_listening' || this.state === 'confirm_listening' || this.state === 'idle') {
       this.transition('capturing');
       return true;
     }
@@ -72,7 +72,9 @@ export class VoicePipeline extends EventEmitter {
     }
     try {
       const text = await this.sttProvider.transcribe(audioBuffer);
-      this.transition('thinking');
+      if (this.state !== 'confirming_response') {
+         this.transition('thinking');
+      }
       this.emit('transcription', text);
     } catch (err) {
       this.emit('error', err);
@@ -125,10 +127,10 @@ export class VoicePipeline extends EventEmitter {
   }
   
   stopSpeaking() {
+    if (this.ttsProvider && this.ttsProvider.stop) {
+      this.ttsProvider.stop();
+    }
     if (this.state === 'speaking') {
-      if (this.ttsProvider && this.ttsProvider.stop) {
-        this.ttsProvider.stop();
-      }
       this.transition('idle');
     }
   }
@@ -145,7 +147,9 @@ export class VoicePipeline extends EventEmitter {
   }
 
   kill() {
-    this.stopSpeaking();
+    if (this.ttsProvider && this.ttsProvider.stop) {
+      this.ttsProvider.stop();
+    }
     if (this.vadProvider) {
       this.vadProvider.flush(); // drop buffered audio
     }
@@ -153,5 +157,40 @@ export class VoicePipeline extends EventEmitter {
       this.audioSource.stop(); // close microphone
     }
     this.transition('idle');
+  }
+
+  async confirm(promptText) {
+    await this.speak(promptText);
+    this.transition('confirm_listening');
+    
+    return new Promise((resolve) => {
+       const timeoutId = setTimeout(() => {
+         this.removeListener('transcription', handleConfirm);
+         if (this.state === 'confirm_listening' || this.state === 'capturing' || this.state === 'transcribing' || this.state === 'confirming_response') {
+             this.transition('idle');
+         }
+         resolve(false);
+       }, 10000);
+
+       const handleConfirm = (text) => {
+         if (this.state === 'confirm_listening') {
+             this.state = 'confirming_response';
+         }
+         const cleaned = text.trim().toLowerCase().replace(/[.,!?]/g, '');
+         if (cleaned === 'yes' || cleaned === 'no') {
+           clearTimeout(timeoutId);
+           this.removeListener('transcription', handleConfirm);
+           if (cleaned === 'yes') {
+             this.transition('thinking');
+             resolve(true);
+           } else {
+             this.transition('idle');
+             resolve(false);
+           }
+         }
+       };
+
+       this.on('transcription', handleConfirm);
+    });
   }
 }

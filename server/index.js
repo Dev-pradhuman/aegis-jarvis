@@ -155,7 +155,7 @@ const server = http.createServer(async (req, res) => {
     const companionEndpoint = req.method === 'POST' && ['/api/device/pair', '/api/device/events'].includes(url.pathname);
     if (process.env.JARVIS_AUTH_TOKEN && !companionEndpoint && !authorized(req)) return json(res, 401, { error: 'Authentication required' });
     const state = await getState();
-        const ctx = { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port };
+        const ctx = { voicePipeline, json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port };
     await systemRoutes(req, res, url, state, ctx);
     if (res.headersSent) return;
     await chatRoutes(req, res, url, state, ctx);
