@@ -324,6 +324,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             res.setHeader('Connection', 'keep-alive');
             res.flushHeaders?.();
             res.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
+            if (modelRoute.requiresTools) res.write(`data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
           }
           try {
             const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => {
