@@ -293,6 +293,16 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           else if (route.capability === 'diagnostics') { data = (await invokeChatTool('diagnostics')).data; reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
           else if (route.capability === 'memory.search') { const result = await invokeChatTool('memory.search', { query: route.args.q }); data = { memories: result.data.results }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
           else if (route.capability === 'media.generate') { const media = (await invokeChatTool('media.generate', { kind: route.args.kind, prompt: route.args.prompt })).data; data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
+          else if (route.capability === 'screen.describe') {
+            const tool = await invokeChatTool('screen.describe', { ...route.args, source: input.source, consent: input.consent });
+            data = tool.data;
+            reply = data.description || 'No description available for screen.';
+          }
+          else if (route.capability === 'camera.describe') {
+            const tool = await invokeChatTool('camera.describe', { ...route.args, source: input.source, consent: input.consent });
+            data = tool.data;
+            reply = data.description || 'No description available for camera.';
+          }
           else { const result = await invokeChatTool('files.read', route.args); data = result.data; reply = `README.md is ${data.bytes} bytes and is available in the project workspace.`; }
           } catch (error) {
             errorRun(run, error);

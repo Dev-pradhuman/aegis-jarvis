@@ -10,6 +10,7 @@ import StatusBar from './components/StatusBar.jsx';
 import WorkspaceViews from './components/WorkspaceViews.jsx';
 import GalaxyHome from './components/GalaxyHome.jsx';
 import GlobalVoice from './components/GlobalVoice.jsx';
+import GlobalVision from './components/GlobalVision.jsx';
 
 function LegacyConsole() {
   const [activeView, setActiveView] = useState('overview');
@@ -59,7 +60,7 @@ function AuthGate({ children }) {
   };
 
   if (status === 'checking') return <div className="jarvis-auth" role="status">CONNECTING TO JARVIS</div>;
-  if (status !== 'locked') return <>{children}<GlobalVoice /></>;
+  if (status !== 'locked') return <>{children}<GlobalVoice /><GlobalVision /></>;
   return <main className="jarvis-auth"><form className="jarvis-auth-card" onSubmit={login}>
     <div className="jarvis-auth-eyebrow">SECURE LOCAL SESSION</div>
     <h1>JARVIS access</h1>

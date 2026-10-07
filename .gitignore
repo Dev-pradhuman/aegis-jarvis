@@ -36,4 +36,5 @@ build/
 .claude-flow/logs/
 .claude-flow/sessions/
 
+bin/
 scripts/archive/

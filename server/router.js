@@ -56,5 +56,11 @@ export function routeRequest(text) {
   if (/^(what('?s| is) in|read)\s+(the\s+)?readme/i.test(value)) return { route: 'TOOL_CALL', capability: 'files.read', args: { path: 'README.md' }, confidence: 0.99 };
   if (/\b(health|diagnostics|system status)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'diagnostics', args: {}, confidence: 0.98 };
   if (/\b(remember|decision|architecture)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'memory.search', args: { q: value }, confidence: 0.9 };
+  if (/^(?:jarvis[, ]+)?(?:what(?:'s| is) (?:on (?:my |the )?screen|this)|(?:describe|look at) (?:my |the )?screen)\??$/i.test(value)) {
+    return { route: 'TOOL_CALL', capability: 'screen.describe', args: {}, confidence: 0.99 };
+  }
+  if (/^(?:jarvis[, ]+)?(?:what do you see on (?:the |my )?camera|what(?:'s| is) on (?:the |my )?camera|(?:look at|describe) (?:the |my )?camera)\??$/i.test(value)) {
+    return { route: 'TOOL_CALL', capability: 'camera.describe', args: {}, confidence: 0.99 };
+  }
   return { route: 'MODEL', capability: null, args: {}, confidence: 0.7 };
 }

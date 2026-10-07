@@ -46,6 +46,16 @@ import { brainCatalog } from '../brainSources.js';
 import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from '../brainService.js';
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
 import { isCameraActive, engageKillSwitch, resetKillSwitch } from '../cameraUnderstanding.js';
+import {
+  getVisionSettings,
+  updateVisionSettings,
+  getLastVisualCapture,
+  clearLastVisualCapture,
+  isLooking,
+  isWatching,
+  grantScreenConsent,
+  grantCameraConsent,
+} from '../visionState.js';
 
 export default async function deviceRoutes(req, res, url, state, ctx) {
   const { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
@@ -57,6 +67,41 @@ export default async function deviceRoutes(req, res, url, state, ctx) {
       if (input.action === 'engage') engageKillSwitch();
       else if (input.action === 'reset') resetKillSwitch();
       return json(res, 200, { ok: true });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/vision/status') {
+    const settings = getVisionSettings();
+    return json(res, 200, {
+      enabled: settings.enabled,
+      looking: isLooking(),
+      watching: isWatching() || isCameraActive(),
+      lastCapture: getLastVisualCapture(),
+      settings,
+    });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/vision/settings') {
+    return json(res, 200, getVisionSettings());
+  }
+  if (req.method === 'POST' && url.pathname === '/api/vision/settings') {
+    const input = await body(req);
+    const updated = updateVisionSettings(input);
+    return json(res, 200, updated);
+  }
+  if (req.method === 'POST' && url.pathname === '/api/vision/consent') {
+    const input = await body(req);
+    const target = String(input.target || '').toLowerCase();
+    if (target === 'screen') {
+      const result = grantScreenConsent(Boolean(input.rememberSession));
+      return json(res, 200, { ok: true, target: 'screen', ...result });
+    }
+    if (target === 'camera') {
+      const result = grantCameraConsent();
+      return json(res, 200, { ok: true, target: 'camera', ...result });
+    }
+    return json(res, 400, { error: 'Invalid consent target. Expected "screen" or "camera".' });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/vision/clear') {
+    clearLastVisualCapture();
+    return json(res, 200, { ok: true });
   }
     if (req.method === 'GET' && url.pathname === '/api/media/jobs') return json(res, 200, { jobs: (state.mediaJobs || []).map(({ operationName, credentialSlot, downloadUri, ...job }) => ({ ...job, downloadUri: downloadUri ? `/api/media/jobs/${job.id}/download` : null })), configured: Boolean(process.env.GEMINI_API_KEY) });
     if (req.method === 'POST' && url.pathname === '/api/device/pair') {

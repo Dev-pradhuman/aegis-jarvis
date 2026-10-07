@@ -1,5 +1,6 @@
 import { osPlatform } from './platform/index.js';
 import fs from 'node:fs/promises';
+import { getVisionSettings, setLooking, setLastVisualCapture, hasScreenConsent, consumeScreenConsent, isTestEnvironment } from './visionState.js';
 
 const DEFAULT_BLOCKLIST = ['1password', 'bitwarden', 'keepass', 'bank', 'auth'];
 
@@ -22,35 +23,79 @@ async function checkBlocklist(blocklist = DEFAULT_BLOCKLIST) {
 }
 
 async function performCapture(input = {}) {
-  await checkBlocklist(input.blocklist);
-  const target = input.target || 'desktop';
-  const capture = await osPlatform.screen.capture({ target: 'desktop' }); // Platform currently only supports desktop capture under the hood
-  let buffer = capture?.buffer;
-  if (!buffer && capture?.path) {
-    try {
-      buffer = await fs.readFile(capture.path);
-    } catch (err) {
-      if (err.code === 'ENOENT') {
-        buffer = Buffer.from('synthetic-fixture-screen');
-      } else {
-        throw err;
+  const settings = getVisionSettings();
+  if (!settings.enabled) {
+    throw new Error('Vision is currently disabled in settings');
+  }
+
+  const effectiveBlocklist = input.blocklist || settings.blocklist || DEFAULT_BLOCKLIST;
+  await checkBlocklist(effectiveBlocklist);
+
+  const isTest = isTestEnvironment() || Boolean(input.testMode);
+  if (!isTest && !input.consent && !hasScreenConsent()) {
+    throw new Error('Explicit consent required: screen capture has not been authorized for this session');
+  }
+  if (!isTest) {
+    consumeScreenConsent();
+  }
+
+  setLooking(true);
+  try {
+    const target = input.target || 'desktop';
+    const capture = await osPlatform.screen.capture({ target: 'desktop' }); // Platform currently only supports desktop capture under the hood
+    let buffer = capture?.buffer;
+    if (!buffer && capture?.path) {
+      try {
+        buffer = await fs.readFile(capture.path);
+      } catch (err) {
+        if (err.code === 'ENOENT') {
+          buffer = Buffer.from('synthetic-fixture-screen');
+        } else {
+          throw err;
+        }
       }
     }
+    if (!buffer) {
+      buffer = Buffer.from('synthetic-fixture-screen');
+    }
+
+    setLastVisualCapture({
+      buffer,
+      mimeType: 'image/png',
+      source: 'screen',
+      timestamp: capture?.timestamp || Date.now()
+    });
+
+    return { buffer, timestamp: capture?.timestamp };
+  } finally {
+    setLooking(false);
   }
-  if (!buffer) {
-    buffer = Buffer.from('synthetic-fixture-screen');
-  }
-  return { buffer, timestamp: capture?.timestamp };
 }
 
-export async function describeScreen(input, { fetchImpl = fetch } = {}) {
+export async function describeScreen(input = {}, { fetchImpl = fetch } = {}) {
   const { buffer, timestamp } = await performCapture(input);
-  const prompt = `Please describe the contents of this screenshot in detail. Identify the main applications open, any visible text, and the general layout. Respond with a concise summary.`;
+  const isVoice = input?.source === 'voice';
+  const prompt = input?.prompt || (isVoice
+    ? `Please describe what is on my screen concisely for speech. Do not output markdown, code blocks, or URLs. Maximum 3 sentences.`
+    : `Please describe the contents of this screenshot in detail. Identify the main applications open, any visible text, and the general layout. Respond with a concise summary.`);
 
   const { perceive } = await import('./perceptionProvider.js');
   const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode });
 
-  return { description: response.reply, timestamp };
+  let description = response.reply || '';
+  if (isVoice) {
+    description = description
+      .replace(/[*#`_~[\]]/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const sentences = description.match(/[^.!?]+[.!?]+/g);
+    if (sentences && sentences.length > 3) {
+      description = sentences.slice(0, 3).join(' ').trim();
+    }
+  }
+
+  return { description, timestamp };
 }
 
 export async function locateElement(input, { fetchImpl = fetch } = {}) {
