@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "test": "node --test tests server src",
     "smoke": "node scripts/smoke.mjs",
-    "verify:live": "node scripts/verify-live.mjs"
+    "verify:live": "node scripts/verify-live.mjs",
+    "verify:voice": "node scripts/verify-voice.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.80",
