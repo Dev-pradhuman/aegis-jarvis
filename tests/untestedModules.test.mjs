@@ -52,7 +52,7 @@ test('cameraUnderstanding', async (t) => {
         { id: 'nvidia/perception', pricing: { prompt: 0, completion: 0 } }
       ] }) };
     }
-    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'A test view' } }], usage: { total_tokens: 10 } }) };
+    return { ok: true, status: 200, json: async () => ({ response: 'A test view' }) };
   };
   process.env.OPENROUTER_API_KEY = 'test-key';
 
@@ -81,16 +81,12 @@ test('screenUnderstanding', async (t) => {
     }
     const body = options.body ? JSON.parse(options.body) : {};
     let content = 'A test screen';
-    const msg = body.messages && body.messages[0] && body.messages[0].content;
+    const msg = body.prompt;
     if (typeof msg === 'string') {
       if (msg.includes('Locate the UI element')) content = '{"found": true}';
       else if (msg.includes('Read all text')) content = 'EMPTY';
-    } else if (Array.isArray(msg) && msg.find(m => m.type === 'text' && m.text.includes('Locate the UI element'))) {
-      content = '{"found": true}';
-    } else if (Array.isArray(msg) && msg.find(m => m.type === 'text' && m.text.includes('Read all text'))) {
-      content = 'EMPTY';
     }
-    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }], usage: { total_tokens: 10 } }) };
+    return { ok: true, status: 200, json: async () => ({ response: content }) };
   };
   process.env.OPENROUTER_API_KEY = 'test-key';
 
