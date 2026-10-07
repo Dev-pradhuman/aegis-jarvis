@@ -39,3 +39,11 @@ According to `git log -p` on `server/capabilityStatus.js` and `docs/CURRENT_CAPA
 2. `approvals.continuation` (Exact approvals and idempotency - Live command approval resumed same Run)
 3. `reminders.local` / `scheduler.reminders` (Native one-time reminders)
 4. `brain.local` (Local answer completed)
+
+## G1 Mutation Check (Phase 3 Gate)
+- **SSE streaming fix**: Reverted the `isSSE` scoping fix in `server/routes/chat.js` and confirmed that `tests/sse-streaming.test.mjs` successfully caught the bug and failed.
+- **Migration backup/atomic-write**: Removed `writeJsonAtomically(backupFile, ...)` from `server/store.js` and confirmed that `tests/store-migration.test.mjs` caught the missing backup and failed.
+- **Warm-up guard**: Removed `NODE_ENV === 'test' || CI` check from `server/brainService.js` and confirmed `tests/warmup-guard.test.mjs` caught the missing guard and failed.
+
+### Secret Scan
+Scanned `origin/phase2-brain` pushed history for secrets. No API keys, tokens, or credentials were found in the history.
