@@ -10,7 +10,7 @@
     "start": "node server/start.js",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests server src",
+    "test": "JARVIS_TEST=1 node --test tests server src",
     "smoke": "node scripts/smoke.mjs",
     "verify:live": "node scripts/verify-live.mjs",
     "verify:voice": "node scripts/verify-voice.mjs",

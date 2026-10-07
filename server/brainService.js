@@ -177,7 +177,7 @@ const autoProbeAttempt = new Map();
 
 export async function warmUpLocalModels({ catalog = brainCatalog, fetchImpl = fetch } = {}) {
   if (process.env.LOCAL_MODEL_WARMUP === 'false') return;
-  if (process.env.NODE_ENV === 'test' || process.env.CI || process.argv.some(arg => arg.includes('--test'))) return;
+  if (process.env.JARVIS_TEST === '1') return;
   const localSources = catalog.list().filter(source =>
     source.enabled &&
     source.type === 'LOCAL' &&

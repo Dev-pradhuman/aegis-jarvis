@@ -1,13 +1,7 @@
 // server/visionState.js
 
 export function isTestEnvironment() {
-  return (
-    process.env.NODE_ENV === 'test' ||
-    Boolean(process.env.CI) ||
-    process.env.npm_lifecycle_event === 'test' ||
-    process.execArgv.includes('--test') ||
-    process.argv.some(arg => typeof arg === 'string' && (arg.includes('--test') || arg.includes('tests/')))
-  );
+  return process.env.JARVIS_TEST === '1';
 }
 
 const DEFAULT_SETTINGS = {
@@ -67,7 +61,7 @@ export function setLastVisualCapture({ buffer, mimeType = 'image/jpeg', source =
   };
 
   const remainingMs = Math.max(0, expiresAt - now);
-  if (Number.isFinite(remainingMs)) {
+  if (Number.isFinite(remainingMs) && remainingMs <= 2147483647) {
     captureExpiryTimeout = setTimeout(() => {
       lastVisualCapture = null;
     }, remainingMs);
