@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "installedAt": "2026-10-06T14:39:46.009Z",
+  "files": {
+    "/home/pradhuman/projects/aegis-jarvis/.claude/settings.json": {
+      "plugins": [
+        "ruflo-mods@ruflo",
+        "ruflo-swarm@ruflo",
+        "ruflo-console@ruflo"
+      ],
+      "marketplace": true,
+      "env": true,
+      "claudeInstalled": []
+    }
+  }
+}

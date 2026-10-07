@@ -6,7 +6,7 @@ export class PiperProvider {
   constructor(options = {}) {
     this.modelPath = options.modelPath || join(process.cwd(), 'server/data/piper-voice.onnx');
     this.binaryPath = options.binaryPath || join(process.cwd(), 'bin/piper');
-    this.playBinary = options.playBinary || 'aplay';
+    this.audioPlayback = options.audioPlayback || null;
     this.currentProcess = null;
   }
 
@@ -20,29 +20,26 @@ export class PiperProvider {
 
   async speak(text) {
     await this.checkModel();
+    if (!this.audioPlayback) throw new Error('No audio playback configured');
+
     return new Promise((resolve, reject) => {
       this.currentProcess = spawn(this.binaryPath, ['-m', this.modelPath, '--output_raw']);
-      const playProcess = spawn(this.playBinary, ['-f', 'S16_LE', '-r', '22050', '-c', '1']);
-
-      this.currentProcess.stdout.pipe(playProcess.stdin);
       
       let errorOut = '';
       this.currentProcess.stderr.on('data', chunk => errorOut += chunk.toString());
 
-      playProcess.on('close', code => {
+      const playbackPromise = this.audioPlayback.playStream(this.currentProcess.stdout);
+
+      this.currentProcess.on('close', code => {
         this.currentProcess = null;
-        if (code !== 0 && code !== null) {
-          reject(new Error(`Playback failed: code ${code}`));
-        } else {
-          resolve();
-        }
       });
 
       this.currentProcess.on('error', err => reject(err));
-      playProcess.on('error', err => reject(err));
 
       this.currentProcess.stdin.write(text);
       this.currentProcess.stdin.end();
+      
+      playbackPromise.then(resolve).catch(reject);
     });
   }
 
@@ -50,6 +47,9 @@ export class PiperProvider {
     if (this.currentProcess) {
       this.currentProcess.kill();
       this.currentProcess = null;
+    }
+    if (this.audioPlayback) {
+      this.audioPlayback.stop();
     }
   }
 }

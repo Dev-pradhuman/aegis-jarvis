@@ -38,3 +38,4 @@ Phase 3 requires a hands-free voice feature that is local, zero-spend, safe, and
 ## Decision
 We will proceed with **Architecture 2 (Server-Side OS Capture)**.
 All voice processing will be handled natively by the backend to ensure zero-spend, local, and privacy-respecting voice capabilities without depending on unpredictable browser features. The pipeline will be constructed with modular provider interfaces (WP3) so that we can swap implementations and write tests using WAV fixtures.
+- **VAD (Voice Activity Detection):** Start with an energy-based baseline for simplicity and zero dependencies, moving to a lightweight model (like Silero VAD) if noise robustness requires it.

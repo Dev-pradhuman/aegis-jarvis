@@ -114,10 +114,33 @@ function modelFailureReply(error, runId) {
   return `Model capacity is currently unavailable. Run ${runId} was preserved and can be resumed when a provider becomes available.`;
 }
 
+import { VoicePipeline } from './voicePipeline.js';
+import { AudioCapture, AudioPlayback } from './audioIo.js';
+import { WhisperProvider } from './sttProvider.js';
+import { PiperProvider } from './ttsProvider.js';
+import { MockWakeWordProvider } from './wakeWordProvider.js';
+import { EnergyVADProvider } from './vadProvider.js';
+import { voiceRoutes } from './routes/voice.js';
+
+const voicePipeline = new VoicePipeline({
+  audioSource: new AudioCapture(),
+  audioPlayback: new AudioPlayback(),
+  wakeWordProvider: new MockWakeWordProvider(),
+  vadProvider: new EnergyVADProvider(),
+  sttProvider: new WhisperProvider(),
+  ttsProvider: new PiperProvider({ audioPlayback: new AudioPlayback() })
+});
+const handleVoiceRoute = voiceRoutes(voicePipeline);
+
 const server = http.createServer(async (req, res) => {
   if (!requestOriginAllowed(req)) return json(res, 403, { error: 'Origin or host is not allowed' });
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': req.headers.origin || '', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type,authorization', vary: 'Origin' }); return res.end(); }
   const url = new URL(req.url, `http://${req.headers.host}`);
+  
+  if (url.pathname.startsWith('/api/voice/')) {
+    const matched = await handleVoiceRoute(req, res);
+    if (matched) return;
+  }
   try {
     if (req.method === 'GET' && url.pathname === '/api/auth/status') return json(res, 200, { required: Boolean(process.env.JARVIS_AUTH_TOKEN), authenticated: !process.env.JARVIS_AUTH_TOKEN || authorized(req) });
     if (req.method === 'POST' && url.pathname === '/api/auth/login') {

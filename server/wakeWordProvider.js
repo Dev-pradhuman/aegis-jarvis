@@ -16,12 +16,24 @@ export class WakeWordProvider {
       return false;
     }
 
-    // In a real implementation this would pass the chunk to Porcupine or an ONNX model
-    // Here we use a fake heuristic for testing
-    const isWakeWord = audioChunk.toString().includes('WAKE');
+    // Since we don't have a real openWakeWord ONNX engine bound yet:
+    // NOT_IMPLEMENTED. We return false so push-to-talk remains the primary path.
+    // The test mock uses a separate MockWakeWordProvider subclass.
+    return false;
+  }
+}
+
+export class MockWakeWordProvider extends WakeWordProvider {
+  process(audioChunk) {
+    if (!this.isInstalled) return false;
     
+    const now = Date.now();
+    if (now - this.lastTrigger < this.cooldownMs) {
+      return false;
+    }
+
+    const isWakeWord = audioChunk.toString().includes('WAKE');
     if (isWakeWord) {
-      // Simulate false trigger tracking if sensitivity is too high
       if (this.sensitivity > 0.9 && Math.random() > 0.5) {
         this.falseTriggerCount++;
         return false;
@@ -29,7 +41,6 @@ export class WakeWordProvider {
       this.lastTrigger = now;
       return true;
     }
-    
     return false;
   }
 }

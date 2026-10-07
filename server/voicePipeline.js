@@ -143,4 +143,15 @@ export class VoicePipeline extends EventEmitter {
       this.transition('wake_listening');
     }
   }
+
+  kill() {
+    this.stopSpeaking();
+    if (this.vadProvider) {
+      this.vadProvider.flush(); // drop buffered audio
+    }
+    if (this.audioSource && this.audioSource.stop) {
+      this.audioSource.stop(); // close microphone
+    }
+    this.transition('idle');
+  }
 }
