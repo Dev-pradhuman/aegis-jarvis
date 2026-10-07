@@ -178,7 +178,14 @@ const autoProbeAttempt = new Map();
 export async function warmUpLocalModels({ catalog = brainCatalog, fetchImpl = fetch } = {}) {
   if (process.env.LOCAL_MODEL_WARMUP === 'false') return;
   if (process.env.NODE_ENV === 'test' || process.env.CI || process.argv.some(arg => arg.includes('--test'))) return;
-  const localSources = catalog.list().filter(source => source.enabled && source.type === 'LOCAL');
+  const localSources = catalog.list().filter(source =>
+    source.enabled &&
+    source.type === 'LOCAL' &&
+    !source.roles?.includes('perception') &&
+    source.presetId !== 'perception' &&
+    !source.modelId?.includes('moondream') &&
+    !source.modelId?.includes('llava')
+  );
   await Promise.allSettled(localSources.map(async (source) => {
     try {
       // testBrainSource hits quickInference which hits the model
