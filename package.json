@@ -14,7 +14,9 @@
     "smoke": "node scripts/smoke.mjs",
     "verify:live": "node scripts/verify-live.mjs",
     "verify:voice": "node scripts/verify-voice.mjs",
-    "verify:vision": "node scripts/verify-vision.mjs"
+    "verify:vision": "node scripts/verify-vision.mjs",
+    "verify:cloud": "node scripts/verify-cloud.mjs",
+    "bench:cloud": "node scripts/bench-cloud.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.80",
