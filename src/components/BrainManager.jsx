@@ -1,15 +1,46 @@
-import { useEffect, useState, useMemo } from 'react';
-import { ArrowDown, ArrowUp, BrainCircuit, Cloud, Command, HardDrive, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import '../styles/brain-manager.css';
+import { useEffect, useState, useMemo } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  BrainCircuit,
+  Cloud,
+  Command,
+  HardDrive,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import "../styles/brain-manager.css";
 
 const iconFor = { API: Cloud, LOCAL: HardDrive, CLI: Command };
-const empty = { name: '', type: 'API', provider: 'openai-compatible', baseUrl: '', modelId: '', logicalModels: ['muse-spark-1.2'], capabilities: ['text'], priority: 100, enabled: true, adapter: 'codex' };
-const suggestions = { openrouter: 'https://openrouter.ai/api/v1', openai: 'https://api.openai.com/v1', groq: 'https://api.groq.com/openai/v1', xai: 'https://api.x.ai/v1', local: 'http://127.0.0.1:11434/v1' };
+const empty = {
+  name: "",
+  type: "API",
+  provider: "openai-compatible",
+  baseUrl: "",
+  modelId: "",
+  logicalModels: ["muse-spark-1.2"],
+  capabilities: ["text"],
+  priority: 100,
+  enabled: true,
+  adapter: "codex",
+};
+const suggestions = {
+  openrouter: "https://openrouter.ai/api/v1",
+  openai: "https://api.openai.com/v1",
+  groq: "https://api.groq.com/openai/v1",
+  xai: "https://api.x.ai/v1",
+  local: "http://127.0.0.1:11434/v1",
+};
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
+  const response = await fetch(path, {
+    ...options,
+    headers: { "content-type": "application/json", ...options.headers },
+  });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+  if (!response.ok)
+    throw new Error(payload.error || `Request failed (${response.status})`);
   return payload;
 }
 
@@ -17,22 +48,48 @@ export default function BrainManager() {
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  const [secret, setSecret] = useState('');
-  const [label, setLabel] = useState('');
-  const [message, setMessage] = useState('');
+  const [secret, setSecret] = useState("");
+  const [label, setLabel] = useState("");
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [discovered, setDiscovered] = useState([]);
-  const [presetId, setPresetId] = useState('');
+  const [presetId, setPresetId] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickKeys, setQuickKeys] = useState({});
   const [testResults, setTestResults] = useState([]);
-  const refresh = async () => { const next = await api('/api/brain'); setData(next); return next; };
-  useEffect(() => { refresh().catch((error) => setMessage(error.message)); }, []);
-  const run = async (operation) => { setBusy(true); setMessage(''); try { const result = await operation(); await refresh(); return result; } catch (error) { setMessage(error.message); return null; } finally { setBusy(false); } };
+  const refresh = async () => {
+    const next = await api("/api/brain");
+    setData(next);
+    return next;
+  };
+  useEffect(() => {
+    refresh().catch((error) => setMessage(error.message));
+  }, []);
+  const run = async (operation) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await operation();
+      await refresh();
+      return result;
+    } catch (error) {
+      setMessage(error.message);
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
   const selected = data?.sources.find((source) => source.id === selectedId);
-  const apiSources = data?.sources.filter((item) => item.type === 'API') || [];
-  const freeCredentials = apiSources.flatMap((item) => item.credentials).filter((key) => key.enabled && key.status === 'HEALTHY' && key.pricingType === 'FREE_MODEL').length;
+  const apiSources = data?.sources.filter((item) => item.type === "API") || [];
+  const freeCredentials = apiSources
+    .flatMap((item) => item.credentials)
+    .filter(
+      (key) =>
+        key.enabled &&
+        key.status === "HEALTHY" &&
+        key.pricingType === "FREE_MODEL",
+    ).length;
 
   const tierStats = useMemo(() => {
     if (!data?.runs) return {};
@@ -44,58 +101,960 @@ export default function BrainManager() {
     }
     for (const tier in stats) {
       const times = stats[tier].sort((a, b) => a - b);
-      stats[tier] = { p50: times[Math.floor(times.length * 0.5)], p95: times[Math.floor(times.length * 0.95)] };
+      stats[tier] = {
+        p50: times[Math.floor(times.length * 0.5)],
+        p95: times[Math.floor(times.length * 0.95)],
+      };
     }
     return stats;
   }, [data?.runs]);
   const source = draft || selected;
-  const update = (change) => setDraft((current) => ({ ...(current || selected || empty), ...change }));
-  const edit = (item) => { setSelectedId(item.id); setDraft({ ...item }); setSecret(''); setMessage(''); };
-  const start = (type) => { setSelectedId(null); setDraft({ ...empty, type, name: type === 'LOCAL' ? 'Local model' : type === 'CLI' ? 'Codex CLI' : '', provider: type === 'LOCAL' ? 'local' : type === 'CLI' ? 'codex' : 'openai-compatible', baseUrl: type === 'LOCAL' ? suggestions.local : '', modelId: type === 'CLI' ? 'default' : '', capabilities: type === 'CLI' ? ['text', 'coding'] : ['text'] }); setMessage(''); };
-  const save = () => run(async () => {
-    const result = await api(selectedId ? `/api/brain/sources/${selectedId}` : '/api/brain/sources', { method: selectedId ? 'PATCH' : 'POST', body: JSON.stringify(source) });
-    setSelectedId(result.source.id); setDraft(null); setMessage('Brain source saved');
-  });
-  const removeSource = () => { if (!window.confirm(`Remove ${selected.name} and its saved credentials?`)) return; run(async () => { await api(`/api/brain/sources/${selectedId}`, { method: 'DELETE' }); setSelectedId(null); setDraft(null); }); };
-  const addKey = () => run(async () => { const added = await api(`/api/brain/sources/${selectedId}/credentials`, { method: 'POST', body: JSON.stringify({ secret, label }) }); setSecret(''); setLabel(''); const checked = await api(`/api/brain/sources/${selectedId}/credentials/${added.credential.id}/test`, { method: 'POST' }); setMessage(`Key ${added.credential.hint}: ${checked.result.status}`); });
-  const toggleKey = (credential) => run(() => api(`/api/brain/sources/${selectedId}/credentials/${credential.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !credential.enabled }) }));
-  const removeKey = (credential) => { if (!window.confirm(`Remove credential ${credential.hint}?`)) return; run(() => api(`/api/brain/sources/${selectedId}/credentials/${credential.id}`, { method: 'DELETE' })); };
-  const test = (credentialId) => run(async () => { const result = await api(`/api/brain/sources/${selectedId}${credentialId ? `/credentials/${credentialId}` : ''}/test`, { method: 'POST' }); setMessage(`Connection test: ${result.result.status}${result.result.latencyMs != null ? ` · ${result.result.latencyMs} ms` : ''}`); });
-  const reorder = (item, delta) => { const ordered = data.sources.slice().sort((a, b) => a.priority - b.priority); const index = ordered.findIndex((entry) => entry.id === item.id); const neighbor = ordered[index + delta]; if (!neighbor) return; run(() => api(`/api/brain/sources/${item.id}`, { method: 'PATCH', body: JSON.stringify({ priority: Math.max(0, Math.min(1000, neighbor.priority + (delta < 0 ? -0.5 : 0.5))) }) })); };
-  const setRouting = (sourceId) => run(async () => { const locked = data.sources.find((item) => item.id === sourceId); await api('/api/model-routing', { method: 'PATCH', body: JSON.stringify({ modelMode: sourceId ? 'manual' : 'auto', manualModel: locked?.logicalModels[0] || data.routing.manualModel, lockedSourceId: sourceId || null, manualFallbackAllowed: !sourceId }) }); });
-  const discover = () => run(async () => { const result = await api(`/api/brain/sources/${selectedId}/models`); setDiscovered(result.models || []); setMessage(result.models?.length ? `${result.models.length} models discovered` : `Model discovery: ${result.status}`); });
-  const connectPreset = (id, key = secret) => run(async () => {
-    const result = await api(`/api/brain/presets/${id}/connect`, { method: 'POST', body: JSON.stringify({ secret: key }) });
-    setSelectedId(result.sourceId); setDraft(null); setSecret(''); setPresetId(''); setCatalogOpen(false);
-    setMessage(`${id}: ${result.result.status}${result.result.latencyMs != null ? ` · ${result.result.latencyMs} ms` : ''}`);
-  });
-  const openWebSession = (site) => run(async () => { const result = await api(`/api/brain/web/${site}/open`, { method: 'POST' }); setMessage(result.status === 'READY' ? `${site === 'claude' ? 'Claude' : 'ChatGPT'} session is ready.` : result.status === 'LOGIN_REQUIRED' ? `Sign in to ${site === 'claude' ? 'Claude' : 'ChatGPT'} in the Firefox window, then return to JARVIS.` : `${site === 'claude' ? 'Claude' : 'ChatGPT'} session opened; availability is still unverified.`); });
-  const testAll = () => run(async () => { const result = await api('/api/brain/test-all', { method: 'POST' }); setTestResults(result.results); setMessage(`${result.results.length} connection tests completed`); });
-  const finishQuick = () => run(async () => {
-    const entries = Object.entries(quickKeys).filter(([, key]) => key.trim());
-    const results = await Promise.all(entries.map(async ([id, key]) => ({ id, ...(await api(`/api/brain/presets/${id}/connect`, { method: 'POST', body: JSON.stringify({ secret: key }) })).result })));
-    setQuickKeys({}); setQuickOpen(false); setMessage(results.length ? results.map((item) => `${item.id}: ${item.status}`).join(' · ') : 'Quick setup finished');
-  });
-  const toggleCapability = (capability) => update({ capabilities: source.capabilities.includes(capability) ? source.capabilities.filter((item) => item !== capability) : [...source.capabilities, capability] });
-  const toggleRole = (role) => update({ logicalModels: source.logicalModels.includes(role) ? source.logicalModels.filter((item) => item !== role) : [...source.logicalModels, role] });
-  return <div className="brain-manager">
-    <header className="brain-header"><div className="brain-eyebrow"><BrainCircuit size={16} /> JARVIS / INTELLIGENCE</div><h1>JARVIS Brain</h1><p>Configure the intelligence sources JARVIS can use.</p><div className="brain-summary"><span>{data?.status || 'CONNECTING'}</span><span>{data?.sources.length || 0} saved sources</span><span>{data?.importedEnvironment.length || 0} environment keys</span><span>{data?.spendPolicy?.zeroSpendMode ? 'ZERO-SPEND MODE · ON' : 'PAID API USAGE · ENABLED'}</span><button onClick={() => refresh().catch((error) => setMessage(error.message))} aria-label="Refresh Brain status"><RefreshCw size={15} /></button></div></header>
-    {data?.configurationLocked && <div className="brain-first-run"><strong>Brain setup locked</strong><span>Set JARVIS_AUTH_TOKEN in private server configuration, then restart JARVIS to add providers or credentials.</span></div>}
-    {data?.setupRequired && <div className="brain-first-run"><strong>JARVIS Brain required</strong><span>Set up one source to enable model responses. Local commands remain available.</span></div>}
-    <section className="brain-detail brain-headless"><div className="brain-section-title">HEADLESS WEB</div><p className="brain-muted">Uses normal ChatGPT and Claude website controls through BrowserManager. Sign in within its persistent Firefox session when prompted. Website model selection is currently unverified.</p><div className="brain-headless-grid">{[['chatgpt', 'ChatGPT · normal web'], ['claude', 'Claude.ai · normal web']].map(([id, label]) => <span key={id}><strong>{label}</strong><em>{data?.headlessWeb?.[id]?.status || 'UNVERIFIED'}</em><button type="button" disabled={busy} onClick={() => openWebSession(id)}>Open session</button></span>)}</div></section>
-    <section className="brain-detail brain-headless"><div className="brain-section-title">ZERO-COST API</div><p className="brain-muted">{apiSources.length} configured API sources · {freeCredentials} credentials with a tested zero-price model. Unknown pricing and paid models stay disabled.</p></section>
-    <section className="brain-detail brain-headless"><div className="brain-section-title">VOICE</div><p className="brain-muted">Speech output: {data?.voice?.apiSpeechDisabledByZeroSpend ? 'browser/system fallback' : data?.voice?.provider || 'unavailable'} · Speech input: {data?.voice?.sttProvider || 'unavailable'}. Hosted speech requires verified zero pricing or an explicit policy change.</p></section>
-    <div className="brain-actions"><button className="brain-primary" onClick={() => { setCatalogOpen(true); setQuickOpen(false); }}>+ Add provider</button><button onClick={() => { setQuickOpen(true); setCatalogOpen(false); }}>Quick setup</button><button disabled={busy || !data?.sources.length} onClick={testAll}>Test all</button></div>
-    {quickOpen && <section className="brain-detail brain-setup-panel"><div className="brain-section-title">QUICK SETUP</div><p>Local model: Ollama {data?.localRuntime?.version || 'not running'} · qwen3:4b {data?.localRuntime?.modelInstalled ? 'installed' : 'not installed'} · {data?.sources.find((item) => item.presetId === 'ollama')?.health || 'not registered'}</p><div className="brain-quick-grid">{['vercel', 'openrouter', 'groq', 'openai', 'anthropic', 'gemini'].map((id) => { const preset = data?.presets?.find((item) => item.id === id); return <label key={id}>{preset?.displayName}<small>{preset?.envNames[0]}</small><input type="password" autoComplete="new-password" placeholder="Paste API key" value={quickKeys[id] || ''} onChange={(event) => setQuickKeys((keys) => ({ ...keys, [id]: event.target.value }))} /></label>; })}</div><div className="brain-actions"><button disabled={busy} onClick={finishQuick}>Test & finish</button><button onClick={() => setQuickOpen(false)}>Close</button></div></section>}
-    {catalogOpen && <section className="brain-detail brain-setup-panel brain-catalog"><div className="brain-section-title">ADD BRAIN SOURCE</div>{[['Popular', ['vercel', 'openrouter', 'groq', 'openai', 'anthropic', 'gemini']], ['More providers', ['xai', 'nvidia', 'mistral', 'deepseek', 'together', 'fireworks', 'cerebras', 'opencode']], ['Local', ['ollama']], ['Advanced', ['custom']]].map(([title, ids]) => <div key={title}><h3>{title}</h3><div className="brain-preset-grid">{ids.map((id) => { const preset = data?.presets?.find((item) => item.id === id); return preset && <button key={id} onClick={() => { if (id === 'custom') { start('API'); setCatalogOpen(false); return; } setPresetId(id); setSecret(''); }}><strong>{preset.displayName}</strong><small>{id === 'ollama' ? data?.localRuntime?.status || 'NOT_INSTALLED' : preset.envNames[0] || 'Custom'}</small></button>; })}</div></div>)}{presetId && <div className="brain-preset-connect">{(() => { const preset = data?.presets?.find((item) => item.id === presetId); return <><h3>{preset?.displayName}</h3>{presetId === 'opencode' && <p>OpenCode CLI: {data?.cli?.find((item) => item.id === 'opencode')?.status || 'NOT_INSTALLED'}. Zen API keys are separate from CLI authentication.</p>}<p>Environment: {preset?.envNames[0] || 'None required'}</p>{presetId !== 'ollama' && <input type="password" autoComplete="new-password" placeholder="Paste API key" value={secret} onChange={(event) => setSecret(event.target.value)} />}<button disabled={busy || presetId !== 'ollama' && !secret.trim()} onClick={() => connectPreset(presetId)}>Test & save</button><details><summary>Advanced</summary><p>Base URL: {preset?.defaultBaseUrl}<br />Authentication: {preset?.authType}<br />Model discovery: {preset?.supportsModelDiscovery ? 'Automatic' : 'Manual model ID required'}</p><a href={preset?.documentationUrl} target="_blank" rel="noreferrer">Provider documentation</a></details></>; })()}</div>}<div className="brain-actions"><button onClick={() => { setCatalogOpen(false); setPresetId(''); setSecret(''); }}>Close</button></div></section>}
-    {testResults.length > 0 && <section className="brain-detail brain-setup-panel"><div className="brain-section-title">TEST RESULTS</div>{testResults.map((item, index) => <div className="brain-test-result" key={`${item.sourceId}-${item.credentialId || index}`}>{data?.sources.find((source) => source.id === item.sourceId)?.name} · {item.credentialId ? data?.sources.flatMap((source) => source.credentials).find((key) => key.id === item.credentialId)?.hint : 'Local'} · {item.status}{item.latencyMs != null ? ` · ${item.latencyMs} ms` : ''}</div>)}</section>}
-    <div className="brain-routing"><label>Routing<select value={data?.routing.lockedSourceId || ''} onChange={(event) => setRouting(event.target.value)} disabled={busy}><option value="">AUTO · healthy compatible sources</option>{data?.sources.filter((item) => item.enabled && item.secretConfigured).map((item) => <option key={item.id} value={item.id}>LOCK · {item.name}</option>)}</select></label><span>Strict source lock disables provider fallback.</span></div>
-    <details className="brain-manual"><summary>Advanced · manual source setup</summary><div className="brain-source-types">{[['API', 'API provider', 'Connect a custom cloud API.'], ['LOCAL', 'Local model', 'Use another local endpoint.'], ['CLI', 'CLI runtime (optional)', 'Separate from headless web AI; use an installed AI CLI only when explicitly configured.']].map(([type, title, note]) => { const Icon = iconFor[type]; return <button key={type} onClick={() => start(type)}><Icon size={19} /><strong>{title}</strong><span>{note}</span><Plus size={15} /></button>; })}</div></details>
-    <div className="brain-columns"><section className="brain-list"><div className="brain-section-title">BRAIN SOURCES</div>{data?.sources.slice().sort((a, b) => a.priority - b.priority).map((item) => { const Icon = iconFor[item.type]; const status = item.type === 'LOCAL' ? item.health : item.credentials.some((key) => key.status === 'HEALTHY') ? 'HEALTHY' : item.secretConfigured ? 'UNVERIFIED' : 'NEEDS KEY'; return <div className={`brain-source-row ${selectedId === item.id ? 'active' : ''}`} key={item.id}><button className="brain-source-select" onClick={() => edit(item)}><Icon size={17} /><span><strong>{item.name}</strong><small>{item.type} · {item.modelId}{item.type === 'API' ? ` · ${item.credentials.length} keys` : ''}</small></span><em>{item.enabled ? status : 'DISABLED'}</em></button><div className="brain-order"><button onClick={() => reorder(item, -1)} aria-label={`Move ${item.name} up`}><ArrowUp size={13} /></button><button onClick={() => reorder(item, 1)} aria-label={`Move ${item.name} down`}><ArrowDown size={13} /></button></div></div>; })}{!data?.sources.length && <p className="brain-muted">No saved sources yet.</p>}{Boolean(data?.importedEnvironment.length) && <div className="brain-imported"><strong>Existing environment</strong>{data.importedEnvironment.map((key) => <span key={key.reference}>{key.reference} · {key.hint}</span>)}<small>Existing environment keys remain usable. They are read only here and are never copied into the Brain store.</small></div>}</section>
-      <section className="brain-detail"><div className="brain-section-title">{source ? selectedId ? 'SOURCE DETAILS' : 'ADD BRAIN SOURCE' : 'ROUTING & HEALTH'}</div>{source ? <div className="brain-form"><div className="brain-form-grid"><label>Display name<input value={source.name} onChange={(event) => update({ name: event.target.value })} /></label><label>Type<input value={source.type} readOnly /></label>{source.type === 'CLI' ? <label>Adapter<select value={source.adapter} onChange={(event) => update({ adapter: event.target.value, provider: event.target.value })}>{['codex', 'claude', 'opencode'].map((item) => <option key={item}>{item}</option>)}</select></label> : <><label>Provider<input value={source.provider} onChange={(event) => update({ provider: event.target.value, baseUrl: suggestions[event.target.value] || source.baseUrl })} placeholder="openrouter, groq, custom..." /></label><label>Endpoint<input value={source.baseUrl} onChange={(event) => update({ baseUrl: event.target.value })} placeholder="https://provider.example/v1" /></label></>}<label>Model ID<input value={source.modelId} onChange={(event) => update({ modelId: event.target.value })} placeholder="Exact provider model ID" /></label><label>Priority<input type="number" min="0" max="1000" value={source.priority} onChange={(event) => update({ priority: Number(event.target.value) })} /></label></div><div className="brain-choice"><strong>Capabilities</strong>{['text', 'tools', 'image', 'audio', 'reasoning', 'coding', 'structured_output'].map((item) => <label key={item}><input type="checkbox" checked={source.capabilities.includes(item)} onChange={() => toggleCapability(item)} />{item}</label>)}</div><div className="brain-choice"><strong>Routing roles</strong>{Object.entries(data?.models || {}).map(([id, item]) => <label key={id}><input type="checkbox" checked={source.logicalModels.includes(id)} onChange={() => toggleRole(id)} />{item.label}</label>)}</div><label className="brain-inline"><input type="checkbox" checked={source.enabled} onChange={(event) => update({ enabled: event.target.checked })} /> Enabled</label><div className="brain-actions"><button className="brain-primary" disabled={busy || !source.name || !source.modelId || !source.logicalModels.length} onClick={save}>Save source</button>{selected && <><button disabled={busy} onClick={() => test(null)}>Test connection</button><button className="brain-danger" disabled={busy} onClick={removeSource}><Trash2 size={14} /> Remove</button></>}</div>
-      {selected?.type === 'API' && <div className="brain-credentials"><h3>API keys</h3>{selected.credentials.map((key) => <div className="brain-credential" key={key.id}><span><strong>{key.label || key.hint}</strong><small>{key.hint} · {key.status} · {key.pricingType || 'UNKNOWN PRICING'}{key.retryAfter ? ` until ${new Date(key.retryAfter).toLocaleTimeString()}` : ''}</small></span><button disabled={busy} onClick={() => test(key.id)}>Test</button><button disabled={busy} onClick={() => toggleKey(key)}>{key.enabled ? 'Disable' : 'Enable'}</button><button disabled={busy} aria-label={`Remove ${key.hint}`} onClick={() => removeKey(key)}><Trash2 size={14} /></button></div>)}<div className="brain-key-add"><input type="password" autoComplete="new-password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder="Paste API key" aria-label="New API key" /><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Optional label" aria-label="Credential label" /><button disabled={busy || !secret.trim()} onClick={addKey}><Plus size={15} /> Add key</button></div><small>Keys stay on this host. Saved values cannot be viewed again.</small></div>}
-      {selected && selected.type !== 'CLI' && <div className="brain-discovery"><button disabled={busy} onClick={discover}>Discover models</button>{Boolean(discovered.length) && <select value="" onChange={(event) => update({ modelId: event.target.value })}><option value="">Choose a discovered model</option>{discovered.map((item) => <option key={item.id} value={item.id}>{item.name || item.id} · {item.pricingType || 'UNKNOWN_PRICING_DISABLED'}</option>)}</select>}</div>}
-      {selected?.type === 'CLI' && <p className="brain-muted">{data.cli.find((item) => item.id === selected.adapter)?.status || 'NOT INSTALLED'} · Authentication and inference must be verified with a real request.</p>}</div> : <div className="brain-idle"><BrainCircuit size={25} /><p>Select or add a source. Existing model routing and canonical tools continue to operate through the same provider pool.</p><div className="brain-events"><strong>Recent provider attempts</strong>{data?.events.slice(-8).reverse().map((event, index) => <div key={`${event.providerId}-${index}`}>{event.providerId} · {event.success ? 'success' : event.failureClass} · {event.latencyMs} ms</div>)}{!data?.events.length && <span>No model requests recorded yet.</span>}</div><div className="brain-events"><strong>Run Latency (p50/p95)</strong>{Object.entries(tierStats).map(([tier, stats]) => <div key={tier}>{tier} · p50: {stats.p50}ms · p95: {stats.p95}ms</div>)}{!Object.keys(tierStats).length && <span>No runs recorded yet.</span>}</div><div className="brain-events"><strong>Recent Runs</strong>{data?.runs?.slice(0, 8).map((run) => <div key={run.runId}>{run.runId} · Tier: {run.logicalModel || 'unknown'} · {run.totalMs} ms</div>)}{!data?.runs?.length && <span>No runs recorded yet.</span>}</div></div>}</section></div>
-    {message && <p className="brain-message" role="status">{message}</p>}
-  </div>;
+  const update = (change) =>
+    setDraft((current) => ({ ...(current || selected || empty), ...change }));
+  const edit = (item) => {
+    setSelectedId(item.id);
+    setDraft({ ...item });
+    setSecret("");
+    setMessage("");
+  };
+  const start = (type) => {
+    setSelectedId(null);
+    setDraft({
+      ...empty,
+      type,
+      name:
+        type === "LOCAL" ? "Local model" : type === "CLI" ? "Codex CLI" : "",
+      provider:
+        type === "LOCAL"
+          ? "local"
+          : type === "CLI"
+            ? "codex"
+            : "openai-compatible",
+      baseUrl: type === "LOCAL" ? suggestions.local : "",
+      modelId: type === "CLI" ? "default" : "",
+      capabilities: type === "CLI" ? ["text", "coding"] : ["text"],
+    });
+    setMessage("");
+  };
+  const save = () =>
+    run(async () => {
+      const result = await api(
+        selectedId ? `/api/brain/sources/${selectedId}` : "/api/brain/sources",
+        { method: selectedId ? "PATCH" : "POST", body: JSON.stringify(source) },
+      );
+      setSelectedId(result.source.id);
+      setDraft(null);
+      setMessage("Brain source saved");
+    });
+  const removeSource = () => {
+    if (!window.confirm(`Remove ${selected.name} and its saved credentials?`))
+      return;
+    run(async () => {
+      await api(`/api/brain/sources/${selectedId}`, { method: "DELETE" });
+      setSelectedId(null);
+      setDraft(null);
+    });
+  };
+  const addKey = () =>
+    run(async () => {
+      const added = await api(`/api/brain/sources/${selectedId}/credentials`, {
+        method: "POST",
+        body: JSON.stringify({ secret, label }),
+      });
+      setSecret("");
+      setLabel("");
+      const checked = await api(
+        `/api/brain/sources/${selectedId}/credentials/${added.credential.id}/test`,
+        { method: "POST" },
+      );
+      setMessage(`Key ${added.credential.hint}: ${checked.result.status}`);
+    });
+  const toggleKey = (credential) =>
+    run(() =>
+      api(`/api/brain/sources/${selectedId}/credentials/${credential.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !credential.enabled }),
+      }),
+    );
+  const removeKey = (credential) => {
+    if (!window.confirm(`Remove credential ${credential.hint}?`)) return;
+    run(() =>
+      api(`/api/brain/sources/${selectedId}/credentials/${credential.id}`, {
+        method: "DELETE",
+      }),
+    );
+  };
+  const test = (credentialId) =>
+    run(async () => {
+      const result = await api(
+        `/api/brain/sources/${selectedId}${credentialId ? `/credentials/${credentialId}` : ""}/test`,
+        { method: "POST" },
+      );
+      setMessage(
+        `Connection test: ${result.result.status}${result.result.latencyMs != null ? ` · ${result.result.latencyMs} ms` : ""}`,
+      );
+    });
+  const reorder = (item, delta) => {
+    const ordered = data.sources
+      .slice()
+      .sort((a, b) => a.priority - b.priority);
+    const index = ordered.findIndex((entry) => entry.id === item.id);
+    const neighbor = ordered[index + delta];
+    if (!neighbor) return;
+    run(() =>
+      api(`/api/brain/sources/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          priority: Math.max(
+            0,
+            Math.min(1000, neighbor.priority + (delta < 0 ? -0.5 : 0.5)),
+          ),
+        }),
+      }),
+    );
+  };
+  const setRouting = (sourceId) =>
+    run(async () => {
+      const locked = data.sources.find((item) => item.id === sourceId);
+      await api("/api/model-routing", {
+        method: "PATCH",
+        body: JSON.stringify({
+          modelMode: sourceId ? "manual" : "auto",
+          manualModel: locked?.logicalModels[0] || data.routing.manualModel,
+          lockedSourceId: sourceId || null,
+          manualFallbackAllowed: !sourceId,
+        }),
+      });
+    });
+  const setDataPolicy = (policy) =>
+    run(async () => {
+      if (
+        policy === "cloud" &&
+        !window.confirm(
+          "Switching to cloud allows data to leave this machine. Continue?",
+        )
+      )
+        return;
+      await api("/api/model-routing", {
+        method: "PATCH",
+        body: JSON.stringify({ dataPolicy: policy }),
+      });
+    });
+  const discover = () =>
+    run(async () => {
+      const result = await api(`/api/brain/sources/${selectedId}/models`);
+      setDiscovered(result.models || []);
+      setMessage(
+        result.models?.length
+          ? `${result.models.length} models discovered`
+          : `Model discovery: ${result.status}`,
+      );
+    });
+  const connectPreset = (id, key = secret) =>
+    run(async () => {
+      const result = await api(`/api/brain/presets/${id}/connect`, {
+        method: "POST",
+        body: JSON.stringify({ secret: key }),
+      });
+      setSelectedId(result.sourceId);
+      setDraft(null);
+      setSecret("");
+      setPresetId("");
+      setCatalogOpen(false);
+      setMessage(
+        `${id}: ${result.result.status}${result.result.latencyMs != null ? ` · ${result.result.latencyMs} ms` : ""}`,
+      );
+    });
+  const openWebSession = (site) =>
+    run(async () => {
+      const result = await api(`/api/brain/web/${site}/open`, {
+        method: "POST",
+      });
+      setMessage(
+        result.status === "READY"
+          ? `${site === "claude" ? "Claude" : "ChatGPT"} session is ready.`
+          : result.status === "LOGIN_REQUIRED"
+            ? `Sign in to ${site === "claude" ? "Claude" : "ChatGPT"} in the Firefox window, then return to JARVIS.`
+            : `${site === "claude" ? "Claude" : "ChatGPT"} session opened; availability is still unverified.`,
+      );
+    });
+  const testAll = () =>
+    run(async () => {
+      const result = await api("/api/brain/test-all", { method: "POST" });
+      setTestResults(result.results);
+      setMessage(`${result.results.length} connection tests completed`);
+    });
+  const finishQuick = () =>
+    run(async () => {
+      const entries = Object.entries(quickKeys).filter(([, key]) => key.trim());
+      const results = await Promise.all(
+        entries.map(async ([id, key]) => ({
+          id,
+          ...(
+            await api(`/api/brain/presets/${id}/connect`, {
+              method: "POST",
+              body: JSON.stringify({ secret: key }),
+            })
+          ).result,
+        })),
+      );
+      setQuickKeys({});
+      setQuickOpen(false);
+      setMessage(
+        results.length
+          ? results.map((item) => `${item.id}: ${item.status}`).join(" · ")
+          : "Quick setup finished",
+      );
+    });
+  const toggleCapability = (capability) =>
+    update({
+      capabilities: source.capabilities.includes(capability)
+        ? source.capabilities.filter((item) => item !== capability)
+        : [...source.capabilities, capability],
+    });
+  const toggleRole = (role) =>
+    update({
+      logicalModels: source.logicalModels.includes(role)
+        ? source.logicalModels.filter((item) => item !== role)
+        : [...source.logicalModels, role],
+    });
+  return (
+    <div className="brain-manager">
+      <header className="brain-header">
+        <div className="brain-eyebrow">
+          <BrainCircuit size={16} /> JARVIS / INTELLIGENCE
+        </div>
+        <h1>JARVIS Brain</h1>
+        <p>Configure the intelligence sources JARVIS can use.</p>
+        <div className="brain-summary">
+          <span>{data?.status || "CONNECTING"}</span>
+          <span>{data?.sources.length || 0} saved sources</span>
+          <span>{data?.importedEnvironment.length || 0} environment keys</span>
+          <span>
+            {data?.spendPolicy?.zeroSpendMode
+              ? "ZERO-SPEND MODE · ON"
+              : "PAID API USAGE · ENABLED"}
+          </span>
+          <button
+            onClick={() =>
+              refresh().catch((error) => setMessage(error.message))
+            }
+            aria-label="Refresh Brain status"
+          >
+            <RefreshCw size={15} />
+          </button>
+        </div>
+      </header>
+      {data?.configurationLocked && (
+        <div className="brain-first-run">
+          <strong>Brain setup locked</strong>
+          <span>
+            Set JARVIS_AUTH_TOKEN in private server configuration, then restart
+            JARVIS to add providers or credentials.
+          </span>
+        </div>
+      )}
+      {data?.setupRequired && (
+        <div className="brain-first-run">
+          <strong>JARVIS Brain required</strong>
+          <span>
+            Set up one source to enable model responses. Local commands remain
+            available.
+          </span>
+        </div>
+      )}
+      <section className="brain-detail brain-headless">
+        <div className="brain-section-title">HEADLESS WEB</div>
+        <p className="brain-muted">
+          Uses normal ChatGPT and Claude website controls through
+          BrowserManager. Sign in within its persistent Firefox session when
+          prompted. Website model selection is currently unverified.
+          <br />
+          <strong>
+            WARNING: EXPERIMENTAL / may violate provider terms / account risk
+          </strong>
+        </p>
+        <div className="brain-headless-grid">
+          {[
+            ["chatgpt", "ChatGPT · normal web"],
+            ["claude", "Claude.ai · normal web"],
+            ["gemini", "Gemini · normal web"],
+            ["googleFlow", "Google Flow · visible web"],
+          ].map(([id, label]) => (
+            <span key={id}>
+              <strong>{label}</strong>
+              <em>{data?.headlessWeb?.[id]?.status || "UNVERIFIED"}</em>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => openWebSession(id)}
+              >
+                Open session
+              </button>
+            </span>
+          ))}
+        </div>
+      </section>
+      <section className="brain-detail brain-headless">
+        <div className="brain-section-title">ZERO-COST API</div>
+        <p className="brain-muted">
+          {apiSources.length} configured API sources · {freeCredentials}{" "}
+          credentials with a tested zero-price model. Unknown pricing and paid
+          models stay disabled.
+        </p>
+      </section>
+      <section className="brain-detail brain-headless">
+        <div className="brain-section-title">VOICE</div>
+        <p className="brain-muted">
+          Speech output:{" "}
+          {data?.voice?.apiSpeechDisabledByZeroSpend
+            ? "browser/system fallback"
+            : data?.voice?.provider || "unavailable"}{" "}
+          · Speech input: {data?.voice?.sttProvider || "unavailable"}. Hosted
+          speech requires verified zero pricing or an explicit policy change.
+        </p>
+      </section>
+      <div className="brain-actions">
+        <button
+          className="brain-primary"
+          onClick={() => {
+            setCatalogOpen(true);
+            setQuickOpen(false);
+          }}
+        >
+          + Add provider
+        </button>
+        <button
+          onClick={() => {
+            setQuickOpen(true);
+            setCatalogOpen(false);
+          }}
+        >
+          Quick setup
+        </button>
+        <button disabled={busy || !data?.sources.length} onClick={testAll}>
+          Test all
+        </button>
+      </div>
+      {quickOpen && (
+        <section className="brain-detail brain-setup-panel">
+          <div className="brain-section-title">QUICK SETUP</div>
+          <p>
+            Local model: Ollama {data?.localRuntime?.version || "not running"} ·
+            qwen3:4b{" "}
+            {data?.localRuntime?.modelInstalled ? "installed" : "not installed"}{" "}
+            ·{" "}
+            {data?.sources.find((item) => item.presetId === "ollama")?.health ||
+              "not registered"}
+          </p>
+          <div className="brain-quick-grid">
+            {[
+              "vercel",
+              "openrouter",
+              "groq",
+              "openai",
+              "anthropic",
+              "gemini",
+            ].map((id) => {
+              const preset = data?.presets?.find((item) => item.id === id);
+              return (
+                <label key={id}>
+                  {preset?.displayName}
+                  <small>{preset?.envNames[0]}</small>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Paste API key"
+                    value={quickKeys[id] || ""}
+                    onChange={(event) =>
+                      setQuickKeys((keys) => ({
+                        ...keys,
+                        [id]: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              );
+            })}
+          </div>
+          <div className="brain-actions">
+            <button disabled={busy} onClick={finishQuick}>
+              Test & finish
+            </button>
+            <button onClick={() => setQuickOpen(false)}>Close</button>
+          </div>
+        </section>
+      )}
+      {catalogOpen && (
+        <section className="brain-detail brain-setup-panel brain-catalog">
+          <div className="brain-section-title">ADD BRAIN SOURCE</div>
+          {[
+            [
+              "Popular",
+              ["vercel", "openrouter", "groq", "openai", "anthropic", "gemini"],
+            ],
+            [
+              "More providers",
+              [
+                "xai",
+                "nvidia",
+                "mistral",
+                "deepseek",
+                "together",
+                "fireworks",
+                "cerebras",
+                "opencode",
+              ],
+            ],
+            ["Local", ["ollama"]],
+            ["Advanced", ["custom"]],
+          ].map(([title, ids]) => (
+            <div key={title}>
+              <h3>{title}</h3>
+              <div className="brain-preset-grid">
+                {ids.map((id) => {
+                  const preset = data?.presets?.find((item) => item.id === id);
+                  return (
+                    preset && (
+                      <button
+                        key={id}
+                        onClick={() => {
+                          if (id === "custom") {
+                            start("API");
+                            setCatalogOpen(false);
+                            return;
+                          }
+                          setPresetId(id);
+                          setSecret("");
+                        }}
+                      >
+                        <strong>{preset.displayName}</strong>
+                        <small>
+                          {id === "ollama"
+                            ? data?.localRuntime?.status || "NOT_INSTALLED"
+                            : preset.envNames[0] || "Custom"}
+                        </small>
+                      </button>
+                    )
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {presetId && (
+            <div className="brain-preset-connect">
+              {(() => {
+                const preset = data?.presets?.find(
+                  (item) => item.id === presetId,
+                );
+                return (
+                  <>
+                    <h3>{preset?.displayName}</h3>
+                    {presetId === "opencode" && (
+                      <p>
+                        OpenCode CLI:{" "}
+                        {data?.cli?.find((item) => item.id === "opencode")
+                          ?.status || "NOT_INSTALLED"}
+                        . Zen API keys are separate from CLI authentication.
+                      </p>
+                    )}
+                    <p>Environment: {preset?.envNames[0] || "None required"}</p>
+                    {presetId !== "ollama" && (
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Paste API key"
+                        value={secret}
+                        onChange={(event) => setSecret(event.target.value)}
+                      />
+                    )}
+                    <button
+                      disabled={
+                        busy || (presetId !== "ollama" && !secret.trim())
+                      }
+                      onClick={() => connectPreset(presetId)}
+                    >
+                      Test & save
+                    </button>
+                    <details>
+                      <summary>Advanced</summary>
+                      <p>
+                        Base URL: {preset?.defaultBaseUrl}
+                        <br />
+                        Authentication: {preset?.authType}
+                        <br />
+                        Model discovery:{" "}
+                        {preset?.supportsModelDiscovery
+                          ? "Automatic"
+                          : "Manual model ID required"}
+                      </p>
+                      <a
+                        href={preset?.documentationUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Provider documentation
+                      </a>
+                    </details>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          <div className="brain-actions">
+            <button
+              onClick={() => {
+                setCatalogOpen(false);
+                setPresetId("");
+                setSecret("");
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </section>
+      )}
+      {testResults.length > 0 && (
+        <section className="brain-detail brain-setup-panel">
+          <div className="brain-section-title">TEST RESULTS</div>
+          {testResults.map((item, index) => (
+            <div
+              className="brain-test-result"
+              key={`${item.sourceId}-${item.credentialId || index}`}
+            >
+              {
+                data?.sources.find((source) => source.id === item.sourceId)
+                  ?.name
+              }{" "}
+              ·{" "}
+              {item.credentialId
+                ? data?.sources
+                    .flatMap((source) => source.credentials)
+                    .find((key) => key.id === item.credentialId)?.hint
+                : "Local"}{" "}
+              · {item.status}
+              {item.latencyMs != null ? ` · ${item.latencyMs} ms` : ""}
+            </div>
+          ))}
+        </section>
+      )}
+      <div className="brain-routing">
+        <label>
+          Routing
+          <select
+            value={data?.routing.lockedSourceId || ""}
+            onChange={(event) => setRouting(event.target.value)}
+            disabled={busy}
+          >
+            <option value="">AUTO · healthy compatible sources</option>
+            {data?.sources
+              .filter((item) => item.enabled && item.secretConfigured)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  LOCK · {item.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <span>Strict source lock disables provider fallback.</span>
+      </div>
+      <details className="brain-manual">
+        <summary>Advanced · manual source setup</summary>
+        <div className="brain-source-types">
+          {[
+            ["API", "API provider", "Connect a custom cloud API."],
+            ["LOCAL", "Local model", "Use another local endpoint."],
+            [
+              "CLI",
+              "CLI runtime (optional)",
+              "Separate from headless web AI; use an installed AI CLI only when explicitly configured.",
+            ],
+          ].map(([type, title, note]) => {
+            const Icon = iconFor[type];
+            return (
+              <button key={type} onClick={() => start(type)}>
+                <Icon size={19} />
+                <strong>{title}</strong>
+                <span>{note}</span>
+                <Plus size={15} />
+              </button>
+            );
+          })}
+        </div>
+      </details>
+      <div className="brain-columns">
+        <section className="brain-list">
+          <div className="brain-section-title">BRAIN SOURCES</div>
+          {data?.sources
+            .slice()
+            .sort((a, b) => a.priority - b.priority)
+            .map((item) => {
+              const Icon = iconFor[item.type];
+              const status =
+                item.type === "LOCAL"
+                  ? item.health
+                  : item.credentials.some((key) => key.status === "HEALTHY")
+                    ? "HEALTHY"
+                    : item.secretConfigured
+                      ? "UNVERIFIED"
+                      : "NEEDS KEY";
+              return (
+                <div
+                  className={`brain-source-row ${selectedId === item.id ? "active" : ""}`}
+                  key={item.id}
+                >
+                  <button
+                    className="brain-source-select"
+                    onClick={() => edit(item)}
+                  >
+                    <Icon size={17} />
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>
+                        {item.type} · {item.modelId}
+                        {item.type === "API"
+                          ? ` · ${item.credentials.length} keys`
+                          : ""}
+                      </small>
+                    </span>
+                    <em>{item.enabled ? status : "DISABLED"}</em>
+                  </button>
+                  <div className="brain-order">
+                    <button
+                      onClick={() => reorder(item, -1)}
+                      aria-label={`Move ${item.name} up`}
+                    >
+                      <ArrowUp size={13} />
+                    </button>
+                    <button
+                      onClick={() => reorder(item, 1)}
+                      aria-label={`Move ${item.name} down`}
+                    >
+                      <ArrowDown size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          {!data?.sources.length && (
+            <p className="brain-muted">No saved sources yet.</p>
+          )}
+          {Boolean(data?.importedEnvironment.length) && (
+            <div className="brain-imported">
+              <strong>Existing environment</strong>
+              {data.importedEnvironment.map((key) => (
+                <span key={key.reference}>
+                  {key.reference} · {key.hint}
+                </span>
+              ))}
+              <small>
+                Existing environment keys remain usable. They are read only here
+                and are never copied into the Brain store.
+              </small>
+            </div>
+          )}
+        </section>
+        <section className="brain-detail">
+          <div className="brain-section-title">
+            {source
+              ? selectedId
+                ? "SOURCE DETAILS"
+                : "ADD BRAIN SOURCE"
+              : "ROUTING & HEALTH"}
+          </div>
+          {source ? (
+            <div className="brain-form">
+              <div className="brain-form-grid">
+                <label>
+                  Display name
+                  <input
+                    value={source.name}
+                    onChange={(event) => update({ name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Type
+                  <input value={source.type} readOnly />
+                </label>
+                {source.type === "CLI" ? (
+                  <label>
+                    Adapter
+                    <select
+                      value={source.adapter}
+                      onChange={(event) =>
+                        update({
+                          adapter: event.target.value,
+                          provider: event.target.value,
+                        })
+                      }
+                    >
+                      {["codex", "claude", "opencode"].map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label>
+                      Provider
+                      <input
+                        value={source.provider}
+                        onChange={(event) =>
+                          update({
+                            provider: event.target.value,
+                            baseUrl:
+                              suggestions[event.target.value] || source.baseUrl,
+                          })
+                        }
+                        placeholder="openrouter, groq, custom..."
+                      />
+                    </label>
+                    <label>
+                      Endpoint
+                      <input
+                        value={source.baseUrl}
+                        onChange={(event) =>
+                          update({ baseUrl: event.target.value })
+                        }
+                        placeholder="https://provider.example/v1"
+                      />
+                    </label>
+                  </>
+                )}
+                <label>
+                  Model ID
+                  <input
+                    value={source.modelId}
+                    onChange={(event) =>
+                      update({ modelId: event.target.value })
+                    }
+                    placeholder="Exact provider model ID"
+                  />
+                </label>
+                <label>
+                  Priority
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={source.priority}
+                    onChange={(event) =>
+                      update({ priority: Number(event.target.value) })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="brain-choice">
+                <strong>Capabilities</strong>
+                {[
+                  "text",
+                  "tools",
+                  "image",
+                  "audio",
+                  "reasoning",
+                  "coding",
+                  "structured_output",
+                ].map((item) => (
+                  <label key={item}>
+                    <input
+                      type="checkbox"
+                      checked={source.capabilities.includes(item)}
+                      onChange={() => toggleCapability(item)}
+                    />
+                    {item}
+                  </label>
+                ))}
+              </div>
+              <div className="brain-choice">
+                <strong>Routing roles</strong>
+                {Object.entries(data?.models || {}).map(([id, item]) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={source.logicalModels.includes(id)}
+                      onChange={() => toggleRole(id)}
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+              <label className="brain-inline">
+                <input
+                  type="checkbox"
+                  checked={source.enabled}
+                  onChange={(event) =>
+                    update({ enabled: event.target.checked })
+                  }
+                />{" "}
+                Enabled
+              </label>
+              <div className="brain-actions">
+                <button
+                  className="brain-primary"
+                  disabled={
+                    busy ||
+                    !source.name ||
+                    !source.modelId ||
+                    !source.logicalModels.length
+                  }
+                  onClick={save}
+                >
+                  Save source
+                </button>
+                {selected && (
+                  <>
+                    <button disabled={busy} onClick={() => test(null)}>
+                      Test connection
+                    </button>
+                    <button
+                      className="brain-danger"
+                      disabled={busy}
+                      onClick={removeSource}
+                    >
+                      <Trash2 size={14} /> Remove
+                    </button>
+                  </>
+                )}
+              </div>
+              {selected?.type === "API" && (
+                <div className="brain-credentials">
+                  <h3>API keys</h3>
+                  {selected.credentials.map((key) => (
+                    <div className="brain-credential" key={key.id}>
+                      <span>
+                        <strong>{key.label || key.hint}</strong>
+                        <small>
+                          {key.hint} · {key.status} ·{" "}
+                          {key.pricingType || "UNKNOWN PRICING"}
+                          {key.retryAfter
+                            ? ` until ${new Date(key.retryAfter).toLocaleTimeString()}`
+                            : ""}
+                        </small>
+                      </span>
+                      <button disabled={busy} onClick={() => test(key.id)}>
+                        Test
+                      </button>
+                      <button disabled={busy} onClick={() => toggleKey(key)}>
+                        {key.enabled ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        disabled={busy}
+                        aria-label={`Remove ${key.hint}`}
+                        onClick={() => removeKey(key)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="brain-key-add">
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={secret}
+                      onChange={(event) => setSecret(event.target.value)}
+                      placeholder="Paste API key"
+                      aria-label="New API key"
+                    />
+                    <input
+                      value={label}
+                      onChange={(event) => setLabel(event.target.value)}
+                      placeholder="Optional label"
+                      aria-label="Credential label"
+                    />
+                    <button disabled={busy || !secret.trim()} onClick={addKey}>
+                      <Plus size={15} /> Add key
+                    </button>
+                  </div>
+                  <small>
+                    Keys stay on this host. Saved values cannot be viewed again.
+                  </small>
+                </div>
+              )}
+              {selected && selected.type !== "CLI" && (
+                <div className="brain-discovery">
+                  <button disabled={busy} onClick={discover}>
+                    Discover models
+                  </button>
+                  {Boolean(discovered.length) && (
+                    <select
+                      value=""
+                      onChange={(event) =>
+                        update({ modelId: event.target.value })
+                      }
+                    >
+                      <option value="">Choose a discovered model</option>
+                      {discovered.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name || item.id} ·{" "}
+                          {item.pricingType || "UNKNOWN_PRICING_DISABLED"}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+              {selected?.type === "CLI" && (
+                <p className="brain-muted">
+                  {data.cli.find((item) => item.id === selected.adapter)
+                    ?.status || "NOT INSTALLED"}{" "}
+                  · Authentication and inference must be verified with a real
+                  request.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="brain-idle">
+              <BrainCircuit size={25} />
+              <p>
+                Select or add a source. Existing model routing and canonical
+                tools continue to operate through the same provider pool.
+              </p>
+              <div className="brain-events">
+                <strong>Recent provider attempts</strong>
+                {data?.events
+                  .slice(-8)
+                  .reverse()
+                  .map((event, index) => (
+                    <div key={`${event.providerId}-${index}`}>
+                      {event.providerId} ·{" "}
+                      {event.success ? "success" : event.failureClass} ·{" "}
+                      {event.latencyMs} ms
+                    </div>
+                  ))}
+                {!data?.events.length && (
+                  <span>No model requests recorded yet.</span>
+                )}
+              </div>
+              <div className="brain-events">
+                <strong>Run Latency (p50/p95)</strong>
+                {Object.entries(tierStats).map(([tier, stats]) => (
+                  <div key={tier}>
+                    {tier} · p50: {stats.p50}ms · p95: {stats.p95}ms
+                  </div>
+                ))}
+                {!Object.keys(tierStats).length && (
+                  <span>No runs recorded yet.</span>
+                )}
+              </div>
+              <div className="brain-events">
+                <strong>Recent Runs</strong>
+                {data?.runs?.slice(0, 8).map((run) => (
+                  <div key={run.runId}>
+                    {run.runId} · Tier: {run.logicalModel || "unknown"} ·{" "}
+                    {run.totalMs} ms
+                  </div>
+                ))}
+                {!data?.runs?.length && <span>No runs recorded yet.</span>}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+      {message && (
+        <p className="brain-message" role="status">
+          {message}
+        </p>
+      )}
+    </div>
+  );
 }

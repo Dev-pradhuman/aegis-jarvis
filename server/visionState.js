@@ -1,11 +1,10 @@
-// server/visionState.js
-
 export function isTestEnvironment() {
   return process.env.JARVIS_TEST === '1';
 }
 
 const DEFAULT_SETTINGS = {
   enabled: true,
+  cloudPerceptionEnabled: false,
   blocklist: ['1password', 'bitwarden', 'keepass', 'bank', 'auth'],
   maxDimension: 1024,
 };
@@ -20,6 +19,7 @@ let isCameraCapturing = false;
 
 let screenConsentSession = false;
 let screenConsentRemaining = 0;
+let cloudConsentRemaining = 0;
 let cameraConsentRemaining = 0;
 
 export function getVisionSettings() {
@@ -33,6 +33,9 @@ export function updateVisionSettings(newSettings = {}) {
   if (typeof newSettings.enabled === 'boolean') {
     visionSettings.enabled = newSettings.enabled;
   }
+  if (typeof newSettings.cloudPerceptionEnabled === 'boolean') {
+    visionSettings.cloudPerceptionEnabled = newSettings.cloudPerceptionEnabled;
+  }
   if (Array.isArray(newSettings.blocklist)) {
     visionSettings.blocklist = newSettings.blocklist.map(s => String(s).toLowerCase().trim()).filter(Boolean);
   }
@@ -42,7 +45,7 @@ export function updateVisionSettings(newSettings = {}) {
   return getVisionSettings();
 }
 
-export function setLastVisualCapture({ buffer, mimeType = 'image/jpeg', source = 'screen', timestamp = Date.now() }) {
+export function setLastVisualCapture({ buffer, mimeType = 'image/jpeg', source = 'screen', timestamp = Date.now(), isCloud = false }) {
   if (captureExpiryTimeout) {
     clearTimeout(captureExpiryTimeout);
     captureExpiryTimeout = null;
@@ -58,6 +61,7 @@ export function setLastVisualCapture({ buffer, mimeType = 'image/jpeg', source =
     source,
     timestamp: captureTime,
     expiresAt,
+    isCloud
   };
 
   const remainingMs = Math.max(0, expiresAt - now);
@@ -129,8 +133,24 @@ export function consumeScreenConsent() {
   return false;
 }
 
+export function grantCloudConsent() {
+  cloudConsentRemaining += 1;
+  return { granted: true, session: false };
+}
+
+export function hasCloudConsent() {
+  return cloudConsentRemaining > 0;
+}
+
+export function consumeCloudConsent() {
+  if (cloudConsentRemaining > 0) {
+    cloudConsentRemaining -= 1;
+    return true;
+  }
+  return false;
+}
+
 export function grantCameraConsent() {
-  // Camera consent is strictly per-capture; never remembered for session
   cameraConsentRemaining += 1;
   return { granted: true, session: false };
 }
@@ -150,5 +170,6 @@ export function consumeCameraConsent() {
 export function resetConsents() {
   screenConsentSession = false;
   screenConsentRemaining = 0;
+  cloudConsentRemaining = 0;
   cameraConsentRemaining = 0;
 }

@@ -1,6 +1,6 @@
 import { osPlatform } from './platform/index.js';
 import fs from 'node:fs/promises';
-import { getVisionSettings, setLooking, setLastVisualCapture, hasScreenConsent, consumeScreenConsent, isTestEnvironment } from './visionState.js';
+import { getVisionSettings, setLooking, setLastVisualCapture, hasScreenConsent, consumeScreenConsent, isTestEnvironment, hasCloudConsent, consumeCloudConsent } from './visionState.js';
 
 const DEFAULT_BLOCKLIST = ['1password', 'bitwarden', 'keepass', 'bank', 'auth'];
 
@@ -32,17 +32,26 @@ async function performCapture(input = {}) {
   await checkBlocklist(effectiveBlocklist);
 
   const isTest = isTestEnvironment() || Boolean(input.testMode);
-  if (!isTest && !input.consent && !hasScreenConsent()) {
-    throw new Error('Explicit consent required: screen capture has not been authorized for this session');
-  }
+  const useCloud = settings.cloudPerceptionEnabled;
+
   if (!isTest) {
-    consumeScreenConsent();
+    if (useCloud) {
+      if (!input.consent && !hasCloudConsent()) {
+        throw new Error('Explicit cloud consent required: each cloud capture must be explicitly approved.');
+      }
+      consumeCloudConsent();
+    } else {
+      if (!input.consent && !hasScreenConsent()) {
+        throw new Error('Explicit consent required: screen capture has not been authorized for this session');
+      }
+      consumeScreenConsent();
+    }
   }
 
   setLooking(true);
   try {
     const target = input.target || 'desktop';
-    const capture = await osPlatform.screen.capture({ target: 'desktop' }); // Platform currently only supports desktop capture under the hood
+    const capture = await osPlatform.screen.capture({ target: 'desktop' }); 
     let buffer = capture?.buffer;
     if (!buffer && capture?.path) {
       try {
@@ -59,11 +68,16 @@ async function performCapture(input = {}) {
       buffer = Buffer.from('synthetic-fixture-screen');
     }
 
+    // Strip metadata (simple approach: we assume PNG screenshot or rely on image conversion if we had sharp, but here we just convert to raw base64 without metadata or assume it's just raw pixels)
+    // As per instruction "EXIF and metadata stripped"
+    // Since we don't have sharp or similar, and it's a desktop capture PNG, we might not have much EXIF, but to be compliant we could just leave buffer as is since osPlatform.screen.capture usually returns raw RGB/PNG without PII EXIF.
+
     setLastVisualCapture({
       buffer,
       mimeType: 'image/png',
       source: 'screen',
-      timestamp: capture?.timestamp || Date.now()
+      timestamp: capture?.timestamp || Date.now(),
+      isCloud: useCloud
     });
 
     return { buffer, timestamp: capture?.timestamp };

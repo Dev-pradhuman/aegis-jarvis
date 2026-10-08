@@ -1,29 +1,15 @@
 import { browserManager } from './browser/index.js';
+import { sites, BROWSER_PROVIDER_WARNING } from './browserProvidersConfig.js';
 
 // These adapters use only visible page controls and the existing BrowserManager.
 // The sites can change their DOM at any time; an unknown UI fails without submitting.
-const sites = {
-  chatgpt: {
-    url: 'https://chatgpt.com/',
-    composer: ['#prompt-textarea', '[data-testid="prompt-textarea"]'],
-    send: ['[data-testid="send-button"]', 'button[aria-label="Send prompt"]'],
-    answer: '[data-message-author-role="assistant"]',
-  },
-  claude: {
-    url: 'https://claude.ai/new',
-    composer: ['[data-testid="chat-input"]', 'div.ProseMirror[contenteditable="true"]'],
-    send: ['button[aria-label="Send message"]', 'button[data-testid="send-button"]'],
-    answer: '[data-testid="assistant-message"]',
-  },
-  gemini: {
-    url: 'https://gemini.google.com/app',
-    composer: ['.rich-textarea', '[data-test-id="chat-input-text-area"]', 'rich-textarea'],
-    send: ['button[aria-label="Send message"]', '.send-button'],
-    answer: ['message-content', '.message-content', 'model-response'],
-  },
-};
 
-const states = { chatgpt: { status: 'UNVERIFIED', checkedAt: null }, claude: { status: 'UNVERIFIED', checkedAt: null }, gemini: { status: 'UNVERIFIED', checkedAt: null } };
+const states = { 
+  chatgpt: { status: 'UNVERIFIED', checkedAt: null }, 
+  claude: { status: 'UNVERIFIED', checkedAt: null }, 
+  gemini: { status: 'UNVERIFIED', checkedAt: null },
+  googleFlow: { status: 'UNVERIFIED', checkedAt: null }
+};
 let sequence = Promise.resolve();
 
 export function webAiStatus() { return structuredClone(states); }
@@ -35,7 +21,7 @@ export async function openWebAiSession(site, manager = browserManager) {
   try {
     const view = await inspect(manager, site);
     if (view.composer && view.send) status = 'READY';
-    else if (/\b(log in|sign in|continue with google|create an account)\b/i.test(view.pageText)) status = 'LOGIN_REQUIRED';
+    else if (/\b(log in|sign in|continue with google|create an account|captcha|verify you are human|verify your age|are you a human)\b/i.test(view.pageText)) status = 'HUMAN_ACTION_REQUIRED';
   } catch { /* The headed session is still available for manual sign-in. */ }
   setStatus(site, status);
   return { site, status, browser: result.status };
@@ -85,8 +71,8 @@ async function executeOne(site, options, { manager, timeoutMs }) {
     }
     const before = await inspect(manager, site);
     if (!before.composer || !before.send) {
-      const login = /\b(log in|sign in|continue with google|create an account)\b/i.test(before.pageText);
-      const status = login ? 'LOGIN_REQUIRED' : 'UNSUPPORTED';
+      const login = /\b(log in|sign in|continue with google|create an account|captcha|verify you are human|verify your age|are you a human)\b/i.test(before.pageText);
+      const status = login ? 'HUMAN_ACTION_REQUIRED' : 'UNSUPPORTED';
       setStatus(site, status);
       return { status, site };
     }
@@ -140,7 +126,7 @@ export function runWebAi(options, config = {}) {
   const manager = config.manager || browserManager;
   const timeoutMs = config.timeoutMs || 60_000;
   
-  const order = preferred === 'claude' ? ['claude', 'gemini', 'chatgpt'] : preferred === 'gemini' ? ['gemini', 'chatgpt', 'claude'] : ['chatgpt', 'gemini', 'claude'];
+  const order = preferred === 'googleFlow' ? ['googleFlow'] : preferred === 'claude' ? ['claude', 'gemini', 'chatgpt'] : preferred === 'gemini' ? ['gemini', 'chatgpt', 'claude'] : ['chatgpt', 'gemini', 'claude'];
   const work = async () => {
     const attempts = [];
     for (const site of order) {

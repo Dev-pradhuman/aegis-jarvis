@@ -20,7 +20,7 @@ export function capabilityStatus(state = {}, { brainSources = [], web = {}, plat
     entry('brain.local', localAnswer ? 'WORKING_TESTED' : localConfigured ? 'WORKING_TESTED' : 'CONFIG_REQUIRED', localAnswer ? `Completed local answer in Run ${localAnswer.id}` : localConfigured ? 'Local source configured; no completed local Run found in current state' : 'No enabled local source'),
     entry('brain.web', webReady ? 'PARTIAL' : 'CONFIG_REQUIRED', webReady ? 'At least one composer detected; no website answer is proved by session status alone' : 'Authorized website session and live answer extraction needed'),
     entry('brain.zero_cost_api', apiConfigured ? 'PARTIAL' : 'CONFIG_REQUIRED', apiConfigured ? 'Configured API credentials; current zero-price discovery is still required per call' : 'No enabled API credential pool'),
-    entry('browser.manager', 'WORKING_TESTED', 'Lightpanda/Firefox fallback and handoff integration tests', 'Authenticated website acceptance tests'),
+    entry('browser.manager', 'USER_LIVE_TEST_REQUIRED', 'Lightpanda/Firefox fallback and handoff integration tests', 'Authenticated website acceptance tests'),
     entry('desktop.kde_windows', platform === 'linux' ? 'PARTIAL' : 'DEFERRED', 'KDE window identity/focus tested; current compositor must be probed'),
     entry('desktop.keyboard', platform === 'linux' ? 'PARTIAL' : 'DEFERRED', 'Opt-in portal input and exact target approval tests; prior disposable Firefox live test'),
     entry('desktop.pointer', 'NOT_IMPLEMENTED', 'No canonical pointer provider'),

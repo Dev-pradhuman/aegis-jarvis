@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { getVisionSettings } from './visionState.js';
 
 export function defaultMemoryProbe() {
   return {
@@ -14,7 +15,7 @@ export class LocalOllamaMultimodalProvider {
     this.keepAlive = options.keepAlive || process.env.VISION_MODEL_KEEP_ALIVE || '30s';
     this.minFreeMemoryBytes = Number(options.minFreeMemoryBytes || process.env.VISION_MIN_FREE_MEMORY_BYTES || 1.5 * 1024 * 1024 * 1024);
     this.memoryProbe = options.memoryProbe || defaultMemoryProbe;
-    this.status = 'unloaded'; // unloaded, loaded, idle
+    this.status = 'unloaded'; 
   }
 
   checkMemoryBudget() {
@@ -110,9 +111,50 @@ export class FakePerceptionProvider {
   }
 }
 
+export class CloudPerceptionProvider {
+  constructor(options = {}) {
+    this.status = 'unloaded';
+  }
+  
+  async generate(prompt, imageBuffer, fetchImpl = fetch) {
+    this.status = 'loaded';
+    try {
+      const { executeModelPool } = await import('./modelPool.js');
+      // For WP6b: cloud perception using free catalog model
+      const result = await executeModelPool({
+        logicalModel: 'perception',
+        requiredModality: 'vision',
+        allowFallback: true,
+        sourceTier: 'free', 
+        context: [
+          { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBuffer.toString('base64')}` } }] }
+        ],
+        fetchImpl
+      });
+      return { reply: result.message?.content || '' };
+    } finally {
+      this.status = 'idle';
+    }
+  }
+  
+  async unload() {
+    this.status = 'unloaded';
+    return { ok: true, status: this.status };
+  }
+}
+
 export async function perceive(prompt, imageBuffer, options = {}) {
   const { fetchImpl = fetch, testMode = false } = options;
-  const provider = testMode ? new FakePerceptionProvider(options) : new LocalOllamaMultimodalProvider(options);
+  const settings = getVisionSettings();
+  
+  let provider;
+  if (testMode) {
+    provider = new FakePerceptionProvider(options);
+  } else if (settings.cloudPerceptionEnabled) {
+    provider = new CloudPerceptionProvider(options);
+  } else {
+    provider = new LocalOllamaMultimodalProvider(options);
+  }
 
   return provider.generate(prompt, imageBuffer, fetchImpl);
 }
