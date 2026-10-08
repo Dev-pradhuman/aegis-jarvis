@@ -102,9 +102,9 @@ test('web adapter reports login required and never submits a prompt without visi
     type: async () => { submitted = true; },
     click: async () => { submitted = true; },
   };
-  const result = await runWebAi({ request: 'A harmless test' }, { manager, timeoutMs: 100 });
-  assert.equal(result.status, 'UNAVAILABLE');
-  assert.deepEqual(result.attempts.map((item) => item.status), ['LOGIN_REQUIRED', 'LOGIN_REQUIRED', 'LOGIN_REQUIRED']);
+  const result = await runWebAi({ request: 'A harmless test' }, { manager, timeoutMs: 100, preferred: 'chatgpt' });
+  assert.equal(result.status, 'HUMAN_ACTION_REQUIRED');
+  assert.deepEqual(result.attempts.map((item) => item.status), ['HUMAN_ACTION_REQUIRED']);
   assert.equal(submitted, false);
 });
 

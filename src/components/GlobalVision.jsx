@@ -29,10 +29,9 @@ export default function GlobalVision() {
     const poll = async () => {
       try {
         const res = await fetch('/api/vision/status');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (active) {
-          setStatus(data);
+        if (res.ok && active) {
+          const data = await res.json();
+          setStatus(prev => ({ ...prev, ...data }));
           if (data.settings) {
             setSettingsForm(prev => ({
               ...prev,
@@ -41,6 +40,14 @@ export default function GlobalVision() {
               maxDimension: data.settings.maxDimension ?? 1024
             }));
           }
+        }
+        const brainRes = await fetch('/api/brain');
+        if (brainRes.ok && active) {
+          const brainData = await brainRes.json();
+          const recentRuns = brainData.runs || [];
+          const N_MINUTES = 5 * 60 * 1000;
+          const cloudLeft = recentRuns.some(run => run.logicalModel !== 'LOCAL_MODEL' && (Date.now() - new Date(run.timestamp || run.createdAt || Date.now()).getTime()) < N_MINUTES);
+          setStatus(prev => ({ ...prev, cloudLeft }));
         }
       } catch {}
     };
@@ -147,6 +154,12 @@ export default function GlobalVision() {
             <div className="vision-badge watching" data-testid="vision-watching-badge">
               <span className="vision-pulse-dot"></span>
               <span>WATCHING</span>
+            </div>
+          )}
+          {status.cloudLeft && (
+            <div className="vision-badge cloud" data-testid="vision-cloud-badge" style={{ backgroundColor: 'var(--red, #ef4444)', color: 'white' }}>
+              <span className="vision-pulse-dot"></span>
+              <span>CLOUD</span>
             </div>
           )}
           <button

@@ -640,6 +640,18 @@ export default function BrainManager() {
       )}
       <div className="brain-routing">
         <label>
+          Data Policy
+          <select
+            value={data?.routing.dataPolicy || "auto"}
+            onChange={(event) => setDataPolicy(event.target.value)}
+            disabled={busy}
+          >
+            <option value="auto">AUTO · Allow Cloud</option>
+            <option value="local">LOCAL ONLY · Strict</option>
+            <option value="cloud">CLOUD PREFERRED</option>
+          </select>
+        </label>
+        <label>
           Routing
           <select
             value={data?.routing.lockedSourceId || ""}
@@ -658,6 +670,54 @@ export default function BrainManager() {
         </label>
         <span>Strict source lock disables provider fallback.</span>
       </div>
+      <section className="brain-detail brain-roles">
+        <div className="brain-section-title">PER-ROLE MODEL SELECTION</div>
+        <table className="brain-roles-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 10 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+              <th>Role</th>
+              <th>Provider / Status</th>
+              <th>Model Picker</th>
+              <th>Policy</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(data?.models || {}).map(([roleId, role]) => {
+              const activeSource = data?.sources.find(s => s.logicalModels.includes(roleId) && s.enabled) || {};
+              return (
+                <tr key={roleId} style={{ borderBottom: '1px solid var(--border)', height: '40px' }}>
+                  <td>{role.label}</td>
+                  <td>
+                    {activeSource.name || 'None'}
+                    <br />
+                    <small>
+                      {activeSource.type} · {activeSource.type === 'API' && activeSource.credentials?.[0]?.enabled ? 'Key Present' : 'No Key'} 
+                      {activeSource.latencyMs ? ` · p50: ${activeSource.latencyMs}ms` : ''}
+                    </small>
+                  </td>
+                  <td>
+                    <select disabled={busy} defaultValue={activeSource.id || ''}>
+                      <option value="">Auto Select</option>
+                      {data?.sources.filter(s => s.enabled).map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.modelId})</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <span className={`vision-badge ${activeSource.type === 'LOCAL' ? 'looking' : 'cloud'}`} style={{ fontSize: 10, padding: '2px 4px', backgroundColor: activeSource.type === 'LOCAL' ? 'var(--blue)' : 'var(--red)', color: 'white', borderRadius: 4 }}>
+                      {activeSource.type === 'LOCAL' ? 'LOCAL' : 'CLOUD'}
+                    </span>
+                  </td>
+                  <td>
+                    <button disabled={busy} onClick={() => test(null)}>Test</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
       <details className="brain-manual">
         <summary>Advanced · manual source setup</summary>
         <div className="brain-source-types">
