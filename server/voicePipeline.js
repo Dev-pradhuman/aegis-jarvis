@@ -22,7 +22,11 @@ export class VoicePipeline extends EventEmitter {
     if (this.state === 'idle' || this.state === 'muted' || this.state === 'error') {
       this.transition('wake_listening');
       if (this.audioSource) {
-        this.audioSource.on('data', this.handleAudioData.bind(this));
+        if (!this._boundAudioHandler) {
+          this._boundAudioHandler = this.handleAudioData.bind(this);
+        }
+        this.audioSource.removeListener('data', this._boundAudioHandler);
+        this.audioSource.on('data', this._boundAudioHandler);
       }
     }
   }
@@ -107,13 +111,14 @@ export class VoicePipeline extends EventEmitter {
     for await (const chunk of textStream) {
       if (this.state !== 'speaking') break; // barged in
       buffer += chunk;
-      const match = sentenceRegex.exec(buffer);
-      if (match) {
+      let match;
+      while ((match = sentenceRegex.exec(buffer)) !== null) {
         const sentence = buffer.substring(0, match.index + match[1].length);
         buffer = buffer.substring(match.index + match[1].length).trimStart();
         if (this.ttsProvider && this.state === 'speaking') {
            await this.ttsProvider.speak(sentence);
         }
+        if (this.state !== 'speaking') break;
       }
     }
     
@@ -153,8 +158,13 @@ export class VoicePipeline extends EventEmitter {
     if (this.vadProvider) {
       this.vadProvider.flush(); // drop buffered audio
     }
-    if (this.audioSource && this.audioSource.stop) {
-      this.audioSource.stop(); // close microphone
+    if (this.audioSource) {
+      if (this._boundAudioHandler) {
+        this.audioSource.removeListener('data', this._boundAudioHandler);
+      }
+      if (this.audioSource.stop) {
+        this.audioSource.stop(); // close microphone
+      }
     }
     this.transition('idle');
   }

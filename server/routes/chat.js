@@ -181,7 +181,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           }
         }
         try {
-          const { emergencyStop } = await import('./toolExecutor.js');
+          const { emergencyStop } = await import('../toolExecutor.js');
           emergencyStop();
         } catch (e) {
           // Ignore

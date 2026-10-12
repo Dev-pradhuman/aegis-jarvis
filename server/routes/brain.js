@@ -62,7 +62,7 @@ export default async function brainRoutes(req, res, url, state, ctx) {
         if (runtime.status !== 'MODEL_AVAILABLE' && status.sources.every((source) => source.type === 'LOCAL')) status.status = runtime.status;
         return json(res, 200, { ...status, configurationLocked: !process.env.JARVIS_AUTH_TOKEN, localRuntime: runtime, headlessWeb: webAiStatus(), voice: { provider: voice.provider, sttProvider: voice.sttProvider, apiSpeechDisabledByZeroSpend: voice.apiSpeechDisabledByZeroSpend }, spendPolicy: { zeroSpendMode: !paidApiUsageEnabled(), allowPaidApiUsage: paidApiUsageEnabled(), freeCreditsAutomatic: false }, presets: publicProviderPresets(), cli: detectedCliSources(), models: modelRegistry(), routing: { modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || null, lockedSourceId: state.modelRouting?.lockedSourceId || null, manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false, dataPolicy: state.modelRouting?.dataPolicy || 'auto' }, events: (state.modelRouting?.telemetry || []).flatMap((item) => item.providerAttempts || []).slice(-30), runs: state.modelRouting?.telemetry || [] });
       }
-    if (req.method === 'POST' && /^\/api\/brain\/web\/(chatgpt|claude)\/open$/.test(url.pathname)) {
+    if (req.method === 'POST' && /^\/api\/brain\/web\/(chatgpt|claude|gemini|googleFlow)\/open$/.test(url.pathname)) {
         const site = url.pathname.split('/')[4];
         return json(res, 200, await openWebAiSession(site));
       }

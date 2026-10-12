@@ -55,6 +55,7 @@ import {
   isWatching,
   grantScreenConsent,
   grantCameraConsent,
+  grantCloudConsent,
 } from '../visionState.js';
 
 export default async function deviceRoutes(req, res, url, state, ctx) {
@@ -97,7 +98,11 @@ export default async function deviceRoutes(req, res, url, state, ctx) {
       const result = grantCameraConsent();
       return json(res, 200, { ok: true, target: 'camera', ...result });
     }
-    return json(res, 400, { error: 'Invalid consent target. Expected "screen" or "camera".' });
+    if (target === 'cloud') {
+      const result = grantCloudConsent();
+      return json(res, 200, { ok: true, target: 'cloud', ...result });
+    }
+    return json(res, 400, { error: 'Invalid consent target. Expected "screen", "camera", or "cloud".' });
   }
   if (req.method === 'POST' && url.pathname === '/api/vision/clear') {
     clearLastVisualCapture();

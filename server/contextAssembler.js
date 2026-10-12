@@ -88,12 +88,13 @@ export function assembleModelContext({ query = '', toolResults = [], conversatio
 
   if (toolResults && toolResults.length) {
     for (const tr of toolResults) {
-      const isPerception = ['screen.describe', 'screen.locate', 'screen.readRegion', 'camera.describe'].includes(tr.tool) || String(tr.tool || '').startsWith('perception') || tr.isPerception;
+      const isPerception = ['screen.describe', 'screen.locate', 'screen.read_region', 'screen.readRegion', 'camera.describe'].includes(tr.tool) || String(tr.tool || '').startsWith('perception') || tr.isPerception;
       const text = tr.output || tr.result || (typeof tr.data === 'string' ? tr.data : JSON.stringify(tr.data || tr.resultId || tr));
       if (isPerception) {
+        const isOcr = Boolean(tr.tool?.includes('read_region') || tr.tool?.includes('readRegion'));
         candidates.push({
           role: 'system',
-          content: wrapUntrustedContent(text, tr.tool?.includes('readRegion') ? 'ocr' : 'vision'),
+          content: wrapUntrustedContent(text, isOcr ? 'ocr' : 'vision'),
         });
       }
     }

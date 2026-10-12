@@ -5,9 +5,14 @@ import { getVisionSettings, setLooking, setLastVisualCapture, hasScreenConsent, 
 const DEFAULT_BLOCKLIST = ['1password', 'bitwarden', 'keepass', 'bank', 'auth'];
 
 async function checkBlocklist(blocklist = DEFAULT_BLOCKLIST) {
-  if (!osPlatform.window) return; // If platform doesn't support window reading
+  const windowBackend = (osPlatform.window && typeof osPlatform.window.getActive === 'function')
+    ? osPlatform.window
+    : (osPlatform.windows && typeof osPlatform.windows.getActive === 'function')
+      ? osPlatform.windows
+      : null;
+  if (!windowBackend) return;
   try {
-    const active = await osPlatform.window.getActive();
+    const active = await windowBackend.getActive();
     if (active) {
       const title = (active.title || '').toLowerCase();
       const appId = (active.appId || '').toLowerCase();

@@ -84,6 +84,7 @@ export class FishAudioProvider {
                     '-ac', '1',
                     'pipe:1'
                 ]);
+                this._currentFfmpeg = ffmpeg;
 
                 nodeStream.pipe(ffmpeg.stdin);
                 ffmpeg.stdin.on('error', () => {}); // Ignore EPIPE
@@ -93,7 +94,17 @@ export class FishAudioProvider {
                     ffmpegError += chunk.toString();
                 });
 
-                ffmpeg.on('error', err => reject(err));
+                ffmpeg.on('error', err => {
+                    this._currentFfmpeg = null;
+                    reject(err);
+                });
+
+                ffmpeg.on('close', code => {
+                    this._currentFfmpeg = null;
+                    if (code !== 0 && code !== null) {
+                        reject(new Error(`ffmpeg exited with code ${code}: ${ffmpegError.slice(0, 200)}`));
+                    }
+                });
 
                 // Pass the decoded PCM to audioPlayback
                 this.audioPlayback.playStream(ffmpeg.stdout)
@@ -107,6 +118,10 @@ export class FishAudioProvider {
     }
 
     stop() {
+        if (this._currentFfmpeg) {
+            try { this._currentFfmpeg.kill('SIGKILL'); } catch (e) {}
+            this._currentFfmpeg = null;
+        }
         this.piper.stop();
         if (this.audioPlayback) this.audioPlayback.stop();
     }

@@ -1,10 +1,10 @@
 # Cloud Benchmark Results
-Date: 2026-10-08T11:19:39.480Z
+Date: 2026-10-08T15:47:43.129Z
 
 | Model | TTFB (ms) | Latency (ms) | Tool Schema | Stream Stability |
 |-------|-----------|--------------|-------------|------------------|
-| gpt-4o | 200 | 529 | Pass | 100% |
-| claude-3-opus | 221 | 693 | Pass | 100% |
-| gemini-1.5-pro | 118 | 924 | Pass | 100% |
+| gemini-1.5-pro | 542 | 664 | Pass | 100% |
+| claude-3-opus | 247 | 908 | Pass | 100% |
+| gpt-4o | 323 | 1932 | Pass | 100% |
 
 **Note:** Never call a model "best" without these numbers.

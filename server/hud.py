@@ -2,8 +2,13 @@
 import sys
 import json
 import threading
-import tkinter as tk
-from tkinter import font
+
+try:
+    import tkinter as tk
+    from tkinter import font
+except (ImportError, Exception):
+    # Tkinter is not available in this environment
+    sys.exit(0)
 
 class JarvisHUD:
     def __init__(self, root):

@@ -15,7 +15,7 @@ let sequence = Promise.resolve();
 export function webAiStatus() { return structuredClone(states); }
 
 export async function openWebAiSession(site, manager = browserManager) {
-  if (!sites[site]) throw failure('WEB_AI_PROVIDER_UNKNOWN', 'Choose ChatGPT or Claude');
+  if (!sites[site]) throw failure('WEB_AI_PROVIDER_UNKNOWN', 'Choose ChatGPT, Claude, Gemini, or Google Flow');
   const result = await manager.openHeaded(sites[site].url);
   let status = 'UNVERIFIED';
   try {

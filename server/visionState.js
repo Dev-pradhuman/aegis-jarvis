@@ -69,6 +69,9 @@ export function setLastVisualCapture({ buffer, mimeType = 'image/jpeg', source =
     captureExpiryTimeout = setTimeout(() => {
       lastVisualCapture = null;
     }, remainingMs);
+    if (typeof captureExpiryTimeout.unref === 'function') {
+      captureExpiryTimeout.unref();
+    }
   }
 
   return lastVisualCapture;

@@ -131,7 +131,7 @@ export class CloudPerceptionProvider {
         ],
         fetchImpl
       });
-      return { reply: result.message?.content || '' };
+      return { reply: result.reply || result.message?.content || '', model: result.model || 'cloud_perception', provider: result.provider || 'cloud' };
     } finally {
       this.status = 'idle';
     }

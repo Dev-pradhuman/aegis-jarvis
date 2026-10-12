@@ -283,3 +283,9 @@ export async function executeTool(toolId, input = {}, context = {}) {
   const result = await runTool(toolId, input, context);
   return validateToolOutput(tool.outputSchema, result);
 }
+
+export function emergencyStop() {
+  try {
+    browserManager.close().catch(() => {});
+  } catch (e) {}
+}
