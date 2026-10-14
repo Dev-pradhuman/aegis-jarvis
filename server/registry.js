@@ -1,12 +1,12 @@
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const outputSchema = { type: 'object', required: ['ok', 'toolId', 'data'], properties: { ok: { type: 'boolean' }, toolId: { type: 'string' } }, additionalProperties: true };
 const windowTarget = { type: 'object', properties: { windowId: { type: 'string' }, appId: { type: 'string' }, processId: { type: 'integer' }, name: { type: 'string' } }, additionalProperties: false };
-const localWindowsAvailable = () => process.platform === 'linux' && (
-  (/KDE|Plasma/i.test(process.env.XDG_CURRENT_DESKTOP || '') && ['wayland', 'x11'].includes(process.env.XDG_SESSION_TYPE || '')) ||
-  /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP || '') ||
-  Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE)
+export const localWindowsAvailable = (env = process.env) => (env.platform || process.platform) === 'linux' && (
+  (/KDE|Plasma/i.test(env.XDG_CURRENT_DESKTOP || '') && ['wayland', 'x11'].includes(env.XDG_SESSION_TYPE || '')) ||
+  /hyprland/i.test(env.XDG_CURRENT_DESKTOP || '') ||
+  Boolean(env.HYPRLAND_INSTANCE_SIGNATURE)
 );
-const desktopMutationEnabled = () => localWindowsAvailable() && process.env.JARVIS_DESKTOP_INPUT === '1' && Boolean(process.env.JARVIS_AUTH_TOKEN);
+export const desktopMutationEnabled = (env = process.env) => localWindowsAvailable(env) && env.JARVIS_DESKTOP_INPUT === '1' && Boolean(env.JARVIS_AUTH_TOKEN);
 
 const tools = [
   { id: 'project.inspect', name: 'Project inspection', description: 'Inspect the current repository structure and project metadata.', module: 'development', riskLevel: 'READ_ONLY', sideEffects: false, reversible: true, timeout: 10000, enabled: true, inputSchema: objectSchema() },

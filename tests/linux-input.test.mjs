@@ -63,6 +63,9 @@ test('desktop input remains disabled by default and requires exact one-use appro
   try {
     delete process.env.JARVIS_DESKTOP_INPUT;
     delete process.env.JARVIS_AUTH_TOKEN;
+    delete process.env.HYPRLAND_INSTANCE_SIGNATURE;
+    delete process.env.XDG_CURRENT_DESKTOP;
+    delete process.env.XDG_SESSION_TYPE;
     assert.equal(getTool('computer.type').enabled, false);
 
     // Test KDE desktop input activation
@@ -104,4 +107,40 @@ test('desktop input remains disabled by default and requires exact one-use appro
     if (previous.session === undefined) delete process.env.XDG_SESSION_TYPE; else process.env.XDG_SESSION_TYPE = previous.session;
     if (previous.hyprland === undefined) delete process.env.HYPRLAND_INSTANCE_SIGNATURE; else process.env.HYPRLAND_INSTANCE_SIGNATURE = previous.hyprland;
   }
+});
+
+test('Hyprland wtype backend executes keypress and type commands', async () => {
+  const spawned = [];
+  const spawnImpl = (cmd, args) => {
+    spawned.push({ cmd, args });
+    const proc = new EventEmitter();
+    process.nextTick(() => proc.emit('exit', 0));
+    return proc;
+  };
+  const input = createLinuxInput({ isHyprland: true, spawnImpl });
+  const keyResult = await input.keypress('Ctrl+Alt+J');
+  assert.equal(keyResult.backend, 'wtype');
+  assert.equal(spawned[0].cmd, 'wtype');
+  assert.deepEqual(spawned[0].args, ['-M', 'ctrl', '-M', 'alt', '-k', 'j', '-m', 'alt', '-m', 'ctrl']);
+
+  const typeResult = await input.type('hello hyprland');
+  assert.equal(typeResult.backend, 'wtype');
+  assert.equal(spawned[1].cmd, 'wtype');
+  assert.deepEqual(spawned[1].args, ['--', 'hello hyprland']);
+});
+
+test('Hyprland wtype backend reports clean error when wtype binary is missing', async () => {
+  const spawnImpl = () => {
+    const proc = new EventEmitter();
+    process.nextTick(() => proc.emit('error', Object.assign(new Error('not found'), { code: 'ENOENT' })));
+    return proc;
+  };
+  const input = createLinuxInput({ isHyprland: true, spawnImpl });
+  await assert.rejects(async () => {
+    await input.type('test');
+  }, (err) => {
+    assert.equal(err.code, 'INPUT_TOOL_MISSING');
+    assert.match(err.message, /pacman -S wtype/);
+    return true;
+  });
 });

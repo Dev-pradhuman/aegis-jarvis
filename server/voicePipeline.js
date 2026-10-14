@@ -7,6 +7,7 @@ export class VoicePipeline extends EventEmitter {
     
     this.enabled = false;
     this.audioSource = options.audioSource || null;
+    this.audioPlayback = options.audioPlayback || null;
     this.wakeWordProvider = options.wakeWordProvider || null;
     this.sttProvider = options.sttProvider || null;
     this.ttsProvider = options.ttsProvider || null;
@@ -27,6 +28,9 @@ export class VoicePipeline extends EventEmitter {
         }
         this.audioSource.removeListener('data', this._boundAudioHandler);
         this.audioSource.on('data', this._boundAudioHandler);
+        if (typeof this.audioSource.start === 'function') {
+          this.audioSource.start();
+        }
       }
     }
   }
@@ -58,6 +62,19 @@ export class VoicePipeline extends EventEmitter {
   pushToTalk() {
     // Push-to-talk overrides wake word and works even if idle or no wake word model installed
     this.handleBargeIn(); // Stop speaking if currently speaking
+    if (this.vadProvider && typeof this.vadProvider.flush === 'function') {
+      this.vadProvider.flush();
+    }
+    if (this.audioSource) {
+      if (!this._boundAudioHandler) {
+        this._boundAudioHandler = this.handleAudioData.bind(this);
+      }
+      this.audioSource.removeListener('data', this._boundAudioHandler);
+      this.audioSource.on('data', this._boundAudioHandler);
+      if (typeof this.audioSource.start === 'function') {
+        this.audioSource.start();
+      }
+    }
     this.transition('capturing');
     return true;
   }
@@ -94,11 +111,22 @@ export class VoicePipeline extends EventEmitter {
          if (this.state === 'speaking') {
              this.transition('idle');
          }
+         return;
       } catch (err) {
-         this.emit('error', err);
-         this.transition('error');
+         // Log and attempt cloud fallback
       }
-    } else {
+    }
+    try {
+      const { synthesizeSpeech } = await import('./tts.js');
+      const res = await synthesizeSpeech({ text });
+      if (res && res.audioBuffer && this.audioPlayback) {
+        const { Readable } = await import('node:stream');
+        await this.audioPlayback.playStream(Readable.from(res.audioBuffer));
+      }
+    } catch {
+      // Fallback failed or text-only
+    }
+    if (this.state === 'speaking') {
       this.transition('idle');
     }
   }

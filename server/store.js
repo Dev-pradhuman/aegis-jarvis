@@ -103,6 +103,7 @@ async function load() {
       }
       migratedModels = true;
     }
+    pruneState(parsed);
     if (interrupted || removedDemoSeed || expiredApprovals.length || migratedModels) await writeJsonAtomically(file, parsed);
 
     return { ...structuredClone(seed), ...parsed, approvalPolicy: { ...DEFAULT_APPROVAL_POLICY, ...(parsed.approvalPolicy || {}) }, reminders: parsed.reminders || [], runtime: { ...seed.runtime, ...(parsed.runtime || {}), usage: { ...seed.runtime.usage, ...(parsed.runtime?.usage || {}) }, latency: { ...seed.runtime.latency, ...(parsed.runtime?.latency || {}) } }, provider: { ...seed.provider, ...(parsed.provider || {}) }, modelRouting: { ...seed.modelRouting, ...(parsed.modelRouting || {}), providerHealth: parsed.modelRouting?.providerHealth || {}, telemetry: parsed.modelRouting?.telemetry || [] }, conversations: parsed.conversations || [], workflows: parsed.workflows || structuredClone(seed.workflows), runs: parsed.runs || [], toolExecutions: parsed.toolExecutions || [], mediaJobs: parsed.mediaJobs || [] };
@@ -111,6 +112,35 @@ async function load() {
     await writeJsonAtomically(file, seed);
     return structuredClone(seed);
   }
+}
+
+export function pruneState(state) {
+  if (!state || typeof state !== 'object') return state;
+  if (Array.isArray(state.conversations) && state.conversations.length > 100) {
+    state.conversations = state.conversations.slice(-100);
+  }
+  if (Array.isArray(state.runs) && state.runs.length > 100) {
+    state.runs = state.runs.slice(-100);
+  }
+  if (Array.isArray(state.approvals) && state.approvals.length > 100) {
+    const pending = state.approvals.filter((item) => item.status === 'pending');
+    const others = state.approvals.filter((item) => item.status !== 'pending');
+    const allowedOthers = Math.max(0, 100 - pending.length);
+    state.approvals = [...others.slice(-allowedOthers), ...pending];
+  }
+  if (Array.isArray(state.activity) && state.activity.length > 200) {
+    state.activity = state.activity.slice(-200);
+  }
+  if (Array.isArray(state.auditLog) && state.auditLog.length > 200) {
+    state.auditLog = state.auditLog.slice(-200);
+  }
+  if (Array.isArray(state.toolExecutions) && state.toolExecutions.length > 100) {
+    state.toolExecutions = state.toolExecutions.slice(-100);
+  }
+  if (state.modelRouting && Array.isArray(state.modelRouting.telemetry) && state.modelRouting.telemetry.length > 100) {
+    state.modelRouting.telemetry = state.modelRouting.telemetry.slice(-100);
+  }
+  return state;
 }
 
 export async function getState() {
@@ -122,6 +152,7 @@ export async function updateState(mutator) {
   const operation = updateQueue.then(async () => {
     const current = await getState();
     const next = await mutator(current) || current;
+    pruneState(next);
     await writeJsonAtomically(file, next);
     statePromise = Promise.resolve(next);
     return next;

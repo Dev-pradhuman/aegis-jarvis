@@ -131,6 +131,41 @@ const voicePipeline = new VoicePipeline({
   sttProvider: new GroqWhisperProvider({ enabled: true, localProvider: new WhisperProvider() }),
   ttsProvider: new PiperProvider({ audioPlayback: new AudioPlayback() })
 });
+voicePipeline.on('transcription', async (text) => {
+  if (!text || typeof text !== 'string') {
+    if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');
+    return;
+  }
+  const cleaned = text.trim();
+  if (!cleaned || cleaned.startsWith('[Audio transcription failed') || cleaned.startsWith('[Local speech recognition')) {
+    if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');
+    return;
+  }
+  try {
+    const chatUrl = `http://127.0.0.1:${port}/api/chat`;
+    const response = await fetch(chatUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'origin': `http://127.0.0.1:${port}`
+      },
+      body: JSON.stringify({
+        message: cleaned,
+        source: 'voice',
+        retainTranscript: true
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (result && result.reply) {
+      await voicePipeline.speak(result.reply);
+    } else {
+      if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');
+    }
+  } catch (err) {
+    console.warn('[VoicePipeline] Error forwarding transcription to chat:', err.message);
+    if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');
+  }
+});
 const handleVoiceRoute = voiceRoutes(voicePipeline);
 
 const server = http.createServer(async (req, res) => {

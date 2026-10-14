@@ -56,6 +56,12 @@ export function voiceRoutes(voicePipeline) {
         voicePipeline.pushToTalk();
       } else if (data.action === 'stop' && voicePipeline.state === 'capturing') {
         voicePipeline.stopCapturing(voicePipeline.vadProvider ? voicePipeline.vadProvider.flush() : Buffer.alloc(0));
+      } else if (data.action === 'toggle' || !data.action) {
+        if (voicePipeline.state === 'capturing') {
+          voicePipeline.stopCapturing(voicePipeline.vadProvider ? voicePipeline.vadProvider.flush() : Buffer.alloc(0));
+        } else {
+          voicePipeline.pushToTalk();
+        }
       }
       return json(res, 200, { ok: true, state: voicePipeline.state });
     }

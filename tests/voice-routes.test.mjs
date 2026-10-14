@@ -50,13 +50,24 @@ test('Voice Routes', async (t) => {
     assert.strictEqual(pipeline.state, 'idle');
   });
 
-  await t.test('POST /api/voice/ptt controls push to talk', async () => {
+  await t.test('POST /api/voice/ptt controls push to talk and toggle', async () => {
     const res = mockRes();
     await routeHandler(mockReq('POST', '/api/voice/ptt', { action: 'start' }), res);
     assert.strictEqual(pipeline.state, 'capturing');
 
     const res2 = mockRes();
     await routeHandler(mockReq('POST', '/api/voice/ptt', { action: 'stop' }), res2);
+    assert.strictEqual(pipeline.state, 'transcribing');
+
+    // Toggle from idle/transcribing -> capturing
+    pipeline.transition('idle');
+    const res3 = mockRes();
+    await routeHandler(mockReq('POST', '/api/voice/ptt', { action: 'toggle' }), res3);
+    assert.strictEqual(pipeline.state, 'capturing');
+
+    // Toggle from capturing -> transcribing
+    const res4 = mockRes();
+    await routeHandler(mockReq('POST', '/api/voice/ptt', { action: 'toggle' }), res4);
     assert.strictEqual(pipeline.state, 'transcribing');
   });
 });

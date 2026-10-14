@@ -37,7 +37,7 @@ export function parseKeypressToWtypeArgs(keys) {
   for (const p of parts) {
     const low = p.toLowerCase();
     if (modMap[low]) mods.push(modMap[low]);
-    else key = keyMap[low] || p;
+    else key = keyMap[low] || low;
   }
   const args = [];
   for (const m of mods) args.push('-M', m);
@@ -46,8 +46,7 @@ export function parseKeypressToWtypeArgs(keys) {
   return args;
 }
 
-export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000 } = {}) {
-  const isHyprland = spawnImpl === spawn && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP || ''));
+export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000, isHyprland = (spawnImpl === spawn && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP || ''))) } = {}) {
   if (isHyprland) {
     return {
       startSession: async () => ({ devices: 1, backend: 'wtype' }),
@@ -56,7 +55,7 @@ export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000 } 
         const args = parseKeypressToWtypeArgs(keys);
         try {
           await new Promise((resolve, reject) => {
-            const proc = spawn('wtype', args);
+            const proc = spawnImpl('wtype', args);
             proc.on('error', (err) => {
               if (err.code === 'ENOENT') {
                 reject(Object.assign(new Error('Desktop input requires "wtype" on Hyprland. Install it via "pacman -S wtype".'), { code: 'INPUT_TOOL_MISSING' }));
@@ -80,7 +79,7 @@ export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000 } 
         if (/[\u0000-\u001f\u007f]/u.test(text)) throw new Error('Use computer.keypress for Enter, Tab, and other control keys');
         try {
           await new Promise((resolve, reject) => {
-            const proc = spawn('wtype', ['--', text]);
+            const proc = spawnImpl('wtype', ['--', text]);
             proc.on('error', (err) => {
               if (err.code === 'ENOENT') {
                 reject(Object.assign(new Error('Desktop input requires "wtype" on Hyprland. Install it via "pacman -S wtype".'), { code: 'INPUT_TOOL_MISSING' }));

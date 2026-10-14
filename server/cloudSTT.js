@@ -1,5 +1,32 @@
 import { fetchWithCredentialRotation } from './credentialPool.js';
 
+export function pcmToWav(pcmBuffer, sampleRate = 16000, numChannels = 1, bitsPerSample = 16) {
+    if (!Buffer.isBuffer(pcmBuffer)) {
+        pcmBuffer = Buffer.from(pcmBuffer || []);
+    }
+    if (pcmBuffer.length >= 4 && pcmBuffer.slice(0, 4).toString('ascii') === 'RIFF') {
+        return pcmBuffer;
+    }
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const dataSize = pcmBuffer.length;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
+    return Buffer.concat([header, pcmBuffer]);
+}
+
 export class GroqWhisperProvider {
     constructor(options = {}) {
         this.localProvider = options.localProvider;
@@ -16,6 +43,7 @@ export class GroqWhisperProvider {
             throw new Error('Cloud STT is disabled and no local provider available.');
         }
 
+        const wavBuffer = pcmToWav(audioBuffer);
         const WHISPER_HALLUCINATIONS = /^(thank you(\.|\!)?|thanks for watching(\.|\!)?|thank you for watching(\.|\!)?|subscribe(\.|\!)?|please subscribe(\.|\!)?|you(\.|\!)?|\.|\.\.\.|\[.*\]|jarvis(\.|\!)?)$/i;
         const modelsToTry = this.models;
         let lastError = null;
@@ -27,7 +55,7 @@ export class GroqWhisperProvider {
             try {
                 const requestFn = (apiKey) => {
                     const formData = new FormData();
-                    formData.append('file', new Blob([audioBuffer], { type: 'audio/wav' }), 'speech.wav');
+                    formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'speech.wav');
                     formData.append('model', modelId);
                     formData.append('response_format', 'json');
                     formData.append('temperature', '0');
