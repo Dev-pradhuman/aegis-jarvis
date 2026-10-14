@@ -43,6 +43,16 @@ export function routeRequest(text) {
   if (research) return { route: 'TOOL_CALL', capability: 'research.plan', args: { topic: research[1].replace(/\?$/, '').trim() }, confidence: 0.97 };
   const media = value.match(/^(?:please\s+)?(?:make|generate|create)\s+(?:me\s+)?(?:an?\s+)?(image|picture|video|clip)\b[\s:,-]*(.*)$/i);
   if (media) return { route: 'TOOL_CALL', capability: 'media.generate', args: { kind: /video|clip/i.test(media[1]) ? 'video' : 'image', prompt: media[2] || value }, confidence: 0.99 };
+  const browserSignIn = value.match(/^(?:jarvis[, ]+)?(?:open|launch)\s+(?:the\s+)?(?:headless\s+)?browser\s+(?:so\s+i\s+can\s+|to\s+)?(?:sign|log)\s*in(?:to|\s+to)?(?:\s+(.+?))?[.!]?$/i) ||
+    value.match(/^(?:jarvis[, ]+)?(?:sign|log)\s*in(?:to|\s+to)?\s+(.+?)\s+(?:in|using|via)\s+(?:the\s+)?(?:headless\s+)?browser[.!]?$/i);
+  if (browserSignIn) {
+    const rawTarget = (browserSignIn[1] || '').trim();
+    let url = rawTarget;
+    if (url && !/^https?:\/\//i.test(url)) {
+      url = `https://${url.replace(/^www\./i, '')}`;
+    }
+    return { route: 'TOOL_CALL', capability: 'browser.handoff', args: { url: url || null }, confidence: 0.99 };
+  }
   if (/^(open|launch|go to)\s+(youtube|youtube\.com)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: 'https://www.youtube.com', label: 'YouTube' }, confidence: 1 };
   const application = value.match(/^(?:please\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application))?[.!]?$/i);
   const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);

@@ -47,7 +47,7 @@ import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrain
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
 
 export default async function chatRoutes(req, res, url, state, ctx) {
-  const { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
+  const { json, safeWrite, safeEnd, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
 
   if (req.method === 'GET' && url.pathname === '/api/mcp/servers') return json(res, 200, { servers: await discoverMcpServers() });
     if (req.method === 'GET' && url.pathname === '/api/agents') return json(res, 200, { agents: (state.modelRouting?.telemetry || []).flatMap((route) => (route.delegations || []).map((stage, index) => ({ id: `${route.runId || route.requestId}-${index}`, name: stage.logicalModel, status: route.success === false ? 'failed' : 'completed', provider: stage.provider, runId: route.runId || route.requestId, at: route.timestamp }))).slice(0, 50), dynamicAgentsAvailable: false });
@@ -193,8 +193,61 @@ export default async function chatRoutes(req, res, url, state, ctx) {
   
         const input = await body(req); const text = String(input.message || input.request || '').trim();
         const isSSE = req.headers.accept === 'text/event-stream';
+        let clientDisconnected = false;
+        let ackTimer = null;
+        req.on('close', () => {
+          clientDisconnected = true;
+          clearTimeout(ackTimer);
+        });
         if (!text) return json(res, 400, { error: 'message or request is required' });
         if (text.length > 25000) return json(res, 413, { error: 'Request message exceeds maximum limit of 25,000 characters' });
+
+        // Natural browser verification/sign-in resume interception
+        if (browserManager.state === 'HUMAN_ACTION_REQUIRED' && /^(?:i(?:'m| am)?\s+)?(?:done|finished|continue|resumed?|i\s+(?:have\s+)?(?:logged|signed)\s+in|challenge\s+solved|solved)[.!]?$/i.test(text)) {
+          try {
+            const resumeResult = await browserManager.resume();
+            if (resumeResult.code === 'HUMAN_ACTION_REQUIRED') {
+              const reply = 'Verification or sign-in is still pending in the browser. Please complete it in the visible window, then reply "done" or click Resume Browser.';
+              if (isSSE) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders?.();
+                safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, assistant: 'JARVIS', grounded: true, status: browserManager.getStatus() })}\n\n`);
+                safeEnd(res);
+                return true;
+              }
+              return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, status: browserManager.getStatus() });
+            }
+            const reply = resumeResult.continuationResult?.reply || 'Browser resumed in headless mode and credentials preserved. Continuing your automation.';
+            if (isSSE) {
+              res.setHeader('Content-Type', 'text/event-stream');
+              res.setHeader('Cache-Control', 'no-cache');
+              res.setHeader('Connection', 'keep-alive');
+              res.flushHeaders?.();
+              safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+              safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, assistant: 'JARVIS', grounded: true, resumed: true, status: browserManager.getStatus() })}\n\n`);
+              safeEnd(res);
+              return true;
+            }
+            return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, resumed: true, status: browserManager.getStatus() });
+          } catch (err) {
+            const reply = `Could not resume browser: ${err.message}`;
+            if (isSSE) {
+              res.setHeader('Content-Type', 'text/event-stream');
+              res.setHeader('Cache-Control', 'no-cache');
+              res.setHeader('Connection', 'keep-alive');
+              res.flushHeaders?.();
+              safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+              safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, assistant: 'JARVIS', error: err.message })}\n\n`);
+              safeEnd(res);
+              return true;
+            }
+            return json(res, 200, { reply, assistant: 'JARVIS' });
+          }
+        }
+
         const routeStarted = performance.now(); const route = routeRequest(text);
         if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
           const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.origin = 'chat'; transitionRun(run, 'running');
@@ -227,6 +280,11 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           };
           try {
           if (route.capability === 'browser.open') { data = { action: 'open_url', url: route.args.url, label: route.args.label }; reply = `Opening ${route.args.label}.`; }
+          else if (route.capability === 'browser.handoff') {
+            await browserManager.handoff(route.args.url);
+            reply = `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`;
+            data = { action: 'browser.handoff', url: route.args.url };
+          }
           else if (route.capability.startsWith('audio.')) {
             const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
             if (response.status !== 200 || !response.body.ok) {
@@ -349,21 +407,20 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           if (input.source === 'voice') {
             assembledContext.context.push({ role: 'system', content: 'Reply concisely for speech. Do not output markdown, code blocks, or URLs.' });
           }
-          
-          let ackTimer = null;
           if (isSSE) {
+            if (clientDisconnected || res.writableEnded || res.destroyed) return true;
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
             res.flushHeaders?.();
-            res.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
+            safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
             if (modelRoute.requiresTools && input.source === 'voice') {
               const delay = parseInt(process.env.VOICE_ACK_DELAY_MS || '500', 10);
               if (delay <= 0) {
-                res.write(`data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
+                if (!clientDisconnected) safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
               } else {
                 ackTimer = setTimeout(() => {
-                  res.write(`data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
+                  if (!clientDisconnected) safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: 'Let me look into that...\n' })}\n\n`);
                 }, delay);
               }
             }
@@ -371,7 +428,11 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           try {
             const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: input.attachments || [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => {
                 if (isSSE) {
-                  options.onToken = (chunk) => res.write(`data: ${JSON.stringify({ type: 'token', text: chunk })}\n\n`);
+                  options.onToken = (chunk) => {
+                    if (!clientDisconnected) {
+                      safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: chunk })}\n\n`);
+                    }
+                  };
                 }
                 return modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options);
               } });
@@ -385,8 +446,10 @@ export default async function chatRoutes(req, res, url, state, ctx) {
               await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
               const approvalPayload = { reply: 'Waiting for approval...', runId: run.id, approvalRequired: true, approval: providerResult.approval };
               if (isSSE) {
-                res.write(`data: ${JSON.stringify({ type: 'done', ...approvalPayload })}\n\n`);
-                res.end();
+                if (!clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify({ type: 'done', ...approvalPayload })}\n\n`);
+                  safeEnd(res);
+                }
                 return true;
               }
               return json(res, 202, approvalPayload);
@@ -425,8 +488,10 @@ export default async function chatRoutes(req, res, url, state, ctx) {
         await updateState((draft) => { const stored = draft.runs?.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
         const payload = { reply, task: createdTask, assistant: 'JARVIS', grounded: !modelFailure && !run.routing?.site, runId: run.id, intent: run.plan.intent, plan: run.plan, model: run.model, modelIndicator: run.model ? { handledBy: run.model, fallbackFrom: run.routing?.modelFallbackUsed ? run.routing.fallbackFrom : null } : null, routing: process.env.JARVIS_ROUTER_DEBUG === 'true' ? run.routing : undefined, ...(modelFailure ? { error: modelFailure.message, code: modelFailure.code } : {}) };
         if (isSSE) {
-          res.write(`data: ${JSON.stringify({ type: 'done', ...payload })}\n\n`);
-          res.end();
+          if (!clientDisconnected) {
+            safeWrite(res, `data: ${JSON.stringify({ type: 'done', ...payload })}\n\n`);
+            safeEnd(res);
+          }
           return true;
         }
         return json(res, modelFailure ? (modelFailure.code === 'REQUEST_ERROR' ? 400 : modelFailure.code === 'HUMAN_ACTION_REQUIRED' ? 409 : 503) : 200, payload);

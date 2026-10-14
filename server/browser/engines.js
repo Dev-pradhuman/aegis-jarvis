@@ -1,7 +1,16 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
 
-const defaultProfile = fileURLToPath(new URL('../data/browser/firefox-profile/', import.meta.url));
+const defaultProfile = fileURLToPath(new URL('../data/browser-profile/', import.meta.url));
+
+export function focusBrowserWindow() {
+  try {
+    if (process.env.HYPRLAND_INSTANCE_SIGNATURE) {
+      execFile('hyprctl', ['dispatch', 'focuswindow', 'class:(?i)chromium|chrome|firefox'], () => {});
+    }
+  } catch {}
+}
 
 function safeFormScript() {
   return Array.from(document.querySelectorAll('input,textarea,select')).slice(0, 30).map((element) => ({
@@ -20,6 +29,23 @@ function accessibilityScript() {
     name: element.getAttribute('aria-label') || element.innerText?.trim().slice(0, 180) || element.getAttribute('placeholder') || '',
     href: element.tagName === 'A' ? element.href : undefined,
   }));
+}
+
+function challengeScript() {
+  const title = document.title || '';
+  const text = (document.body?.innerText || '').trim();
+  const botPattern = /captcha|turnstile|verify you are human|checking your browser|security challenge|cloudflare challenge|just a moment\.\.\.|human verification|attention required/i;
+  const otpPattern = /enter (?:one-time |verification |security )?code|enter otp|2-step verification|two-factor|authenticator code|confirm your identity/i;
+  const loginPattern = /sign in to continue|log in to continue|please sign in|login required/i;
+
+  const hasBot = botPattern.test(title) || (text.length < 2500 && botPattern.test(text)) || Boolean(document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], .cf-turnstile, #cf-challenge, .g-recaptcha, .h-captcha'));
+  const hasOtp = otpPattern.test(title) || (text.length < 2500 && otpPattern.test(text));
+  const hasLogin = loginPattern.test(title) || (text.length < 2500 && loginPattern.test(text));
+
+  if (hasBot) return { type: 'BOT_WALL', title, excerpt: text.slice(0, 240) };
+  if (hasOtp) return { type: 'OTP_2FA', title, excerpt: text.slice(0, 240) };
+  if (hasLogin) return { type: 'LOGIN_WALL', title, excerpt: text.slice(0, 240) };
+  return null;
 }
 
 export class LightpandaEngine {
@@ -46,7 +72,7 @@ export class LightpandaEngine {
   async accessibility() { return this.page.evaluate(accessibilityScript); }
   async waitFor(selector, timeout = 12000) { await this.page.waitForSelector(selector, { timeout }); return { selector, found: true }; }
   async formState() { return this.page.evaluate(safeFormScript).catch(() => []); }
-  async challenge() { return this.page.evaluate(() => { const title = document.title || ''; const text = (document.body?.innerText || '').trim(); const challenge = /captcha|verify you are human|checking your browser|security challenge|cloudflare challenge|enter (?:one-time |verification )?code|enter otp|2-step verification|two-factor|sign in to continue|human verification/i; return (challenge.test(title) || (text.length < 1800 && challenge.test(text))) && (document.querySelector('form,iframe,[id*=captcha],[class*=captcha]') || text.length < 600) ? { title, excerpt: text.slice(0, 240) } : null; }).catch(() => null); }
+  async challenge() { return this.page.evaluate(challengeScript).catch(() => null); }
   async close() {
     await this.page?.close().catch(() => {});
     await this.context?.close().catch(() => {});
@@ -56,40 +82,147 @@ export class LightpandaEngine {
   }
 }
 
-export class FirefoxEngine {
-  constructor(options = {}) { this.options = options; this.kind = 'firefox'; this.context = null; this.page = null; this.headed = false; }
+export class PatchrightEngine {
+  constructor(options = {}) {
+    this.options = options;
+    this.kind = options.kind || 'firefox';
+    this.context = null;
+    this.page = null;
+    this.headed = false;
+    this.authenticatedDomains = new Set();
+  }
+
   async start({ headed = false } = {}) {
-    const { firefox, chromium } = await import('playwright');
-    const profile = path.resolve(this.options.profileDir || process.env.BROWSER_FIREFOX_PROFILE || defaultProfile);
-    try {
-      this.context = await firefox.launchPersistentContext(profile, { headless: !headed, viewport: { width: 1440, height: 900 }, acceptDownloads: true });
-    } catch (err) {
-      if (/Executable doesn't exist|browserType\.launch/i.test(err?.message || '')) {
-        const chromProfile = path.resolve(path.dirname(profile), 'chromium-profile');
-        this.context = await chromium.launchPersistentContext(chromProfile, { headless: !headed, viewport: { width: 1440, height: 900 }, acceptDownloads: true });
-      } else {
-        throw err;
-      }
-    }
+    const { chromium } = await import('patchright');
+    const profile = path.resolve(this.options.profileDir || process.env.BROWSER_PROFILE_DIR || defaultProfile);
+    this.context = await chromium.launchPersistentContext(profile, {
+      headless: !headed,
+      viewport: { width: 1440, height: 900 },
+      acceptDownloads: true,
+      args: [
+        '--no-sandbox',
+        '--disable-blink-features=AutomationControlled',
+      ],
+    });
     this.headed = headed;
     this.page = this.context.pages()[0] || await this.context.newPage();
-    this.page.setDefaultTimeout(12000);
+    this.page.setDefaultTimeout(15000);
   }
-  isHealthy() { return Boolean(this.context && this.page && !this.page.isClosed() && this.context.browser()?.isConnected()); }
-  url() { return this.page?.url() || null; }
-  async navigate(url) { await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 }); return { url: this.url(), title: await this.page.title() }; }
-  async click(selector) { await this.page.locator(selector).click({ timeout: 12000 }); return { url: this.url(), selector }; }
-  async type(selector, text) { await this.page.locator(selector).fill(text, { timeout: 12000 }); return { url: this.url(), selector, length: text.length }; }
-  async evaluate(code) { return this.page.evaluate(code); }
-  async read() { return this.page.evaluate(() => ({ title: document.title, text: (document.body?.innerText || '').slice(0, 30000), links: Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((a) => ({ text: a.innerText?.trim().slice(0, 120) || '', href: a.href })) })); }
-  async content() { return (await this.page.content()).slice(0, 200000); }
-  async accessibility() { return this.page.evaluate(accessibilityScript); }
-  async screenshot() { return { mimeType: 'image/png', data: (await this.page.screenshot({ type: 'png' })).toString('base64'), url: this.url() }; }
-  async waitFor(selector, timeout = 12000) { await this.page.locator(selector).waitFor({ timeout }); return { selector, found: true }; }
-  async formState() { return this.page.evaluate(safeFormScript).catch(() => []); }
-  async applyFormState(fields = []) { await this.page.evaluate((values) => { for (const field of values) { const element = field.id ? document.getElementById(field.id) : Array.from(document.getElementsByName(field.name || '')).find((node) => node.tagName.toLowerCase() === field.tag); if (element && element.type !== 'password') { element.value = field.value; element.dispatchEvent(new Event('input', { bubbles: true })); } } }, fields).catch(() => {}); }
-  async challenge() { return this.page.evaluate(() => { const title = document.title || ''; const text = (document.body?.innerText || '').trim(); const challenge = /captcha|verify you are human|checking your browser|security challenge|cloudflare challenge|enter (?:one-time |verification )?code|enter otp|2-step verification|two-factor|sign in to continue|human verification/i; return (challenge.test(title) || (text.length < 1800 && challenge.test(text))) && (document.querySelector('form,iframe,[id*=captcha],[class*=captcha]') || text.length < 600) ? { title, excerpt: text.slice(0, 240) } : null; }).catch(() => null); }
-  async bringToFront() { await this.page.bringToFront(); }
-  async relaunchHeaded() { const url = this.url(); const fields = this.page ? await this.formState() : []; await this.close(); await this.start({ headed: true }); if (url && /^https?:/.test(url)) { await this.navigate(url); await this.applyFormState(fields); } }
-  async close() { await this.context?.close().catch(() => {}); this.context = this.page = null; this.headed = false; }
+
+  isHealthy() {
+    return Boolean(this.context && this.page && !this.page.isClosed() && (this.context.browser?.() ? this.context.browser().isConnected() : true));
+  }
+
+  url() {
+    return this.page?.url() || null;
+  }
+
+  async navigate(url) {
+    await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    return { url: this.url(), title: await this.page.title() };
+  }
+
+  async click(selector) {
+    await this.page.locator(selector).click({ timeout: 12000 });
+    return { url: this.url(), selector };
+  }
+
+  async type(selector, text) {
+    await this.page.locator(selector).fill(text, { timeout: 12000 });
+    return { url: this.url(), selector, length: text.length };
+  }
+
+  async evaluate(code) {
+    return this.page.evaluate(code);
+  }
+
+  async read() {
+    return this.page.evaluate(() => ({
+      title: document.title,
+      text: (document.body?.innerText || '').slice(0, 30000),
+      links: Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((a) => ({
+        text: a.innerText?.trim().slice(0, 120) || '',
+        href: a.href,
+      })),
+    }));
+  }
+
+  async content() {
+    return (await this.page.content()).slice(0, 200000);
+  }
+
+  async accessibility() {
+    return this.page.evaluate(accessibilityScript);
+  }
+
+  async screenshot() {
+    return {
+      mimeType: 'image/png',
+      data: (await this.page.screenshot({ type: 'png' })).toString('base64'),
+      url: this.url(),
+    };
+  }
+
+  async waitFor(selector, timeout = 12000) {
+    await this.page.locator(selector).waitFor({ timeout });
+    return { selector, found: true };
+  }
+
+  async formState() {
+    return this.page.evaluate(safeFormScript).catch(() => []);
+  }
+
+  async applyFormState(fields = []) {
+    await this.page.evaluate((values) => {
+      for (const field of values) {
+        const element = field.id ? document.getElementById(field.id) : Array.from(document.getElementsByName(field.name || '')).find((node) => node.tagName.toLowerCase() === field.tag);
+        if (element && element.type !== 'password') {
+          element.value = field.value;
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    }, fields).catch(() => {});
+  }
+
+  async challenge() {
+    return this.page.evaluate(challengeScript).catch(() => null);
+  }
+
+  async bringToFront() {
+    if (this.page) {
+      await this.page.bringToFront().catch(() => {});
+    }
+    focusBrowserWindow();
+  }
+
+  async relaunchHeaded() {
+    const url = this.url();
+    const fields = this.page ? await this.formState() : [];
+    await this.close();
+    await this.start({ headed: true });
+    if (url && /^https?:/.test(url)) {
+      await this.navigate(url);
+      await this.applyFormState(fields);
+    }
+    await this.bringToFront();
+  }
+
+  async relaunchHeadless() {
+    const url = this.url();
+    const fields = this.page ? await this.formState() : [];
+    await this.close();
+    await this.start({ headed: false });
+    if (url && /^https?:/.test(url)) {
+      await this.navigate(url);
+      await this.applyFormState(fields);
+    }
+  }
+
+  async close() {
+    await this.context?.close().catch(() => {});
+    this.context = this.page = null;
+    this.headed = false;
+  }
 }
+
+export const FirefoxEngine = PatchrightEngine;

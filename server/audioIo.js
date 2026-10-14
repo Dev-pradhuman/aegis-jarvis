@@ -48,6 +48,8 @@ export class AudioPlayback {
       this.stop();
       this.process = spawn(this.playCommand, this.playArgs);
       
+      this.process.stdin.on('error', () => {});
+      sourceStream.on?.('error', () => {});
       sourceStream.pipe(this.process.stdin);
       
       this.process.on('error', err => {

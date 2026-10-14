@@ -130,6 +130,7 @@ export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000, i
   function ensureChild() {
     if (child) return;
     child = spawnImpl('python3', [helperPath], { stdio: ['pipe', 'pipe', 'ignore'] });
+    child.stdin?.on('error', () => {});
     reader = createInterface({ input: child.stdout });
     reader.on('line', (line) => {
       let reply;

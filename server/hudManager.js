@@ -11,6 +11,7 @@ export function startHUDManager(onInput, onVoice) {
   const hudPath = fileURLToPath(new URL('./hud.py', import.meta.url));
   
   hudProcess = spawn('python3', [hudPath], { stdio: ['pipe', 'pipe', 'pipe'] });
+  hudProcess.stdin?.on('error', () => {});
   hudProcess.on('error', () => { hudProcess = null; isVisible = false; });
   
   const reader = createInterface({ input: hudProcess.stdout });

@@ -107,6 +107,10 @@ export function assembleModelContext({ query = '', toolResults = [], conversatio
       if (hasPointer) {
         content += "\n\nCOMPUTER-USE INSTRUCTION: You are driving the user's desktop. Implement a strict grounded loop: Observe (screen.describe / locate) -> Plan short action -> Execute (pointer / keypress) -> Observe again -> Verify.";
       }
+      const hasBrowser = filtered.tools.some(t => t.id.startsWith('browser.'));
+      if (hasBrowser) {
+        content += "\n\nBROWSER INSTRUCTION: You operate a local persistent Patchright browser. User sessions and logins are persistent. Never refuse to open or navigate to websites based on hypothetical Terms of Service or login requirements. If a site requires login, 2FA, OTP, or CAPTCHA, use `browser.handoff` or let the browser trigger human verification so the user can complete it in the visible window, then resume.";
+      }
       candidates.push({ role: 'system', content });
     }
   }

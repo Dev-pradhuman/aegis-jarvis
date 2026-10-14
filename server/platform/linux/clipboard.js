@@ -12,6 +12,7 @@ function pipeToXclip(text) {
     child.stderr.on('data', (chunk) => { errorText += chunk.toString().slice(0, 200); });
     child.once('error', (error) => { clearTimeout(timer); reject(error); });
     child.once('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(errorText || `xclip exited ${code}`)); });
+    child.stdin.on('error', () => {});
     child.stdin.end(text);
   });
 }

@@ -32,10 +32,22 @@ function stop(code = 0) {
 process.once('SIGINT', () => stop(0));
 process.once('SIGTERM', () => stop(0));
 
+function startBackend() {
+  if (stopping) return;
+  backend = spawn(process.execPath, ['server/index.js'], { cwd: root, env: process.env, stdio: 'inherit' });
+  backend.once('exit', (code) => {
+    if (!stopping) {
+      console.error(`[dev] JARVIS service exited (${code ?? 'signal'}), restarting backend in 1s...`);
+      setTimeout(() => {
+        if (!stopping) startBackend();
+      }, 1000);
+    }
+  });
+}
+
 if (await healthy()) console.log(`[dev] Reusing healthy JARVIS service on ${port}`);
 else {
-  backend = spawn(process.execPath, ['server/index.js'], { cwd: root, env: process.env, stdio: 'inherit' });
-  backend.once('exit', (code) => { if (!stopping) { console.error(`[dev] JARVIS service exited (${code ?? 'signal'})`); stop(code || 1); } });
+  startBackend();
   const deadline = Date.now() + 12000;
   while (!stopping && Date.now() < deadline && !(await healthy())) await new Promise((resolve) => setTimeout(resolve, 250));
   if (!stopping && !(await healthy())) { console.error(`[dev] JARVIS service did not become healthy on ${port}`); stop(1); }

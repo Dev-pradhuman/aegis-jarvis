@@ -18,7 +18,7 @@ function classify(error) {
 export class BrowserManager {
   constructor(options = {}) {
     this.createLightpanda = options.createLightpanda || (() => new LightpandaEngine(options));
-    this.createFirefox = options.createFirefox || (() => new FirefoxEngine(options));
+    this.createFirefox = options.createFirefox || options.createPatchright || (() => new FirefoxEngine(options));
     this.maxRetries = Math.max(0, Math.min(3, Number(options.maxRetries ?? process.env.BROWSER_MAX_RETRIES ?? 1)));
     this.idleTimeoutMs = Math.max(100, Number(options.idleTimeoutMs ?? process.env.BROWSER_IDLE_TIMEOUT_MS ?? 120000));
     this.logger = options.logger || console;
@@ -26,6 +26,8 @@ export class BrowserManager {
     this.state = 'IDLE';
     this.history = [];
     this.pending = null;
+    this.pendingContinuation = null;
+    this.authenticatedDomains = new Set();
     this.lastError = null;
     this.currentUrl = null;
     this.lastEngine = null;
@@ -36,10 +38,34 @@ export class BrowserManager {
     this.queue = Promise.resolve();
   }
 
-  getStatus() { return { state: this.state, engine: this.engine?.kind || null, url: this.engine?.url?.() || this.currentUrl, headed: Boolean(this.engine?.headed), active: !['IDLE', 'ERROR', 'HUMAN_ACTION_REQUIRED'].includes(this.state) && (this.busy || Date.now() - this.lastActionAt < 8000), history: this.history.slice(-8), humanActionRequired: this.state === 'HUMAN_ACTION_REQUIRED', pending: this.pending, lastError: this.lastError }; }
+  getStatus() {
+    return {
+      state: this.state,
+      engine: this.engine?.kind || null,
+      url: this.engine?.url?.() || this.currentUrl,
+      headed: Boolean(this.engine?.headed),
+      active: !['IDLE', 'ERROR', 'HUMAN_ACTION_REQUIRED'].includes(this.state) && (this.busy || Date.now() - this.lastActionAt < 8000),
+      history: this.history.slice(-8),
+      humanActionRequired: this.state === 'HUMAN_ACTION_REQUIRED',
+      pending: this.pending,
+      pendingContinuation: this.pendingContinuation,
+      authenticatedDomains: Array.from(this.authenticatedDomains),
+      lastError: this.lastError
+    };
+  }
+
+  isDomainAuthenticated(url) {
+    try {
+      return this.authenticatedDomains.has(new URL(url).hostname);
+    } catch {
+      return false;
+    }
+  }
+
   log(message) { this.logger.info?.(`[browser] ${message}`); }
   record(reason, from, to) { this.history.push({ at: new Date().toISOString(), reason, from, to }); this.history = this.history.slice(-16); }
   serial(task) { const next = this.queue.then(task, task); this.queue = next.catch(() => {}); return next; }
+
   scheduleIdle() {
     clearTimeout(this.idleTimer);
     if (this.engine?.kind !== 'firefox' || this.state === 'HUMAN_ACTION_REQUIRED') return;
@@ -53,17 +79,30 @@ export class BrowserManager {
     }); }, this.idleTimeoutMs);
     this.idleTimer.unref?.();
   }
+
   async start(kind, headed = false) {
     this.state = kind === 'firefox' ? 'FIREFOX_STARTING' : 'LIGHTPANDA_ACTIVE';
     const engine = kind === 'firefox' ? this.createFirefox() : this.createLightpanda();
-    try { await engine.start({ headed }); this.engine = engine; this.state = kind === 'firefox' ? 'FIREFOX_ACTIVE' : 'LIGHTPANDA_ACTIVE'; this.log(`${kind} started`); return engine; }
-    catch (error) { await engine.close().catch(() => {}); this.state = 'ERROR'; this.lastError = error.message; throw new BrowserError(kind === 'firefox' ? 'FIREFOX_START_FAILED' : 'BROWSER_UNAVAILABLE', `${kind} could not start: ${error.message}`, error); }
+    try {
+      await engine.start({ headed });
+      this.engine = engine;
+      this.state = kind === 'firefox' ? 'FIREFOX_ACTIVE' : 'LIGHTPANDA_ACTIVE';
+      this.log(`${kind} started`);
+      return engine;
+    } catch (error) {
+      await engine.close().catch(() => {});
+      this.state = 'ERROR';
+      this.lastError = error.message;
+      throw new BrowserError(kind === 'firefox' ? 'FIREFOX_START_FAILED' : 'BROWSER_UNAVAILABLE', `${kind} could not start: ${error.message}`, error);
+    }
   }
+
   async ensure(kind) {
     if (this.engine?.kind === kind && this.engine.isHealthy()) return this.engine;
     if (this.engine) { this.currentUrl = this.engine.url() || this.currentUrl; await this.engine.close(); this.engine = null; }
     return this.start(kind);
   }
+
   async fallback(reason) {
     const from = this.engine?.kind || 'lightpanda';
     const url = this.engine?.url?.() || this.currentUrl;
@@ -74,6 +113,7 @@ export class BrowserManager {
     catch (error) { this.state = 'ERROR'; throw error instanceof BrowserError ? error : new BrowserError('FIREFOX_START_FAILED', error.message, error); }
     return engine;
   }
+
   async recover() {
     const kind = this.engine?.kind || 'lightpanda';
     const url = this.engine?.url?.() || this.currentUrl;
@@ -85,20 +125,52 @@ export class BrowserManager {
     if (url && /^https?:\/\//i.test(url)) await engine.navigate(url);
     return engine;
   }
-  async checkChallenge(action, args) {
+
+  async checkChallenge(action, args, continuation = null) {
     let challenge = await this.engine.challenge?.();
     if (!challenge) return null;
-    if (this.engine.kind !== 'firefox') { await this.fallback('human verification'); challenge = await this.engine.challenge?.() || challenge; }
+    if (this.engine.kind !== 'firefox') {
+      await this.fallback('human verification');
+      challenge = await this.engine.challenge?.() || challenge;
+    }
     let handoffError = null;
     if (!this.engine.headed) {
-      try { await this.engine.relaunchHeaded(); }
-      catch (error) { handoffError = `Could not open headed Firefox: ${error.message}`; }
+      try {
+        await this.engine.relaunchHeaded();
+        await this.engine.bringToFront();
+      } catch (error) {
+        handoffError = `Could not open headed browser: ${error.message}`;
+      }
+    } else {
+      await this.engine.bringToFront().catch(() => {});
     }
     this.state = 'HUMAN_ACTION_REQUIRED';
-    this.pending = { action, url: this.engine.url() || this.currentUrl, challenge, headed: Boolean(this.engine.headed), handoffError };
-    clearTimeout(this.idleTimer); this.log('human verification required');
-    return { code: 'HUMAN_ACTION_REQUIRED', humanActionRequired: true, ...this.pending, status: this.getStatus() };
+    this.pendingContinuation = continuation || this.pendingContinuation || {
+      toolId: `browser.${action}`,
+      action,
+      args,
+      url: this.engine.url() || this.currentUrl,
+      reason: challenge.type || challenge.title || 'CHALLENGE_DETECTED',
+    };
+    this.pending = {
+      action,
+      url: this.engine.url() || this.currentUrl,
+      challenge,
+      headed: Boolean(this.engine.headed),
+      handoffError,
+      continuation: this.pendingContinuation,
+    };
+    clearTimeout(this.idleTimer);
+    this.log('human verification required');
+    return {
+      code: 'HUMAN_ACTION_REQUIRED',
+      humanActionRequired: true,
+      ...this.pending,
+      pendingContinuation: this.pendingContinuation,
+      status: this.getStatus()
+    };
   }
+
   async perform(action, args = {}) {
     if (!VALID_ACTIONS.has(action)) throw new BrowserError('BROWSER_UNAVAILABLE', `Unsupported browser action: ${action}`);
     if (this.state === 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'Complete the verification in Firefox, then resume.');
@@ -145,6 +217,7 @@ export class BrowserManager {
     this.lastError = null; this.scheduleIdle(); this.log(`${this.engine.kind} ${action} success`);
     return { result, status: this.getStatus() };
   }
+
   execute(action, args) { return this.serial(async () => { this.busy = true; try { return await this.perform(action, args); } finally { this.busy = false; this.lastActionAt = Date.now(); } }); }
   navigate(url, options = {}) { return this.execute('navigate', { url, ...options }); }
   click(selector, options = {}) { return this.execute('click', { selector, ...options }); }
@@ -155,6 +228,7 @@ export class BrowserManager {
   screenshot() { return this.execute('screenshot'); }
   waitFor(selector, timeout) { return this.execute('waitFor', { selector, timeout }); }
   evaluate(code) { return this.execute('evaluate', { code }); }
+
   openHeaded(url) { return this.serial(async () => {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new BrowserError('NAVIGATION_FAILED', 'Only HTTP and HTTPS URLs are allowed.');
@@ -167,7 +241,96 @@ export class BrowserManager {
     clearTimeout(this.idleTimer); // Keep the headed window open for interactive sign-in.
     return { status: this.getStatus() };
   }); }
-  handoff() { return this.serial(async () => { if (this.state !== 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'No human verification is pending.'); if (!this.engine.headed) await this.engine.relaunchHeaded(); if (!/^https?:\/\//i.test(this.engine.url() || '') && this.pending.url) await this.engine.navigate(this.pending.url); await this.engine.bringToFront(); this.pending.headed = true; this.pending.handoffError = null; return { status: this.getStatus() }; }); }
-  resume() { return this.serial(async () => { if (this.state !== 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'No human verification is pending.'); if (await this.engine.challenge()) return { code: 'HUMAN_ACTION_REQUIRED', humanActionRequired: true, status: this.getStatus() }; const resumed = this.pending; this.pending = null; this.state = 'FIREFOX_ACTIVE'; this.scheduleIdle(); this.log('resumed after human handoff'); return { resumed, status: this.getStatus() }; }); }
-  close() { return this.serial(async () => { clearTimeout(this.idleTimer); await this.engine?.close().catch(() => {}); this.engine = null; this.pending = null; this.currentUrl = null; this.lastEngine = null; this.lastFields = []; this.lastActionAt = 0; this.state = 'IDLE'; return { status: this.getStatus() }; }); }
+
+  handoff(targetUrl = null) { return this.serial(async () => {
+    const url = targetUrl || this.pending?.url || this.currentUrl;
+    if (!this.engine) {
+      await this.start('firefox', true);
+    } else if (!this.engine.headed) {
+      await this.engine.relaunchHeaded();
+    }
+    if (url && /^https?:\/\//i.test(url)) {
+      await this.engine.navigate(url);
+    }
+    await this.engine.bringToFront();
+    if (this.state === 'HUMAN_ACTION_REQUIRED') {
+      if (this.pending) {
+        this.pending.headed = true;
+        this.pending.handoffError = null;
+      }
+    } else {
+      this.state = 'HUMAN_ACTION_REQUIRED';
+      this.pending = {
+        action: 'handoff',
+        url: this.engine.url() || url,
+        challenge: { type: 'LOGIN_SIGNIN', title: 'Interactive User Sign-in' },
+        headed: true,
+        handoffError: null
+      };
+    }
+    clearTimeout(this.idleTimer);
+    return { status: this.getStatus() };
+  }); }
+
+  resume() { return this.serial(async () => {
+    if (this.state !== 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'No human verification is pending.');
+    if (await this.engine.challenge()) return { code: 'HUMAN_ACTION_REQUIRED', humanActionRequired: true, status: this.getStatus() };
+    const resumed = this.pending;
+    const continuation = this.pendingContinuation;
+    this.pending = null;
+    this.pendingContinuation = null;
+
+    // Pin authenticated domain
+    const currentUrl = this.engine.url() || this.currentUrl;
+    if (currentUrl) {
+      try {
+        const domain = new URL(currentUrl).hostname;
+        if (domain) {
+          this.authenticatedDomains.add(domain);
+          this.engine.authenticatedDomains?.add?.(domain);
+        }
+      } catch {}
+    }
+
+    // Switch back to headless if currently headed
+    if (this.engine.headed && typeof this.engine.relaunchHeadless === 'function') {
+      try {
+        await this.engine.relaunchHeadless();
+      } catch (err) {
+        this.log(`relaunchHeadless failed: ${err.message}`);
+      }
+    }
+
+    this.state = 'FIREFOX_ACTIVE';
+    this.scheduleIdle();
+    this.log('resumed after human handoff');
+
+    // Auto-continue pending action if present
+    let continuationResult = null;
+    if (continuation && continuation.action && continuation.action !== 'resume') {
+      try {
+        this.log(`auto-continuing pending action: ${continuation.action}`);
+        continuationResult = await this.perform(continuation.action, continuation.args || {});
+      } catch (err) {
+        this.log(`continuation failed: ${err.message}`);
+        continuationResult = { error: err.message };
+      }
+    }
+
+    return { resumed, continuation, continuationResult, status: this.getStatus() };
+  }); }
+
+  close() { return this.serial(async () => {
+    clearTimeout(this.idleTimer);
+    await this.engine?.close().catch(() => {});
+    this.engine = null;
+    this.pending = null;
+    this.pendingContinuation = null;
+    this.currentUrl = null;
+    this.lastEngine = null;
+    this.lastFields = [];
+    this.lastActionAt = 0;
+    this.state = 'IDLE';
+    return { status: this.getStatus() };
+  }); }
 }

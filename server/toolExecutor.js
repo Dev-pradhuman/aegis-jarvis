@@ -246,7 +246,7 @@ async function runTool(toolId, input = {}, context = {}) {
       'browser.screenshot': () => browserManager.screenshot(),
       'browser.wait': () => browserManager.waitFor(input.selector, input.timeout),
       'browser.evaluate': () => browserManager.evaluate(input.code),
-      'browser.handoff': () => browserManager.handoff(),
+      'browser.handoff': () => browserManager.handoff(input.url),
       'browser.resume': () => browserManager.resume(),
       'browser.close': () => browserManager.close(),
     };

@@ -24,6 +24,7 @@
     "ai": "^7.0.122",
     "dotenv": "^18.0.4",
     "lucide-react": "^1.47.0",
+    "patchright": "^1.64.0",
     "playwright": "^1.63.0",
     "puppeteer-core": "^25.12.0",
     "react": "^18.3.1",

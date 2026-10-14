@@ -53,6 +53,7 @@ import systemRoutes from './routes/system.js';
 import chatRoutes from './routes/chat.js';
 import deviceRoutes from './routes/device.js';
 import brainRoutes from './routes/brain.js';
+import { safeWrite, safeEnd } from './streamUtils.js';
 
 
 const port = Number(process.env.JARVIS_PORT || 8787);
@@ -86,8 +87,15 @@ async function processSchedulerTick() {
   finally { schedulerTickInFlight = null; }
 }
 const json = (res, status, body) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(JSON.stringify(body));
+  if (!res || res.writableEnded || res.destroyed) return;
+  try {
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    safeEnd(res, JSON.stringify(body));
+  } catch (err) {
+    if (err.code !== 'EPIPE' && err.code !== 'ECONNRESET' && err.code !== 'ERR_STREAM_WRITE_AFTER_END') {
+      console.warn('[server] json write error:', err.message);
+    }
+  }
 };
 
 async function body(req) {
@@ -169,8 +177,26 @@ voicePipeline.on('transcription', async (text) => {
 const handleVoiceRoute = voiceRoutes(voicePipeline);
 
 const server = http.createServer(async (req, res) => {
+  req.on('error', (err) => {
+    if (err.code !== 'ECONNRESET' && err.code !== 'EPIPE') {
+      console.warn('[server] req error:', err.message);
+    }
+  });
+  res.on('error', (err) => {
+    if (err.code !== 'ECONNRESET' && err.code !== 'EPIPE') {
+      console.warn('[server] res error:', err.message);
+    }
+  });
+  if (req.socket && !req.socket._hasJarvisErrorHandler) {
+    req.socket._hasJarvisErrorHandler = true;
+    req.socket.on('error', (err) => {
+      if (err.code !== 'ECONNRESET' && err.code !== 'EPIPE') {
+        console.warn('[server] socket error:', err.message);
+      }
+    });
+  }
   if (!requestOriginAllowed(req)) return json(res, 403, { error: 'Origin or host is not allowed' });
-  if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': req.headers.origin || '', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type,authorization', vary: 'Origin' }); return res.end(); }
+  if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': req.headers.origin || '', 'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers': 'content-type,authorization', vary: 'Origin' }); return safeEnd(res); }
   const url = new URL(req.url, `http://${req.headers.host}`);
   
   if (url.pathname.startsWith('/api/voice/')) {
@@ -191,7 +217,7 @@ const server = http.createServer(async (req, res) => {
     const companionEndpoint = req.method === 'POST' && ['/api/device/pair', '/api/device/events'].includes(url.pathname);
     if (process.env.JARVIS_AUTH_TOKEN && !companionEndpoint && !authorized(req)) return json(res, 401, { error: 'Authentication required' });
     const state = await getState();
-        const ctx = { voicePipeline, json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port };
+    const ctx = { voicePipeline, json, safeWrite, safeEnd, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port };
     await systemRoutes(req, res, url, state, ctx);
     if (res.headersSent) return;
     await chatRoutes(req, res, url, state, ctx);
@@ -238,6 +264,21 @@ async function shutdownBrowser() {
 }
 process.once('SIGINT', shutdownBrowser);
 process.once('SIGTERM', shutdownBrowser);
+
+process.stdout?.on('error', (err) => {
+  if (err?.code === 'EPIPE') return;
+});
+process.stderr?.on('error', (err) => {
+  if (err?.code === 'EPIPE') return;
+});
+process.on('uncaughtException', (error) => {
+  if (error?.code === 'EPIPE' || error?.code === 'ECONNRESET' || error?.code === 'ERR_STREAM_WRITE_AFTER_END') {
+    console.warn(`[server] caught benign socket/stream error: ${error.code}`);
+    return;
+  }
+  console.error('[server] Uncaught exception:', error);
+  process.exit(1);
+});
 
 const schedulerTimer = setInterval(async () => {
   if (!schedulerEnabled) return;
