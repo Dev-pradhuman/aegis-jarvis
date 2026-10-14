@@ -58,7 +58,15 @@ test('GroqWhisperProvider respects disabled state', async () => {
     assert.ok(localCalled);
 });
 
-import { detectReplyLanguage, getLanguageTtsCascade, synthesizeSpeech } from '../server/tts.js';
+import {
+    detectReplyLanguage,
+    getLanguageTtsCascade,
+    synthesizeSpeech,
+    ttsStatus,
+    setProviderCooldown,
+    clearProviderCooldown,
+    isProviderOnCooldown
+} from '../server/tts.js';
 
 test('detectReplyLanguage identifies English vs Hindi correctly', () => {
     assert.strictEqual(detectReplyLanguage('Hello, this is JARVIS.'), 'en');
@@ -77,6 +85,7 @@ test('getLanguageTtsCascade orders Fish Audio first for English and ElevenLabs f
 });
 
 test('synthesizeSpeech falls back to text-only mode when both providers fail', async () => {
+    clearProviderCooldown();
     // English cascade test
     const enResult = await synthesizeSpeech({ text: 'Hello, systems are ready.' });
     assert.strictEqual(enResult.textOnly, true);
@@ -86,5 +95,37 @@ test('synthesizeSpeech falls back to text-only mode when both providers fail', a
     const hiResult = await synthesizeSpeech({ text: 'नमस्ते, सिस्टम तैयार है।' });
     assert.strictEqual(hiResult.textOnly, true);
     assert.strictEqual(hiResult.language, 'hi');
+});
+
+test('circuit breaker marks provider on cooldown and ttsStatus exposes it', () => {
+    clearProviderCooldown();
+    assert.strictEqual(isProviderOnCooldown('fish-audio'), false);
+    setProviderCooldown('fish-audio', 'Insufficient API credit', 402);
+    assert.strictEqual(isProviderOnCooldown('fish-audio'), true);
+
+    const status = ttsStatus();
+    assert.strictEqual(status.fishAudio.onCooldown, true);
+    assert.ok(status.cooldowns['fish-audio']);
+    assert.strictEqual(status.cooldowns['fish-audio'].active, true);
+    assert.ok(status.cooldowns['fish-audio'].remainingMs > 0);
+
+    clearProviderCooldown();
+    assert.strictEqual(isProviderOnCooldown('fish-audio'), false);
+    assert.strictEqual(ttsStatus().fishAudio.onCooldown, false);
+});
+
+test('synthesizeSpeech skips cooled-down providers immediately', async () => {
+    clearProviderCooldown();
+    setProviderCooldown('fish-audio', 'Rate limited or quota exceeded', 429);
+
+    // English cascade: normally ['fish-audio', 'elevenlabs'].
+    // Since fish-audio is on cooldown, it should skip fish-audio and try elevenlabs directly.
+    const start = Date.now();
+    const result = await synthesizeSpeech({ text: 'Testing circuit breaker bypass.' });
+    const elapsed = Date.now() - start;
+
+    assert.strictEqual(result.textOnly, true);
+    assert.ok(elapsed < 200, `Bypass should complete in < 200ms without waiting on fish-audio, took ${elapsed}ms`);
+    clearProviderCooldown();
 });
 

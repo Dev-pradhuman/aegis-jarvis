@@ -2,6 +2,30 @@ import { assertPaidApiAllowed, paidApiUsageEnabled } from './spendPolicy.js';
 
 const textValue = (value, max = 5000) => String(value || '').trim().slice(0, max);
 
+export const COOLDOWN_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+export const ttsProviderCooldownUntil = new Map();
+
+export function isProviderOnCooldown(provider) {
+  const until = ttsProviderCooldownUntil.get(provider);
+  if (!until) return false;
+  if (Date.now() > until) {
+    ttsProviderCooldownUntil.delete(provider);
+    return false;
+  }
+  return true;
+}
+
+export function setProviderCooldown(provider, reason = '', statusCode = null) {
+  const until = Date.now() + COOLDOWN_DURATION_MS;
+  ttsProviderCooldownUntil.set(provider, until);
+  console.warn(`[TTS CircuitBreaker] Marked provider '${provider}' on cooldown for 30m until ${new Date(until).toISOString()} (HTTP ${statusCode || 'ERR'}: ${reason || 'Quota/Auth error'})`);
+}
+
+export function clearProviderCooldown(provider) {
+  if (provider) ttsProviderCooldownUntil.delete(provider);
+  else ttsProviderCooldownUntil.clear();
+}
+
 export function detectReplyLanguage(text = '', explicitLanguage = '') {
   if (explicitLanguage === 'hi' || explicitLanguage === 'hindi') return 'hi';
   if (explicitLanguage === 'en' || explicitLanguage === 'english') return 'en';
@@ -26,17 +50,31 @@ export function ttsStatus() {
   const provider = process.env.TTS_PROVIDER || 'cascade';
   const hasGroq = credentialEntries('GROQ_API_KEY').length > 0;
   const preferredStt = process.env.STT_PROVIDER || (hasGroq ? 'groq' : 'browser');
+  const now = Date.now();
+  const cooldowns = {};
+  for (const [p, until] of ttsProviderCooldownUntil.entries()) {
+    if (until > now) {
+      cooldowns[p] = {
+        active: true,
+        remainingMs: until - now,
+        until: new Date(until).toISOString()
+      };
+    }
+  }
+
   return {
     provider,
     apiSpeechDisabledByZeroSpend: !paidApiUsageEnabled(),
     sttProvider: process.env.STT_PROVIDER === 'browser' ? 'browser' : (hasGroq ? 'groq' : preferredStt),
     configuredSttProvider: preferredStt,
+    cooldowns,
     outputDesign: {
       english: ['fish-audio', 'elevenlabs', 'text-only'],
       hindi: ['elevenlabs', 'fish-audio', 'text-only']
     },
     elevenlabs: {
       configured: Boolean(process.env.ELEVENLABS_API_KEY),
+      onCooldown: isProviderOnCooldown('elevenlabs'),
       modelIdEn: process.env.ELEVENLABS_MODEL_ID_EN || process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
       modelIdHi: process.env.ELEVENLABS_MODEL_ID_HI || process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
       voiceIdEn: process.env.ELEVENLABS_VOICE_ID || 'bIHbv24MWmeRgasZH58o',
@@ -45,6 +83,7 @@ export function ttsStatus() {
     },
     fishAudio: {
       configured: Boolean(process.env.FISH_AUDIO_API_KEY),
+      onCooldown: isProviderOnCooldown('fish-audio'),
       modelIdEn: process.env.FISH_AUDIO_MODEL_ID_EN || process.env.FISH_AUDIO_MODEL_ID || 's2-pro',
       modelIdHi: process.env.FISH_AUDIO_MODEL_ID_HI || process.env.FISH_AUDIO_MODEL_ID || 's2-pro',
       voiceIdEn: process.env.FISH_AUDIO_VOICE_ID || '05b36da8574341d0803391491850db20',
@@ -53,6 +92,7 @@ export function ttsStatus() {
     },
     groq: {
       configured: credentialEntries('GROQ_API_KEY').length > 0,
+      onCooldown: isProviderOnCooldown('groq'),
       credentialCount: credentialEntries('GROQ_API_KEY').length,
       sttModel: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo',
       ttsModel: process.env.GROQ_TTS_MODEL || 'canopylabs/orpheus-v1-english',
@@ -172,6 +212,9 @@ async function synthesizeOne(input = {}) {
 
     if (!response.ok) {
       const detail = await response.text();
+      if ([401, 402, 429].includes(response.status)) {
+        setProviderCooldown(provider, detail.slice(0, 200), response.status);
+      }
       throw new Error(`TTS provider returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`);
     }
     return {
@@ -199,6 +242,10 @@ export async function synthesizeSpeech(input = {}) {
 
   let lastError = null;
   for (const provider of order) {
+    if (isProviderOnCooldown(provider)) {
+      console.info(`[TTS CircuitBreaker] Skipping '${provider}' (${language}) - provider is on cooldown.`);
+      continue;
+    }
     try {
       const result = await synthesizeOne({
         ...input,

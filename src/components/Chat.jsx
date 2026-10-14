@@ -43,6 +43,27 @@ export default function Chat() {
   const recorderRef = useRef(null);
   const logRef = useRef(null);
   const currentAudioRef = useRef(null);
+  const ttsAbortControllerRef = useRef(null);
+  const activeObjectUrlsRef = useRef(new Set());
+
+  const stopSpeaking = () => {
+    if (ttsAbortControllerRef.current) {
+      try { ttsAbortControllerRef.current.abort(); } catch {}
+      ttsAbortControllerRef.current = null;
+    }
+    if (currentAudioRef.current) {
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      } catch {}
+      currentAudioRef.current = null;
+    }
+    for (const url of activeObjectUrlsRef.current) {
+      try { URL.revokeObjectURL(url); } catch {}
+    }
+    activeObjectUrlsRef.current.clear();
+    visual('idle');
+  };
 
   const updateTyping = (typing) => {
     isTypingRef.current = typing;
@@ -53,6 +74,9 @@ export default function Chat() {
     setSpeechEnabled((prev) => {
       const next = !prev;
       try { localStorage.setItem('jarvis_speech_enabled', JSON.stringify(next)); } catch {}
+      if (!next) {
+        stopSpeaking();
+      }
       return next;
     });
   };
@@ -60,8 +84,7 @@ export default function Chat() {
   useEffect(() => () => {
     try { recorderRef.current?.stop(); } catch {}
     recorderRef.current = null;
-    try { currentAudioRef.current?.pause(); } catch {}
-    currentAudioRef.current = null;
+    stopSpeaking();
   }, []);
 
   useEffect(() => {
@@ -105,67 +128,132 @@ export default function Chat() {
     }, { connectedMs: 5000, onError: () => setServiceOnline(false) });
   }, []);
 
-  async function speakReply(text) {
-    const cleanText = String(text || '')
+  function cleanSpeechText(text) {
+    return String(text || '')
       .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/[*_#~]/g, '')
       .trim();
-    if (!cleanText) return;
+  }
 
+  function splitFirstSentence(text) {
+    const match = text.match(/([.!?](\s+|$)|[\n]+)/);
+    if (!match || match.index === undefined) {
+      return [text, ''];
+    }
+    const boundaryEnd = match.index + match[0].length;
+    const first = text.slice(0, boundaryEnd).trim();
+    const rest = text.slice(boundaryEnd).trim();
+    if (!first || !rest) {
+      return [text, ''];
+    }
+    return [first, rest];
+  }
+
+  async function fetchTtsBlob(cleanText, signal) {
+    if (!cleanText) return null;
     try {
-      if (currentAudioRef.current) {
-        try {
-          currentAudioRef.current.pause();
-          currentAudioRef.current.currentTime = 0;
-        } catch {}
-        currentAudioRef.current = null;
-      }
-
       const response = await fetch('/api/voice/tts', {
         method: 'POST',
+        signal,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: cleanText })
       });
-      if (response.status === 204) {
-        visual('idle');
-        return;
-      }
+      if (response.status === 204) return null;
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const payload = await response.json().catch(() => ({}));
-        if (payload.textOnly) {
-          visual('idle');
-          return;
-        }
+        if (payload.textOnly) return null;
       }
       if (!response.ok) {
         console.warn('[JARVIS TTS response error]', response.status);
-        throw new Error(`TTS HTTP ${response.status}`);
+        return null;
       }
-      const url = URL.createObjectURL(await response.blob());
+      return await response.blob();
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('[JARVIS TTS fetch error]', err);
+      }
+      return null;
+    }
+  }
+
+  const playBlobAsync = (blob, signal) => {
+    if (!blob || signal?.aborted) return Promise.resolve();
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(blob);
+      activeObjectUrlsRef.current.add(url);
       const audio = new Audio(url);
       currentAudioRef.current = audio;
+
+      const cleanup = () => {
+        activeObjectUrlsRef.current.delete(url);
+        URL.revokeObjectURL(url);
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+      };
+
       audio.onended = () => {
-        URL.revokeObjectURL(url);
-        if (currentAudioRef.current === audio) currentAudioRef.current = null;
-        visual('idle');
+        cleanup();
+        resolve();
       };
-      audio.onerror = (e) => {
-        console.error('[JARVIS TTS audio error]', e);
-        URL.revokeObjectURL(url);
-        if (currentAudioRef.current === audio) currentAudioRef.current = null;
-        visual('idle');
+      audio.onerror = () => {
+        cleanup();
+        resolve();
       };
+
       visual('speaking');
-      try {
-        await audio.play();
-      } catch (playErr) {
-        console.warn('[JARVIS TTS play blocked or failed]', playErr);
-        visual('idle');
+      audio.play().catch((err) => {
+        console.warn('[JARVIS Audio play blocked]', err);
+        cleanup();
+        resolve();
+      });
+    });
+  };
+
+  async function speakReply(text) {
+    stopSpeaking();
+    const cleanText = cleanSpeechText(text);
+    if (!cleanText) return;
+
+    const controller = new AbortController();
+    ttsAbortControllerRef.current = controller;
+
+    try {
+      if (cleanText.length > 180) {
+        const [first, rest] = splitFirstSentence(cleanText);
+        if (first && rest) {
+          // Fetch sentence 1 immediately while pre-fetching the remainder in the background
+          const firstPromise = fetchTtsBlob(first, controller.signal);
+          const restPromise = fetchTtsBlob(rest, controller.signal);
+
+          const firstBlob = await firstPromise;
+          if (controller.signal.aborted) return;
+          if (firstBlob) {
+            await playBlobAsync(firstBlob, controller.signal);
+          }
+
+          if (controller.signal.aborted) return;
+          const restBlob = await restPromise;
+          if (controller.signal.aborted) return;
+          if (restBlob) {
+            await playBlobAsync(restBlob, controller.signal);
+          }
+          if (!controller.signal.aborted) visual('idle');
+          return;
+        }
       }
+
+      // Single sentence or <= 180 characters
+      const blob = await fetchTtsBlob(cleanText, controller.signal);
+      if (controller.signal.aborted) return;
+      if (blob) {
+        await playBlobAsync(blob, controller.signal);
+      }
+      if (!controller.signal.aborted) visual('idle');
     } catch (err) {
-      console.warn('[JARVIS TTS speak error]', err);
+      if (err.name !== 'AbortError') {
+        console.warn('[JARVIS TTS speak error]', err);
+      }
       visual('idle');
     }
   }
@@ -174,6 +262,8 @@ export default function Chat() {
     const val = String(value).trim();
     if (!val) return;
     const shouldSpeak = speak !== null ? speak : speechEnabled;
+    stopSpeaking();
+
     const immediateUrl = /^(open|launch|go to)\s+(youtube|youtube\.com)\b/i.test(val) ? 'https://www.youtube.com' : null;
     const openedImmediately = Boolean(immediateUrl);
     if (immediateUrl) window.open(immediateUrl, '_blank', 'noopener,noreferrer');
@@ -200,6 +290,14 @@ export default function Chat() {
         let reply = '';
         let placeholderAdded = false;
 
+        let streamedFirstSentence = '';
+        let sseTtsController = null;
+        let sseFirstSentencePromise = null;
+        if (shouldSpeak) {
+          sseTtsController = new AbortController();
+          ttsAbortControllerRef.current = sseTtsController;
+        }
+
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -220,6 +318,20 @@ export default function Chat() {
                     } else {
                       setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [reply] } : m));
                     }
+
+                    // Stream first sentence immediately as soon as a complete sentence boundary arrives!
+                    if (shouldSpeak && sseTtsController && !streamedFirstSentence && reply.length >= 25) {
+                      const cleanSoFar = cleanSpeechText(reply);
+                      const [first, rest] = splitFirstSentence(cleanSoFar);
+                      if (first && rest) {
+                        streamedFirstSentence = first;
+                        sseFirstSentencePromise = (async () => {
+                          const firstBlob = await fetchTtsBlob(first, sseTtsController.signal);
+                          if (sseTtsController.signal.aborted || !firstBlob) return;
+                          await playBlobAsync(firstBlob, sseTtsController.signal);
+                        })();
+                      }
+                    }
                   } else if (data.type === 'done') {
                     if (data.action?.action === 'open_url' && !openedImmediately) window.open(data.action.url, '_blank', 'noopener,noreferrer');
                     const finalReply = data.reply || data.error || reply || 'Request could not be completed.';
@@ -231,7 +343,34 @@ export default function Chat() {
                     } else {
                       setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media } : m));
                     }
-                    if (shouldSpeak) void speakReply(finalReply);
+
+                    if (shouldSpeak) {
+                      const finalClean = cleanSpeechText(finalReply);
+                      if (streamedFirstSentence && sseFirstSentencePromise && sseTtsController) {
+                        const remainder = finalClean.slice(streamedFirstSentence.length).trim();
+                        if (remainder) {
+                          (async () => {
+                            // Pre-fetch remainder while sentence 1 is playing
+                            const restPromise = fetchTtsBlob(remainder, sseTtsController.signal);
+                            await sseFirstSentencePromise;
+                            if (sseTtsController.signal.aborted) return;
+                            const restBlob = await restPromise;
+                            if (sseTtsController.signal.aborted || !restBlob) {
+                              visual('idle');
+                              return;
+                            }
+                            await playBlobAsync(restBlob, sseTtsController.signal);
+                            if (!sseTtsController.signal.aborted) visual('idle');
+                          })();
+                        } else {
+                          sseFirstSentencePromise.then(() => {
+                            if (!sseTtsController?.signal.aborted) visual('idle');
+                          });
+                        }
+                      } else {
+                        void speakReply(finalReply);
+                      }
+                    }
                   }
                 } catch (e) {}
               }
