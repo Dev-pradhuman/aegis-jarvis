@@ -178,3 +178,24 @@ test('context assembler includes persistent Patchright browser guidance when bro
   assert.match(systemMessage.content, /browser\.handoff/);
   assert.match(systemMessage.content, /Terms of Service/);
 });
+
+test('authenticated domains route directly to persistent Patchright engine instead of Lightpanda', async () => {
+  const started = [];
+  const manager = new BrowserManager({
+    createLightpanda: () => ({ kind: 'lightpanda', async start() { started.push('lightpanda'); }, isHealthy: () => true, async close() {} }),
+    createFirefox: () => ({ kind: 'firefox', async start() { started.push('firefox'); }, isHealthy: () => true, url: () => 'https://github.com/dashboard', async navigate() {}, async challenge() { return null; }, async close() {} }),
+    maxRetries: 1,
+    idleTimeoutMs: 1000,
+    logger: { info() {} }
+  });
+
+  manager.authenticatedDomains.add('github.com');
+  await manager.navigate('https://github.com/dashboard');
+
+  assert.equal(manager.getStatus().engine, 'firefox');
+  assert.ok(started.includes('firefox'));
+  assert.equal(started.includes('lightpanda'), false);
+
+  await manager.close();
+});
+

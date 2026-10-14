@@ -109,7 +109,7 @@ export class BrowserManager {
     const fields = await this.engine?.formState?.().catch(() => []) || [];
     this.record(reason, from, 'firefox'); this.log(`${reason} → Firefox`);
     let engine;
-    try { engine = await this.ensure('firefox'); if (url && /^https?:\/\//i.test(url)) { await engine.navigate(url); await engine.applyFormState(fields); } }
+    try { engine = await this.ensure('firefox'); if (url && /^https?:\/\//i.test(url)) { await engine.navigate(url); await engine.applyFormState?.(fields); } }
     catch (error) { this.state = 'ERROR'; throw error instanceof BrowserError ? error : new BrowserError('FIREFOX_START_FAILED', error.message, error); }
     return engine;
   }
@@ -184,9 +184,10 @@ export class BrowserManager {
       args = { ...args, url: url.href }; this.currentUrl = url.href;
     }
     const visual = VISUAL_ACTIONS.has(action) || args.mode === 'visual';
-    if (visual && this.engine?.kind !== 'firefox') await this.fallback('visual capability required');
+    const isAuthDomain = this.isDomainAuthenticated(args.url || this.currentUrl);
+    if ((visual || isAuthDomain) && this.engine?.kind !== 'firefox') await this.fallback(isAuthDomain ? 'authenticated domain' : 'visual capability required');
     else if (!this.engine) {
-      const preferred = this.lastEngine && this.currentUrl ? this.lastEngine : (process.platform === 'win32' || process.env.BROWSER_PRIMARY === 'firefox' ? 'firefox' : 'lightpanda');
+      const preferred = isAuthDomain ? 'firefox' : (this.lastEngine && this.currentUrl ? this.lastEngine : (process.platform === 'win32' || process.env.BROWSER_PRIMARY === 'firefox' ? 'firefox' : 'lightpanda'));
       try { await this.start(preferred); }
       catch (error) { if (preferred !== 'lightpanda') throw error; this.record('Lightpanda unavailable', 'lightpanda', 'firefox'); await this.start('firefox'); }
       if (action !== 'navigate' && this.currentUrl) { await this.engine.navigate(this.currentUrl); await this.engine.applyFormState?.(this.lastFields); }

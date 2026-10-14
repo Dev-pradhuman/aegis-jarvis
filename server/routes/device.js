@@ -138,6 +138,14 @@ export default async function deviceRoutes(req, res, url, state, ctx) {
     if (req.method === 'POST' && url.pathname === '/api/browser/resume') {
       try {
         const result = await browserManager.resume();
+        if (result?.code === 'HUMAN_ACTION_REQUIRED') {
+          return json(res, 409, {
+            ok: false,
+            code: 'HUMAN_ACTION_REQUIRED',
+            error: 'Verification is still pending in the browser.',
+            status: browserManager.getStatus(),
+          });
+        }
         let page = null;
         try { page = await browserManager.read(); } catch {}
         return json(res, 200, { ok: true, result, page, status: browserManager.getStatus() });
