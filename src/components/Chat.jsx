@@ -40,6 +40,8 @@ export default function Chat() {
       return true;
     }
   });
+  const [resumingBrowser, setResumingBrowser] = useState(false);
+  const [pendingBrowserChallenge, setPendingBrowserChallenge] = useState(null);
   const recorderRef = useRef(null);
   const logRef = useRef(null);
   const currentAudioRef = useRef(null);
@@ -114,6 +116,21 @@ export default function Chat() {
         setMessages(normalizeServerMessages(serverMessages));
         return;
       }
+
+      try {
+        const bRes = await fetch('/api/browser/status', { signal });
+        if (bRes.ok) {
+          const bStatus = await bRes.json();
+          if (bStatus?.humanActionRequired || bStatus?.state === 'HUMAN_ACTION_REQUIRED') {
+            setPendingBrowserChallenge({
+              url: bStatus.url || bStatus.pending?.url || '',
+              reason: (typeof bStatus.pending?.challenge === 'object' ? bStatus.pending.challenge?.title : bStatus.pending?.challenge) || 'Human verification required in Firefox',
+            });
+          } else {
+            setPendingBrowserChallenge(null);
+          }
+        }
+      } catch {}
 
       // During active typing or streaming, NEVER wipe out local messages with a stale server snapshot
       if (isTypingRef.current) return;
@@ -258,6 +275,53 @@ export default function Chat() {
     }
   }
 
+  async function handleResumeBrowser(challenge, msgId) {
+    setResumingBrowser(true);
+    visual('thinking');
+    try {
+      const response = await fetch('/api/browser/resume', { method: 'POST', headers: { 'content-type': 'application/json' } });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.code === 'HUMAN_ACTION_REQUIRED' || data.humanActionRequired) {
+        setMessages((prev) => [...prev, {
+          id: makeMsgId('jarvis-alert'),
+          who: 'JARVIS',
+          time: nowTime(),
+          lines: ['Verification is still active in Firefox. Please complete the captcha or login challenge in the browser window before resuming.']
+        }]);
+        visual('idle');
+        return;
+      }
+      setPendingBrowserChallenge(null);
+      const resumedText = data.page?.title
+        ? `Challenge cleared. Resumed on "${data.page.title}" (${data.page.url || challenge?.url || ''}).`
+        : 'Challenge cleared and browser task resumed successfully.';
+      setMessages((prev) => {
+        const updated = prev.map((m) => m.id === msgId ? { ...m, browserChallenge: null, browserResolved: true } : m);
+        return [...updated, {
+          id: makeMsgId('jarvis-resumed'),
+          who: 'JARVIS',
+          time: nowTime(),
+          lines: [resumedText]
+        }];
+      });
+      if (speechEnabled) {
+        void speakReply(resumedText);
+      } else {
+        visual('idle');
+      }
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        id: makeMsgId('jarvis-err'),
+        who: 'JARVIS',
+        time: nowTime(),
+        lines: [`Failed to resume browser: ${err.message || 'Network error'}`]
+      }]);
+      visual('idle');
+    } finally {
+      setResumingBrowser(false);
+    }
+  }
+
   async function sendMessage(value = input, speak = null) {
     const val = String(value).trim();
     if (!val) return;
@@ -337,11 +401,22 @@ export default function Chat() {
                     const finalReply = data.reply || data.error || reply || 'Request could not be completed.';
                     const routingDebug = data.routing ? { taskType: data.routing.taskType, confidence: data.routing.routingConfidence, apiRotationCount: data.routing.apiRotationCount, modelFallbackUsed: data.routing.modelFallbackUsed, totalMs: data.routing.totalMs } : null;
                     
+                    const isChallenge = data.code === 'HUMAN_ACTION_REQUIRED' ||
+                      data.action?.code === 'HUMAN_ACTION_REQUIRED' ||
+                      Boolean(data.humanActionRequired) ||
+                      Boolean(data.action?.humanActionRequired) ||
+                      /verification in (the browser|Firefox)/i.test(finalReply);
+                    const browserChallenge = isChallenge ? {
+                      url: data.url || data.action?.url || data.pending?.url || '',
+                      reason: (typeof (data.challenge || data.action?.challenge) === 'object' ? (data.challenge?.title || data.action?.challenge?.title) : (data.challenge || data.action?.challenge)) || 'Verification challenge (CAPTCHA / Cloudflare / Login)',
+                    } : null;
+                    if (isChallenge) setPendingBrowserChallenge(browserChallenge);
+
                     if (!placeholderAdded) {
                       placeholderAdded = true;
-                      setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media }]);
+                      setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge }]);
                     } else {
-                      setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media } : m));
+                      setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge } : m));
                     }
 
                     if (shouldSpeak) {
@@ -384,7 +459,19 @@ export default function Chat() {
         if (data.action?.action === 'open_url' && !openedImmediately) window.open(data.action.url, '_blank', 'noopener,noreferrer');
         const reply = data.reply || data.error || 'Request could not be completed.';
         const routingDebug = data.routing ? { taskType: data.routing.taskType, confidence: data.routing.routingConfidence, apiRotationCount: data.routing.apiRotationCount, modelFallbackUsed: data.routing.modelFallbackUsed, totalMs: data.routing.totalMs } : null;
-        setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media }]);
+        
+        const isChallenge = data.code === 'HUMAN_ACTION_REQUIRED' ||
+          data.action?.code === 'HUMAN_ACTION_REQUIRED' ||
+          Boolean(data.humanActionRequired) ||
+          Boolean(data.action?.humanActionRequired) ||
+          /verification in (the browser|Firefox)/i.test(reply);
+        const browserChallenge = isChallenge ? {
+          url: data.url || data.action?.url || data.pending?.url || '',
+          reason: (typeof (data.challenge || data.action?.challenge) === 'object' ? (data.challenge?.title || data.action?.challenge?.title) : (data.challenge || data.action?.challenge)) || 'Verification challenge (CAPTCHA / Cloudflare / Login)',
+        } : null;
+        if (isChallenge) setPendingBrowserChallenge(browserChallenge);
+
+        setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge }]);
         if (shouldSpeak) void speakReply(reply);
       }
     } catch {
@@ -594,8 +681,39 @@ export default function Chat() {
             </div>
             {m.media?.kind === 'image' && m.media.url && <img className="generated-media" src={m.media.url} alt="Generated by JARVIS" />}
             {m.media?.kind === 'video' && <div className="media-job">Video job {m.media.id}: {m.media.status}</div>}
-            {m.who === 'JARVIS' && m.modelIndicator?.handledBy && <div className="model-indicator">Handled by {MODEL_LABELS[m.modelIndicator.handledBy] || m.modelIndicator.handledBy}{m.modelIndicator.fallbackFrom ? ` · ${MODEL_LABELS[m.modelIndicator.fallbackFrom] || m.modelIndicator.fallbackFrom} unavailable` : ''}</div>}
             {m.who === 'JARVIS' && m.routingDebug && <div className="routing-debug">Route: {m.routingDebug.taskType} · Confidence: {Math.round(Number(m.routingDebug.confidence || 0) * 100)}% · Rotations: {m.routingDebug.apiRotationCount || 0} · Fallback: {m.routingDebug.modelFallbackUsed ? 'used' : 'not used'} · {m.routingDebug.totalMs || 0}ms</div>}
+            {(m.browserChallenge || (pendingBrowserChallenge && i === messages.length - 1 && m.who === 'JARVIS')) && (
+              <div className="browser-challenge-card">
+                <div className="browser-challenge-header">
+                  <Icon name="shield" />
+                  <span>Human Verification Required</span>
+                </div>
+                <div className="browser-challenge-body">
+                  <div>Verification challenge detected: <strong>{m.browserChallenge?.reason || pendingBrowserChallenge?.reason || 'CAPTCHA / Cloudflare / Login'}</strong>.</div>
+                  {(m.browserChallenge?.url || pendingBrowserChallenge?.url) && (
+                    <div className="browser-challenge-url">
+                      URL: {m.browserChallenge?.url || pendingBrowserChallenge?.url}
+                    </div>
+                  )}
+                  <div>Headed Firefox has been launched. Complete the verification in the browser window, then click below to continue.</div>
+                </div>
+                <button
+                  type="button"
+                  className="resume-jarvis-btn"
+                  disabled={resumingBrowser}
+                  onClick={() => handleResumeBrowser(m.browserChallenge || pendingBrowserChallenge, m.id)}
+                >
+                  <Icon name="check" />
+                  {resumingBrowser ? 'Resuming JARVIS...' : 'Challenge Solved — Resume JARVIS'}
+                </button>
+              </div>
+            )}
+            {m.browserResolved && (
+              <div className="browser-challenge-resolved">
+                <Icon name="check" />
+                <span>Challenge verified & browser session resumed.</span>
+              </div>
+            )}
           </div>
         ))}
         {isTyping && !lastIsStreamingJarvis && (

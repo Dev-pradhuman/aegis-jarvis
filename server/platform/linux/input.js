@@ -28,7 +28,84 @@ export function parseKeypress(value) {
   return symbols;
 }
 
+export function parseKeypressToWtypeArgs(keys) {
+  const parts = String(keys || '').split('+').map((p) => p.trim());
+  const modMap = { ctrl: 'ctrl', control: 'ctrl', alt: 'alt', shift: 'shift', super: 'logo', meta: 'logo', win: 'win' };
+  const keyMap = { enter: 'Return', return: 'Return', escape: 'Escape', esc: 'Escape', tab: 'Tab', space: 'space', backspace: 'BackSpace', delete: 'Delete' };
+  const mods = [];
+  let key = '';
+  for (const p of parts) {
+    const low = p.toLowerCase();
+    if (modMap[low]) mods.push(modMap[low]);
+    else key = keyMap[low] || p;
+  }
+  const args = [];
+  for (const m of mods) args.push('-M', m);
+  if (key) args.push('-k', key);
+  for (const m of mods.slice().reverse()) args.push('-m', m);
+  return args;
+}
+
 export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000 } = {}) {
+  const isHyprland = spawnImpl === spawn && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP || ''));
+  if (isHyprland) {
+    return {
+      startSession: async () => ({ devices: 1, backend: 'wtype' }),
+      keypress: async (keys) => {
+        const symbols = parseKeypress(keys);
+        const args = parseKeypressToWtypeArgs(keys);
+        try {
+          await new Promise((resolve, reject) => {
+            const proc = spawn('wtype', args);
+            proc.on('error', (err) => {
+              if (err.code === 'ENOENT') {
+                reject(Object.assign(new Error('Desktop input requires "wtype" on Hyprland. Install it via "pacman -S wtype".'), { code: 'INPUT_TOOL_MISSING' }));
+              } else {
+                reject(err);
+              }
+            });
+            proc.on('exit', (code) => {
+              if (code === 0) resolve({ sent: symbols.length, backend: 'wtype' });
+              else reject(Object.assign(new Error(`wtype exited with code ${code}`), { code: 'INPUT_FAILED' }));
+            });
+          });
+          return { sent: symbols.length, backend: 'wtype' };
+        } catch (err) {
+          if (err.code) throw err;
+          throw Object.assign(new Error(`Hyprland keypress failed: ${err.message}`), { code: 'INPUT_FAILED' });
+        }
+      },
+      type: async (text) => {
+        if (typeof text !== 'string' || text.length > 500) throw new Error('Text must contain at most 500 characters');
+        if (/[\u0000-\u001f\u007f]/u.test(text)) throw new Error('Use computer.keypress for Enter, Tab, and other control keys');
+        try {
+          await new Promise((resolve, reject) => {
+            const proc = spawn('wtype', ['--', text]);
+            proc.on('error', (err) => {
+              if (err.code === 'ENOENT') {
+                reject(Object.assign(new Error('Desktop input requires "wtype" on Hyprland. Install it via "pacman -S wtype".'), { code: 'INPUT_TOOL_MISSING' }));
+              } else {
+                reject(err);
+              }
+            });
+            proc.on('exit', (code) => {
+              if (code === 0) resolve({ sent: text.length, backend: 'wtype' });
+              else reject(Object.assign(new Error(`wtype exited with code ${code}`), { code: 'INPUT_FAILED' }));
+            });
+          });
+          return { sent: text.length, backend: 'wtype' };
+        } catch (err) {
+          if (err.code) throw err;
+          throw Object.assign(new Error(`Hyprland typing failed: ${err.message}`), { code: 'INPUT_FAILED' });
+        }
+      },
+      pointerMove: async () => { throw Object.assign(new Error('Pointer move is not supported on Hyprland without ydotool daemon'), { code: 'INPUT_UNSUPPORTED' }); },
+      pointerClick: async () => { throw Object.assign(new Error('Pointer click is not supported on Hyprland without ydotool daemon'), { code: 'INPUT_UNSUPPORTED' }); },
+      pointerScroll: async () => { throw Object.assign(new Error('Pointer scroll is not supported on Hyprland without ydotool daemon'), { code: 'INPUT_UNSUPPORTED' }); },
+      close: () => {}
+    };
+  }
+
   let child = null;
   let reader = null;
   let sequence = 0;

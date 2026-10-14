@@ -286,6 +286,12 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             data = { emails };
             reply = emails.length ? `Your latest ${emails.length} inbox emails:\n${emails.map((email, index) => `${index + 1}. ${email.subject || '(no subject)'} — ${email.sender || 'Unknown sender'} (${email.messageTimestamp ? new Date(email.messageTimestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown time'})`).join('\n')}` : 'Your Gmail inbox has no matching emails.';
           }
+          else if (route.capability === 'calendar.upcoming') {
+            const tool = await invokeChatTool('calendar.upcoming', route.args);
+            const events = Array.isArray(tool.data?.items) ? tool.data.items : (Array.isArray(tool.data) ? tool.data : []);
+            data = { events };
+            reply = events.length ? `Your upcoming calendar events:\n${events.slice(0, 10).map((e, index) => `${index + 1}. ${e.summary || e.title || '(No title)'} — ${e.start?.dateTime ? new Date(e.start.dateTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : (e.start?.date || 'All day')}`).join('\n')}` : 'You have no upcoming calendar events.';
+          }
           else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
           else if (route.capability === 'models.list') { const result = await invokeChatTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }
           else if (route.capability === 'mcp.servers') { const result = await invokeChatTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }

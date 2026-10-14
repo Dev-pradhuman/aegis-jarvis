@@ -77,8 +77,8 @@ export const implementedToolIds = [
   'browser.resume', 'browser.close', 'apps.list', 'apps.open', 'project.inspect',
   'files.read', 'command.execute', 'composio.execute', 'tasks.list', 'tasks.manage',
   'reminders.list', 'reminders.create', 'reminders.update', 'reminders.complete', 'reminders.snooze', 'reminders.cancel',
-  'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest',
-  'media.generate', 'research.search', 'calendar.create', 'audio.get_volume',
+  'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'calendar.upcoming',
+  'media.generate', 'research.search', 'calendar.create', 'composio.read', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
   'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'pointer.move', 'pointer.click', 'pointer.scroll',
@@ -138,6 +138,27 @@ async function runTool(toolId, input = {}, context = {}) {
     const result = await executeComposioTool({ toolSlug: 'GMAIL_FETCH_EMAILS', arguments: { user_id: 'me', max_results: input.limit || 10, verbose: false, include_payload: false, label_ids: ['INBOX'] } }, context.fetchImpl || fetch);
     if (!result.successful) throw new Error(result.error || 'Gmail request failed');
     return { ok: true, toolId, data: result.data };
+  }
+  if (toolId === 'calendar.upcoming') {
+    const args = {
+      calendar_id: 'primary',
+      max_results: input.limit || 10,
+      ...(input.timeMin ? { time_min: input.timeMin } : { time_min: new Date().toISOString() }),
+      ...(input.timeMax ? { time_max: input.timeMax } : {}),
+      single_events: true,
+      order_by: 'startTime',
+    };
+    const result = await executeComposioTool({ toolSlug: 'GOOGLECALENDAR_EVENTS_LIST', arguments: args }, context.fetchImpl || fetch);
+    if (!result.successful) throw new Error(result.error || 'Calendar request failed');
+    return { ok: true, toolId, data: result.data };
+  }
+  if (toolId === 'composio.read') {
+    if (composioToolRisk(input.toolSlug) !== 'READ_ONLY') {
+      throw new Error(`Tool ${input.toolSlug} has potential side-effects and is not permitted via composio.read; use composio.execute instead`);
+    }
+    const result = await executeComposioTool(input, context.fetchImpl || fetch);
+    if (!result.successful) throw new Error(result.error || 'Composio read failed');
+    return { ok: true, toolId, data: result.data, meta: { toolSlug: result.toolSlug, logId: result.logId } };
   }
   if (toolId === 'calendar.create') {
     requireExactApproval(toolId, input, context.approval, context.runId);

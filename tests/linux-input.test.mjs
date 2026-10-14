@@ -53,15 +53,31 @@ test('desktop input provider reuses a single helper and cleans up', async () => 
 });
 
 test('desktop input remains disabled by default and requires exact one-use approval', async () => {
-  const previous = { flag: process.env.JARVIS_DESKTOP_INPUT, token: process.env.JARVIS_AUTH_TOKEN };
+  const previous = {
+    flag: process.env.JARVIS_DESKTOP_INPUT,
+    token: process.env.JARVIS_AUTH_TOKEN,
+    desktop: process.env.XDG_CURRENT_DESKTOP,
+    session: process.env.XDG_SESSION_TYPE,
+    hyprland: process.env.HYPRLAND_INSTANCE_SIGNATURE
+  };
   try {
     delete process.env.JARVIS_DESKTOP_INPUT;
     delete process.env.JARVIS_AUTH_TOKEN;
     assert.equal(getTool('computer.type').enabled, false);
+
+    // Test KDE desktop input activation
+    process.env.XDG_CURRENT_DESKTOP = 'KDE';
+    process.env.XDG_SESSION_TYPE = 'wayland';
+    delete process.env.HYPRLAND_INSTANCE_SIGNATURE;
     process.env.JARVIS_DESKTOP_INPUT = '1';
     process.env.JARVIS_AUTH_TOKEN = 'test-token';
-    assert.equal(getTool('computer.type').enabled, process.platform === 'linux' && /KDE|Plasma/i.test(process.env.XDG_CURRENT_DESKTOP || '') && ['wayland', 'x11'].includes(process.env.XDG_SESSION_TYPE || ''));
-    if (!getTool('computer.type').enabled) return;
+    assert.equal(getTool('computer.type').enabled, true);
+
+    // Test Hyprland desktop input activation
+    process.env.XDG_CURRENT_DESKTOP = 'Hyprland';
+    process.env.HYPRLAND_INSTANCE_SIGNATURE = 'hypr-123';
+    assert.equal(getTool('computer.type').enabled, true);
+
     const state = { approvals: [], activity: [], toolExecutions: [] };
     const persist = async (mutate) => mutate(state);
     const execute = async (toolId, input) => ({ ok: true, toolId, data: { sent: input.text.length } });
@@ -84,5 +100,8 @@ test('desktop input remains disabled by default and requires exact one-use appro
   } finally {
     if (previous.flag === undefined) delete process.env.JARVIS_DESKTOP_INPUT; else process.env.JARVIS_DESKTOP_INPUT = previous.flag;
     if (previous.token === undefined) delete process.env.JARVIS_AUTH_TOKEN; else process.env.JARVIS_AUTH_TOKEN = previous.token;
+    if (previous.desktop === undefined) delete process.env.XDG_CURRENT_DESKTOP; else process.env.XDG_CURRENT_DESKTOP = previous.desktop;
+    if (previous.session === undefined) delete process.env.XDG_SESSION_TYPE; else process.env.XDG_SESSION_TYPE = previous.session;
+    if (previous.hyprland === undefined) delete process.env.HYPRLAND_INSTANCE_SIGNATURE; else process.env.HYPRLAND_INSTANCE_SIGNATURE = previous.hyprland;
   }
 });

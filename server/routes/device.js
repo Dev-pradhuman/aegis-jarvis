@@ -135,6 +135,21 @@ export default async function deviceRoutes(req, res, url, state, ctx) {
       }
     if (req.method === 'POST' && url.pathname === '/api/voice/transcribe') return json(res, 200, await transcribeAudio(await body(req)));
     if (req.method === 'GET' && url.pathname === '/api/browser/status') return json(res, 200, browserManager.getStatus());
+    if (req.method === 'POST' && url.pathname === '/api/browser/resume') {
+      try {
+        const result = await browserManager.resume();
+        let page = null;
+        try { page = await browserManager.read(); } catch {}
+        return json(res, 200, { ok: true, result, page, status: browserManager.getStatus() });
+      } catch (error) {
+        return json(res, error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : 500, {
+          ok: false,
+          code: error.code || 'BROWSER_RESUME_FAILED',
+          error: error.message,
+          status: browserManager.getStatus(),
+        });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/messages/send') {
         const input = await body(req);
         const { approvalId, idempotencyKey, runId, ...toolInput } = input;

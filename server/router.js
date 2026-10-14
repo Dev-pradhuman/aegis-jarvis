@@ -48,9 +48,13 @@ export function routeRequest(text) {
   const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
   if (windowAction) return { route: 'TOOL_CALL', capability: `windows.${windowAction[1].toLowerCase()}`, args: { target: { name: windowAction[2].trim() } }, confidence: 0.99 };
   if (/^(?:what(?:'s| is) (?:the )?active window|which window is active)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
-  if (application && application[1].length <= 120) return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: application[1] }, confidence: 0.99 };
+  if (application && application[1].length <= 120 && !/\b(https?:\/\/|[a-z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu)\b|\band\b)/i.test(application[1])) return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: application[1] }, confidence: 0.99 };
   const latestEmail = value.match(/\b(?:latest|last|recent|newest)\s*(\d{1,2})?\s*(?:e-?mails?|mails?)\b/i);
   if (latestEmail) return { route: 'TOOL_CALL', capability: 'gmail.latest', args: { limit: Math.min(20, Math.max(1, Number(latestEmail[1] || 4))) }, confidence: 0.99 };
+  const calendarQuery = value.match(/\b(?:upcoming|next|today's|scheduled)?\s*(\d{1,2})?\s*(?:calendar events?|calendar|events?|meetings?)\b/i);
+  if (calendarQuery && /^(?:show|list|what(?:'s| is) on|check|get|fetch|read)\b/i.test(value)) {
+    return { route: 'TOOL_CALL', capability: 'calendar.upcoming', args: { limit: Math.min(50, Math.max(1, Number(calendarQuery[1] || 10))) }, confidence: 0.99 };
+  }
   if (/^(show|list|what are)\s+(my\s+)?tasks\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'tasks.list', args: {}, confidence: 0.99 };
   if (/\b(provider|model|router)\b.*\b(using|active|current)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'runtime.telemetry', args: {}, confidence: 0.98 };
   if (/^(what('?s| is) in|read)\s+(the\s+)?readme/i.test(value)) return { route: 'TOOL_CALL', capability: 'files.read', args: { path: 'README.md' }, confidence: 0.99 };

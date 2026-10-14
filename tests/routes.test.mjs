@@ -137,6 +137,10 @@ test('HTTP Route Table Characterization', async (t) => {
         "path": "/api/browser/status"
     },
     {
+        "method": "POST",
+        "path": "/api/browser/resume"
+    },
+    {
         "method": "GET",
         "path": "/api/runs"
     },

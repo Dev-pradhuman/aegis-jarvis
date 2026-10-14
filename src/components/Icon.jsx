@@ -28,6 +28,7 @@ export const ICONS = {
   screenshot: '<rect x="3" y="6" width="18" height="13" rx="1"/><path d="M8 6l2-2h4l2 2"/><circle cx="12" cy="12.5" r="3.5"/>',
   shield: '<path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/>',
   shieldCheck: '<path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/>',
+  check: '<path d="M5 13l4 4L19 7"/>',
   lock: '<rect x="5" y="10" width="14" height="10" rx="1"/><path d="M8 10V7a4 4 0 018 0v3"/>',
   spark: '<path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5z"/>',
   mail: '<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 6l9 6 9-6"/>',

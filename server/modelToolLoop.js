@@ -8,7 +8,7 @@ const modelName = (id) => id.replaceAll('.', '__');
 export async function executeModelToolLoop(options, dependencies = {}) {
   const model = dependencies.model || executeModelPool;
   const invoke = dependencies.invoke || invokeToolRequest;
-  const available = selectRelevantTools(options.request, unattendedTools(), options.context).tools;
+  const available = selectRelevantTools(options.request, unattendedTools(options.state), options.context).tools;
   const byName = new Map(available.map((tool) => [modelName(tool.id), tool]));
   const toolSpecs = available.map((tool) => ({ type: 'function', function: { name: modelName(tool.id), description: tool.description, parameters: tool.inputSchema } }));
   const transcript = [...(options.context || []), { role: 'user', content: options.request }];
