@@ -64,5 +64,8 @@ test('Voice Acknowledgement', async (t) => {
     assert.strictEqual(text.includes('Let me look into that...'), false, 'Should not contain voice acknowledgement for chat');
   });
 
+  const { browserManager } = await import('../server/browser/index.js');
+  await browserManager.close().catch(() => {});
+  server.closeAllConnections?.();
   server.close();
 });

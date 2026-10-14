@@ -305,12 +305,13 @@ export default function Chat() {
         ? `Challenge cleared. Resumed on "${data.page.title}" (${data.page.url || challenge?.url || ''}).`
         : 'Challenge cleared and browser task resumed successfully.';
       setMessages((prev) => {
-        const updated = prev.map((m) => m.id === msgId ? { ...m, browserChallenge: null, browserResolved: true } : m);
+        const updated = prev.map((m) => m.id === msgId ? { ...m, browserChallenge: null, browserResolved: true, requiresHumanAction: false, actionStatus: 'resumed' } : m);
         return [...updated, {
           id: makeMsgId('jarvis-resumed'),
           who: 'JARVIS',
           time: nowTime(),
-          lines: [resumedText]
+          lines: [resumedText],
+          actionStatus: 'resumed'
         }];
       });
       if (speechEnabled) {
@@ -358,17 +359,20 @@ export default function Chat() {
           outcomeText = `Approved "${approval.toolName || approval.title}", but execution reported: ${toolResult?.error || toolResult?.code || 'Action failed'}.`;
         }
       } else {
-        outcomeText = `Approval denied. Action "${approval.toolName || approval.title}" was cancelled.`;
+        outcomeText = 'Execution denied by user.';
       }
 
       setActiveApprovals((prev) => prev.filter((a) => a.id !== approval.id));
       setMessages((prev) => {
-        const updated = prev.map((m) => m.id === msgId ? { ...m, approval: null, approvalResolved: outcome } : m);
+        const updated = prev.map((m) => m.id === msgId ? { ...m, approval: null, approvalResolved: outcome, actionStatus: outcome } : m);
         return [...updated, {
           id: makeMsgId('jarvis-approval-result'),
           who: 'JARVIS',
           time: nowTime(),
-          lines: [outcomeText]
+          lines: [outcomeText],
+          actionStatus: outcome,
+          approvalId: approval.id,
+          toolId: approval.toolName || approval.pendingRequest?.toolId || null
         }];
       });
 
@@ -485,11 +489,16 @@ export default function Chat() {
                       setActiveApprovals((prev) => [pendingApproval, ...prev.filter((a) => a.id !== pendingApproval.id)]);
                     }
 
+                    const approvalId = pendingApproval?.id || null;
+                    const toolId = pendingApproval?.toolName || pendingApproval?.pendingRequest?.toolId || null;
+                    const requiresHumanAction = Boolean(isChallenge);
+                    const actionStatus = pendingApproval ? 'pending' : (isChallenge ? 'waiting_human_action' : null);
+
                     if (!placeholderAdded) {
                       placeholderAdded = true;
-                      setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval }]);
+                      setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval, approvalId, toolId, requiresHumanAction, actionStatus }]);
                     } else {
-                      setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval } : m));
+                      setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval, approvalId, toolId, requiresHumanAction, actionStatus } : m));
                     }
 
                     if (shouldSpeak) {
@@ -549,7 +558,12 @@ export default function Chat() {
           setActiveApprovals((prev) => [pendingApproval, ...prev.filter((a) => a.id !== pendingApproval.id)]);
         }
 
-        setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval }]);
+        const approvalId = pendingApproval?.id || null;
+        const toolId = pendingApproval?.toolName || pendingApproval?.pendingRequest?.toolId || null;
+        const requiresHumanAction = Boolean(isChallenge);
+        const actionStatus = pendingApproval ? 'pending' : (isChallenge ? 'waiting_human_action' : null);
+
+        setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval, approvalId, toolId, requiresHumanAction, actionStatus }]);
         if (shouldSpeak) void speakReply(reply);
       }
     } catch {

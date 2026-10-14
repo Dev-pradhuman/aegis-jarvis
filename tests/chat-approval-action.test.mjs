@@ -78,4 +78,50 @@ test('Google Calendar natural queries route deterministically to calendar.upcomi
   const q4 = routeRequest('show my upcoming calendar events');
   assert.equal(q4.route, 'TOOL_CALL');
   assert.equal(q4.capability, 'calendar.upcoming');
+
+  const q5 = routeRequest('check my upcoming events');
+  assert.equal(q5.route, 'TOOL_CALL');
+  assert.equal(q5.capability, 'calendar.upcoming');
+
+  const q6 = routeRequest("what's my schedule");
+  assert.equal(q6.route, 'TOOL_CALL');
+  assert.equal(q6.capability, 'calendar.upcoming');
+});
+
+test('calendar.upcoming tool execution formats clean events from Composio', async () => {
+  const { executeTool } = await import('../server/toolExecutor.js');
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      successful: true,
+      data: {
+        items: [
+          {
+            id: 'event-1',
+            summary: 'Sync with Team',
+            start: { dateTime: '2026-10-15T10:00:00Z' },
+            end: { dateTime: '2026-10-15T11:00:00Z' },
+            location: 'Meeting Room A',
+            htmlLink: 'https://calendar.google.com/event?eid=1'
+          }
+        ]
+      }
+    })
+  });
+
+  const prevKey = process.env.COMPOSIO_API_KEY;
+  try {
+    process.env.COMPOSIO_API_KEY = 'ak_test_composio_key';
+    const result = await executeTool('calendar.upcoming', { daysAhead: 7, maxResults: 5 }, { fetchImpl: mockFetch });
+    assert.equal(result.ok, true);
+    assert.equal(result.toolId, 'calendar.upcoming');
+    assert.equal(result.data.events.length, 1);
+    assert.equal(result.data.events[0].title, 'Sync with Team');
+    assert.equal(result.data.events[0].location, 'Meeting Room A');
+    assert.equal(result.data.events[0].link, 'https://calendar.google.com/event?eid=1');
+  } finally {
+    if (prevKey === undefined) delete process.env.COMPOSIO_API_KEY;
+    else process.env.COMPOSIO_API_KEY = prevKey;
+  }
 });

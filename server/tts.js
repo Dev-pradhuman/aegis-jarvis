@@ -39,16 +39,14 @@ export function detectReplyLanguage(text = '', explicitLanguage = '') {
 }
 
 export function getLanguageTtsCascade(language = 'en') {
-  // English: Fish Audio -> ElevenLabs -> text only
-  // Hindi:   ElevenLabs -> Fish Audio -> text only
-  if (language === 'hi') {
-    return ['elevenlabs', 'fish-audio'];
-  }
-  return ['fish-audio', 'elevenlabs'];
+  // ElevenLabs is the direct primary TTS provider for both English and Hindi,
+  // falling back cleanly to text-only mode to enforce zero-spend / no 402 errors.
+  return ['elevenlabs'];
 }
 
 export function ttsStatus() {
-  const provider = process.env.TTS_PROVIDER || 'cascade';
+  const rawProvider = process.env.TTS_PROVIDER || 'cascade';
+  const provider = rawProvider === 'fish-audio' ? 'elevenlabs' : rawProvider;
   const hasGroq = credentialEntries('GROQ_API_KEY').length > 0;
   const preferredStt = process.env.STT_PROVIDER || (hasGroq ? 'groq' : 'browser');
   const now = Date.now();
@@ -70,8 +68,8 @@ export function ttsStatus() {
     configuredSttProvider: preferredStt,
     cooldowns,
     outputDesign: {
-      english: ['fish-audio', 'elevenlabs', 'text-only'],
-      hindi: ['elevenlabs', 'fish-audio', 'text-only']
+      english: ['elevenlabs', 'text-only'],
+      hindi: ['elevenlabs', 'text-only']
     },
     elevenlabs: {
       configured: Boolean(process.env.ELEVENLABS_API_KEY),
@@ -83,13 +81,9 @@ export function ttsStatus() {
       voiceIdConfigured: Boolean(process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID_HI),
     },
     fishAudio: {
-      configured: Boolean(process.env.FISH_AUDIO_API_KEY),
-      onCooldown: isProviderOnCooldown('fish-audio'),
-      modelIdEn: process.env.FISH_AUDIO_MODEL_ID_EN || process.env.FISH_AUDIO_MODEL_ID || 's2-pro',
-      modelIdHi: process.env.FISH_AUDIO_MODEL_ID_HI || process.env.FISH_AUDIO_MODEL_ID || 's2-pro',
-      voiceIdEn: process.env.FISH_AUDIO_VOICE_ID || '05b36da8574341d0803391491850db20',
-      voiceIdHi: process.env.FISH_AUDIO_VOICE_ID_HI || '817eba7f1aea469f9802326568d427b9',
-      voiceIdConfigured: Boolean(process.env.FISH_AUDIO_VOICE_ID || process.env.FISH_AUDIO_VOICE_ID_HI),
+      configured: false,
+      disabled: true,
+      reason: 'Disabled to enforce zero-spend policy (Fish Audio API requires paid credit)'
     },
     groq: {
       configured: credentialEntries('GROQ_API_KEY').length > 0,
@@ -103,7 +97,8 @@ export function ttsStatus() {
 }
 
 async function synthesizeOne(input = {}) {
-  const provider = input.provider || process.env.TTS_PROVIDER;
+  const rawProvider = input.provider || process.env.TTS_PROVIDER;
+  const provider = rawProvider === 'fish-audio' ? 'elevenlabs' : rawProvider;
   const text = textValue(input.text);
   if (!text) throw new Error('text is required');
   const language = input.language || detectReplyLanguage(text);
@@ -113,36 +108,7 @@ async function synthesizeOne(input = {}) {
   try {
     let response;
     if (provider === 'fish-audio') {
-      const key = process.env.FISH_AUDIO_API_KEY;
-      const voiceId = textValue(
-        input.voiceId ||
-        (language === 'hi'
-          ? (process.env.FISH_AUDIO_VOICE_ID_HI || '817eba7f1aea469f9802326568d427b9')
-          : (process.env.FISH_AUDIO_VOICE_ID || process.env.FISH_AUDIO_VOICE_ID_EN || '05b36da8574341d0803391491850db20')),
-        200
-      );
-      const modelId = textValue(
-        input.modelId ||
-        (language === 'hi'
-          ? (process.env.FISH_AUDIO_MODEL_ID_HI || process.env.FISH_AUDIO_MODEL_ID)
-          : (process.env.FISH_AUDIO_MODEL_ID_EN || process.env.FISH_AUDIO_MODEL_ID)) ||
-        's2-pro',
-        200
-      );
-      if (!key) throw new Error('Fish Audio API key is not configured');
-      if (!voiceId) throw new Error('Fish Audio voice ID is required');
-
-      response = await fetch('https://api.fish.audio/v1/tts', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'content-type': 'application/json',
-          accept: 'audio/mpeg',
-          authorization: `Bearer ${key}`,
-          model: modelId
-        },
-        body: JSON.stringify({ text, reference_id: voiceId, format: 'mp3' })
-      });
+      throw new Error('Fish Audio is disabled to enforce zero-spend policy. ElevenLabs is the primary TTS provider.');
     } else if (provider === 'elevenlabs') {
       const key = process.env.ELEVENLABS_API_KEY;
       const voiceId = textValue(
@@ -236,8 +202,8 @@ export async function synthesizeSpeech(input = {}) {
   const language = detectReplyLanguage(text, input.language);
   const cascadeOrder = getLanguageTtsCascade(language);
 
-  // If a specific provider was explicitly requested, test it first
-  const order = (input.provider && input.provider !== 'cascade' && input.provider !== 'bilingual' && input.provider !== 'browser')
+  // If a specific provider was explicitly requested, test it first (excluding disabled fish-audio)
+  const order = (input.provider && input.provider !== 'cascade' && input.provider !== 'bilingual' && input.provider !== 'browser' && input.provider !== 'fish-audio')
     ? [input.provider, ...cascadeOrder.filter((p) => p !== input.provider)]
     : cascadeOrder;
 

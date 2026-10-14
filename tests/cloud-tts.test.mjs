@@ -76,15 +76,15 @@ test('detectReplyLanguage identifies English vs Hindi correctly', () => {
     assert.strictEqual(detectReplyLanguage('System is online.', 'en'), 'en');
 });
 
-test('getLanguageTtsCascade orders Fish Audio first for English and ElevenLabs first for Hindi', () => {
+test('getLanguageTtsCascade uses ElevenLabs as direct primary for both English and Hindi', () => {
     const enOrder = getLanguageTtsCascade('en');
-    assert.deepStrictEqual(enOrder, ['fish-audio', 'elevenlabs']);
+    assert.deepStrictEqual(enOrder, ['elevenlabs']);
 
     const hiOrder = getLanguageTtsCascade('hi');
-    assert.deepStrictEqual(hiOrder, ['elevenlabs', 'fish-audio']);
+    assert.deepStrictEqual(hiOrder, ['elevenlabs']);
 });
 
-test('synthesizeSpeech falls back to text-only mode when both providers fail', async () => {
+test('synthesizeSpeech falls back to text-only mode when ElevenLabs fails', async () => {
     clearProviderCooldown();
     // English cascade test
     const enResult = await synthesizeSpeech({ text: 'Hello, systems are ready.' });
@@ -99,33 +99,32 @@ test('synthesizeSpeech falls back to text-only mode when both providers fail', a
 
 test('circuit breaker marks provider on cooldown and ttsStatus exposes it', () => {
     clearProviderCooldown();
-    assert.strictEqual(isProviderOnCooldown('fish-audio'), false);
-    setProviderCooldown('fish-audio', 'Insufficient API credit', 402);
-    assert.strictEqual(isProviderOnCooldown('fish-audio'), true);
+    assert.strictEqual(isProviderOnCooldown('elevenlabs'), false);
+    setProviderCooldown('elevenlabs', 'Insufficient API credit', 402);
+    assert.strictEqual(isProviderOnCooldown('elevenlabs'), true);
 
     const status = ttsStatus();
-    assert.strictEqual(status.fishAudio.onCooldown, true);
-    assert.ok(status.cooldowns['fish-audio']);
-    assert.strictEqual(status.cooldowns['fish-audio'].active, true);
-    assert.ok(status.cooldowns['fish-audio'].remainingMs > 0);
+    assert.strictEqual(status.elevenlabs.onCooldown, true);
+    assert.ok(status.cooldowns['elevenlabs']);
+    assert.strictEqual(status.cooldowns['elevenlabs'].active, true);
+    assert.ok(status.cooldowns['elevenlabs'].remainingMs > 0);
 
     clearProviderCooldown();
-    assert.strictEqual(isProviderOnCooldown('fish-audio'), false);
-    assert.strictEqual(ttsStatus().fishAudio.onCooldown, false);
+    assert.strictEqual(isProviderOnCooldown('elevenlabs'), false);
+    assert.strictEqual(ttsStatus().elevenlabs.onCooldown, false);
 });
 
 test('synthesizeSpeech skips cooled-down providers immediately', async () => {
     clearProviderCooldown();
-    setProviderCooldown('fish-audio', 'Rate limited or quota exceeded', 429);
+    setProviderCooldown('elevenlabs', 'Rate limited or quota exceeded', 429);
 
-    // English cascade: normally ['fish-audio', 'elevenlabs'].
-    // Since fish-audio is on cooldown, it should skip fish-audio and try elevenlabs directly.
+    // Since elevenlabs is on cooldown, it should skip elevenlabs directly to text-only in <200ms
     const start = Date.now();
     const result = await synthesizeSpeech({ text: 'Testing circuit breaker bypass.' });
     const elapsed = Date.now() - start;
 
     assert.strictEqual(result.textOnly, true);
-    assert.ok(elapsed < 200, `Bypass should complete in < 200ms without waiting on fish-audio, took ${elapsed}ms`);
+    assert.ok(elapsed < 200, `Bypass should complete in < 200ms without waiting on elevenlabs, took ${elapsed}ms`);
     clearProviderCooldown();
 });
 

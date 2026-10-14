@@ -288,9 +288,14 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           }
           else if (route.capability === 'calendar.upcoming') {
             const tool = await invokeChatTool('calendar.upcoming', route.args);
-            const events = Array.isArray(tool.data?.items) ? tool.data.items : (Array.isArray(tool.data) ? tool.data : []);
+            const events = Array.isArray(tool.data?.events) ? tool.data.events : (Array.isArray(tool.data?.items) ? tool.data.items : (Array.isArray(tool.data) ? tool.data : []));
             data = { events };
-            reply = events.length ? `Your upcoming calendar events:\n${events.slice(0, 10).map((e, index) => `${index + 1}. ${e.summary || e.title || '(No title)'} — ${e.start?.dateTime ? new Date(e.start.dateTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : (e.start?.date || 'All day')}`).join('\n')}` : 'You have no upcoming calendar events.';
+            reply = events.length ? `Your upcoming calendar events:\n${events.slice(0, 10).map((e, index) => {
+              const title = e.title || e.summary || '(No title)';
+              const startStr = e.start?.dateTime ? new Date(e.start.dateTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : (typeof e.start === 'string' ? (e.start.includes('T') ? new Date(e.start).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : e.start) : (e.start?.date || 'All day'));
+              const locationStr = e.location ? ` [${e.location}]` : '';
+              return `${index + 1}. ${title} — ${startStr}${locationStr}`;
+            }).join('\n')}` : 'You have no upcoming calendar events.';
           }
           else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
           else if (route.capability === 'models.list') { const result = await invokeChatTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }

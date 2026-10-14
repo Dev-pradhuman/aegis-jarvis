@@ -140,17 +140,31 @@ async function runTool(toolId, input = {}, context = {}) {
     return { ok: true, toolId, data: result.data };
   }
   if (toolId === 'calendar.upcoming') {
+    const daysAhead = Number(input.daysAhead || 7);
+    const maxResults = Number(input.maxResults || input.limit || 10);
+    const timeMin = input.timeMin || new Date().toISOString();
+    const timeMax = input.timeMax || new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
     const args = {
       calendar_id: 'primary',
-      max_results: input.limit || 10,
-      ...(input.timeMin ? { time_min: input.timeMin } : { time_min: new Date().toISOString() }),
-      ...(input.timeMax ? { time_max: input.timeMax } : {}),
+      max_results: maxResults,
+      time_min: timeMin,
+      time_max: timeMax,
       single_events: true,
       order_by: 'startTime',
     };
     const result = await executeComposioTool({ toolSlug: 'GOOGLECALENDAR_EVENTS_LIST', arguments: args }, context.fetchImpl || fetch);
     if (!result.successful) throw new Error(result.error || 'Calendar request failed');
-    return { ok: true, toolId, data: result.data };
+    const rawEvents = Array.isArray(result.data?.items) ? result.data.items : (Array.isArray(result.data) ? result.data : []);
+    const events = rawEvents.map((e) => ({
+      id: e.id || null,
+      title: e.summary || e.title || '(No title)',
+      start: e.start?.dateTime || e.start?.date || null,
+      end: e.end?.dateTime || e.end?.date || null,
+      location: e.location || null,
+      link: e.htmlLink || e.link || null,
+      status: e.status || 'confirmed'
+    }));
+    return { ok: true, toolId, data: { ...result.data, items: rawEvents, events } };
   }
   if (toolId === 'composio.read') {
     if (composioToolRisk(input.toolSlug) !== 'READ_ONLY') {
