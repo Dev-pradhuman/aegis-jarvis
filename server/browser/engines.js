@@ -46,7 +46,7 @@ export class LightpandaEngine {
   async accessibility() { return this.page.evaluate(accessibilityScript); }
   async waitFor(selector, timeout = 12000) { await this.page.waitForSelector(selector, { timeout }); return { selector, found: true }; }
   async formState() { return this.page.evaluate(safeFormScript).catch(() => []); }
-  async challenge() { return this.page.evaluate(() => { const title = document.title || ''; const text = (document.body?.innerText || '').trim(); const challenge = /captcha|verify you are human|checking your browser|security challenge|cloudflare challenge/i; return (challenge.test(title) || (text.length < 1800 && challenge.test(text))) && (document.querySelector('form,iframe,[id*=captcha],[class*=captcha]') || text.length < 600) ? { title, excerpt: text.slice(0, 240) } : null; }).catch(() => null); }
+  async challenge() { return this.page.evaluate(() => { const title = document.title || ''; const text = (document.body?.innerText || '').trim(); const challenge = /captcha|verify you are human|checking your browser|security challenge|cloudflare challenge|enter (?:one-time |verification )?code|enter otp|2-step verification|two-factor|sign in to continue|human verification/i; return (challenge.test(title) || (text.length < 1800 && challenge.test(text))) && (document.querySelector('form,iframe,[id*=captcha],[class*=captcha]') || text.length < 600) ? { title, excerpt: text.slice(0, 240) } : null; }).catch(() => null); }
   async close() {
     await this.page?.close().catch(() => {});
     await this.context?.close().catch(() => {});
@@ -59,9 +59,18 @@ export class LightpandaEngine {
 export class FirefoxEngine {
   constructor(options = {}) { this.options = options; this.kind = 'firefox'; this.context = null; this.page = null; this.headed = false; }
   async start({ headed = false } = {}) {
-    const { firefox } = await import('playwright');
+    const { firefox, chromium } = await import('playwright');
     const profile = path.resolve(this.options.profileDir || process.env.BROWSER_FIREFOX_PROFILE || defaultProfile);
-    this.context = await firefox.launchPersistentContext(profile, { headless: !headed, viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+    try {
+      this.context = await firefox.launchPersistentContext(profile, { headless: !headed, viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+    } catch (err) {
+      if (/Executable doesn't exist|browserType\.launch/i.test(err?.message || '')) {
+        const chromProfile = path.resolve(path.dirname(profile), 'chromium-profile');
+        this.context = await chromium.launchPersistentContext(chromProfile, { headless: !headed, viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+      } else {
+        throw err;
+      }
+    }
     this.headed = headed;
     this.page = this.context.pages()[0] || await this.context.newPage();
     this.page.setDefaultTimeout(12000);
@@ -79,7 +88,7 @@ export class FirefoxEngine {
   async waitFor(selector, timeout = 12000) { await this.page.locator(selector).waitFor({ timeout }); return { selector, found: true }; }
   async formState() { return this.page.evaluate(safeFormScript).catch(() => []); }
   async applyFormState(fields = []) { await this.page.evaluate((values) => { for (const field of values) { const element = field.id ? document.getElementById(field.id) : Array.from(document.getElementsByName(field.name || '')).find((node) => node.tagName.toLowerCase() === field.tag); if (element && element.type !== 'password') { element.value = field.value; element.dispatchEvent(new Event('input', { bubbles: true })); } } }, fields).catch(() => {}); }
-  async challenge() { return this.page.evaluate(() => { const title = document.title || ''; const text = (document.body?.innerText || '').trim(); const challenge = /captcha|verify you are human|checking your browser|security challenge|cloudflare challenge/i; return (challenge.test(title) || (text.length < 1800 && challenge.test(text))) && (document.querySelector('form,iframe,[id*=captcha],[class*=captcha]') || text.length < 600) ? { title, excerpt: text.slice(0, 240) } : null; }).catch(() => null); }
+  async challenge() { return this.page.evaluate(() => { const title = document.title || ''; const text = (document.body?.innerText || '').trim(); const challenge = /captcha|verify you are human|checking your browser|security challenge|cloudflare challenge|enter (?:one-time |verification )?code|enter otp|2-step verification|two-factor|sign in to continue|human verification/i; return (challenge.test(title) || (text.length < 1800 && challenge.test(text))) && (document.querySelector('form,iframe,[id*=captcha],[class*=captcha]') || text.length < 600) ? { title, excerpt: text.slice(0, 240) } : null; }).catch(() => null); }
   async bringToFront() { await this.page.bringToFront(); }
   async relaunchHeaded() { const url = this.url(); const fields = this.page ? await this.formState() : []; await this.close(); await this.start({ headed: true }); if (url && /^https?:/.test(url)) { await this.navigate(url); await this.applyFormState(fields); } }
   async close() { await this.context?.close().catch(() => {}); this.context = this.page = null; this.headed = false; }

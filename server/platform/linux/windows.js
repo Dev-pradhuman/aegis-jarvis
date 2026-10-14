@@ -31,7 +31,82 @@ export function resolveWindow(windows, target) {
 }
 
 export function createLinuxWindows({ desktopEnvironment = process.env.XDG_CURRENT_DESKTOP || '', displayServer = process.env.XDG_SESSION_TYPE || '', run = exec } = {}) {
-  const supported = /\bKDE\b|\bPlasma\b/i.test(desktopEnvironment) && ['wayland', 'x11'].includes(displayServer);
+  const isKde = /\bKDE\b|\bPlasma\b/i.test(desktopEnvironment) && ['wayland', 'x11'].includes(displayServer);
+  const isHyprland = !isKde && (/hyprland/i.test(desktopEnvironment) || Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE));
+  const supported = isKde || isHyprland;
+
+  if (isHyprland) {
+    return {
+      supported: true,
+      provider: 'hyprctl',
+      async list() {
+        try {
+          const { stdout } = await run('hyprctl', ['clients', '-j'], { timeout: 4000 });
+          const clients = JSON.parse(stdout);
+          return (Array.isArray(clients) ? clients : []).map((c) => ({
+            windowId: c.address,
+            appId: c.class,
+            title: c.title,
+            processId: c.pid,
+            active: c.focusHistoryID === 0,
+            minimized: Boolean(c.hidden),
+            maximized: Boolean(c.fullscreen),
+            geometry: Array.isArray(c.at) && Array.isArray(c.size) ? { x: c.at[0], y: c.at[1], width: c.size[0], height: c.size[1] } : undefined,
+          }));
+        } catch (error) {
+          throw windowError('WINDOW_BACKEND_UNAVAILABLE', `Hyprland client list failed: ${error.message}`);
+        }
+      },
+      async getActive() {
+        try {
+          const { stdout } = await run('hyprctl', ['activewindow', '-j'], { timeout: 4000 });
+          const data = JSON.parse(stdout);
+          if (!data || !data.address) return null;
+          return {
+            windowId: data.address,
+            appId: data.class,
+            title: data.title,
+            processId: data.pid,
+            active: true,
+            minimized: false,
+            maximized: Boolean(data.fullscreen),
+            geometry: Array.isArray(data.at) && Array.isArray(data.size) ? { x: data.at[0], y: data.at[1], width: data.size[0], height: data.size[1] } : undefined,
+          };
+        } catch {
+          return null;
+        }
+      },
+      async find(target) {
+        return resolveWindow(await this.list(), target);
+      },
+      async focus(target) {
+        const window = await this.find(target);
+        await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.focus({ window = "address:${window.windowId}" }))`], { timeout: 4000 });
+        return window;
+      },
+      async minimize(target) {
+        const window = await this.find(target);
+        await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.window.bring_to_top())`], { timeout: 4000 });
+        return { ...window, minimized: true };
+      },
+      async maximize(target) {
+        const window = await this.find(target);
+        await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.focus({ window = "address:${window.windowId}" })); hl.dispatch(hl.dsp.window.fullscreen())`], { timeout: 4000 });
+        return { ...window, maximized: true };
+      },
+      async restore(target) {
+        const window = await this.find(target);
+        await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.focus({ window = "address:${window.windowId}" })); hl.dispatch(hl.dsp.window.fullscreen())`], { timeout: 4000 });
+        return { ...window, maximized: false, minimized: false };
+      },
+      async close(target) {
+        const window = await this.find(target);
+        await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.window.close({ window = "address:${window.windowId}" }))`], { timeout: 4000 });
+        return { windowId: window.windowId, closed: true };
+      },
+    };
+  }
+
   let queue = Promise.resolve();
   function request(action, windowId) {
     if (!supported) return Promise.reject(windowError('WINDOW_OPERATION_UNSUPPORTED', `Window control is unavailable on ${desktopEnvironment || 'this desktop'} ${displayServer || ''}`));

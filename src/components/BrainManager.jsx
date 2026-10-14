@@ -345,15 +345,6 @@ export default function BrainManager() {
           </button>
         </div>
       </header>
-      {data?.configurationLocked && (
-        <div className="brain-first-run">
-          <strong>Brain setup locked</strong>
-          <span>
-            Set JARVIS_AUTH_TOKEN in private server configuration, then restart
-            JARVIS to add providers or credentials.
-          </span>
-        </div>
-      )}
       {data?.setupRequired && (
         <div className="brain-first-run">
           <strong>JARVIS Brain required</strong>

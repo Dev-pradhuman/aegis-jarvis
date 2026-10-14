@@ -15,14 +15,24 @@ export function createLinuxMedia(run = runDefault) {
     return rows.filter((item) => item.name?.startsWith('org.mpris.MediaPlayer2.')).map((item) => ({ busName: item.name, application: item.name.slice('org.mpris.MediaPlayer2.'.length) }));
   }
   async function details(player) {
-    const [state, metadata] = await Promise.all([property(player.busName, 'PlaybackStatus'), property(player.busName, 'Metadata')]);
-    return {
-      ...player,
-      state: String(state || 'Unknown').toLowerCase(),
-      title: metadata?.['xesam:title']?.data || null,
-      artist: metadata?.['xesam:artist']?.data || [],
-      trackId: metadata?.['mpris:trackid']?.data || null,
-    };
+    try {
+      const [state, metadata] = await Promise.all([property(player.busName, 'PlaybackStatus'), property(player.busName, 'Metadata')]);
+      return {
+        ...player,
+        state: String(state || 'Unknown').toLowerCase(),
+        title: metadata?.['xesam:title']?.data || null,
+        artist: metadata?.['xesam:artist']?.data || [],
+        trackId: metadata?.['mpris:trackid']?.data || null,
+      };
+    } catch {
+      return {
+        ...player,
+        state: 'stopped',
+        title: null,
+        artist: [],
+        trackId: null,
+      };
+    }
   }
   async function selectPlayer(name) {
     const players = await listPlayers();

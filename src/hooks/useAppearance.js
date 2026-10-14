@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'aegis-appearance';
-const DEFAULTS = { theme: 'carbon', fontSize: 16, accent: '#ff9d00' };
+const DEFAULTS = { theme: 'carbon', fontSize: 16, accent: '#ff9d00', defaultFrontend: 'galaxy' };
 
 function applyAppearance(value) {
   const root = document.documentElement;

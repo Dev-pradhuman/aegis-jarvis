@@ -40,6 +40,7 @@ async function perform(state, request, dependencies = {}) {
   if (!tool.enabled) return { status: 503, body: { code: 'CAPABILITY_NOT_CONFIGURED', error: `${toolId} is not configured` } };
   try { validateToolInput(tool.inputSchema, args); }
   catch (error) { return { status: 400, body: { error: error.code, details: error.details } }; }
+  if (toolId === 'command.execute' && (!String(args.command || '').trim() || /[;&|`<>]/.test(String(args.command || '')))) return { status: 400, body: { error: 'Only a single executable command without shell operators is allowed' } };
   if (toolId === 'messages.send' && !String(args.text || args.message || '').trim()) return { status: 400, body: { error: 'Message text is required' } };
   if (toolId === 'mcp.call' && (!args.server || !args.tool)) return { status: 400, body: { error: 'MCP server and tool are required' } };
   if ((toolId === 'computer.keypress' || toolId === 'computer.type') && !request.idempotencyKey) return { status: 400, body: { code: 'IDEMPOTENCY_KEY_REQUIRED', error: 'Desktop input requires an idempotency key' } };

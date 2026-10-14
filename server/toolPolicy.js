@@ -3,6 +3,7 @@ import { listTools } from './registry.js';
 const unattendedReadIds = new Set([
   'tasks.list', 'reminders.list', 'memory.search', 'runtime.telemetry', 'diagnostics',
   'models.list', 'projects.status', 'mcp.servers', 'browser.status', 'project.inspect', 'computer.capabilities',
+  'audio.get_volume', 'windows.get_active', 'windows.list', 'gmail.latest', 'browser.read',
 ]);
 
 export function unattendedTools() {

@@ -127,7 +127,10 @@ export default async function deviceRoutes(req, res, url, state, ctx) {
     if (req.method === 'GET' && url.pathname === '/api/voice/tts') return json(res, 200, ttsStatus());
     if (req.method === 'POST' && url.pathname === '/api/voice/tts') {
         const result = await synthesizeSpeech(await body(req));
-        res.writeHead(200, { 'content-type': result.contentType, 'content-length': result.audio.length, 'cache-control': 'no-store' });
+        if (result.textOnly || !result.audio) {
+          return json(res, 200, { textOnly: true, language: result.language, message: 'Text only: speech cascade completed without audio.' });
+        }
+        res.writeHead(200, { 'content-type': result.contentType || 'audio/mpeg', 'content-length': result.audio.length, 'cache-control': 'no-store', 'x-tts-provider': result.provider || '', 'x-tts-language': result.language || '' });
         return res.end(result.audio);
       }
     if (req.method === 'POST' && url.pathname === '/api/voice/transcribe') return json(res, 200, await transcribeAudio(await body(req)));

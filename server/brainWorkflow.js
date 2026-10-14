@@ -20,6 +20,10 @@ export async function executeBrainWorkflow({ request, route, context = [], conti
   const attempts = [];
   const model = (sourceTier) => executeModelDelegation({ route, request, context, continuationState, state, attachments, allowFallback, sourceTier, execute });
   const runLocal = async () => {
+    if (process.env.JARVIS_TEST !== '1' && (process.env.DISABLE_LOCAL_MODELS === 'true' || state?.modelRouting?.disableLocalModels)) {
+      attempts.push({ tier: 'LOCAL_MODEL', code: 'LOCAL_MODELS_DISABLED' });
+      return null;
+    }
     // A small text model cannot replace missing current sources, vision, or strong reasoning.
     if (decision.requiresVision || decision.requiresWeb || decision.requiresStrongReasoning) {
       attempts.push({ tier: 'LOCAL_MODEL', code: 'MODEL_CAPABILITY_UNSUPPORTED' });
@@ -47,9 +51,14 @@ export async function executeBrainWorkflow({ request, route, context = [], conti
   const runApi = async () => { try { const result = await model('api'); result.routingTelemetry.executionTier = 'ZERO_COST_API'; return result; } catch (error) { attempts.push({ tier: 'ZERO_COST_API', code: error.code }); return null; } };
 
   if (decision.preferredExecutionTier === 'MANUAL_SOURCE') return { result: await model('all'), decision };
-  const sequence = decision.preferredExecutionTier === 'LOCAL_MODEL' ? [runLocal, runWeb, runApi]
-    : decision.preferredExecutionTier === 'HEADLESS_WEB' ? [runWeb, runApi, runLocal]
-      : [runApi, runLocal];
+  const isCascade = state?.modelRouting?.routingWorkflow === 'cascade';
+  const sequence = isCascade
+    ? [runApi, runLocal, runWeb]
+    : decision.preferredExecutionTier === 'LOCAL_MODEL'
+      ? [runLocal, runWeb, runApi]
+      : decision.preferredExecutionTier === 'HEADLESS_WEB'
+        ? [runWeb, runApi, runLocal]
+        : [runApi, runLocal];
   for (const stage of sequence) {
     const result = await stage();
     if (result) { result.routingTelemetry.tierAttempts = attempts; return { result, decision }; }

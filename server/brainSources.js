@@ -116,7 +116,26 @@ export function createBrainCatalog({ sourcesPath = sourceFile, secretsPath = sec
   const poolEntries = () => sources.filter((source) => source.enabled).flatMap((source) => {
     if (source.modelId === 'auto') return [];
     const keys = source.type === 'API' ? source.credentials.filter((item) => item.enabled && secretFor(item)) : [{ id: source.id, priority: 0 }];
-    return source.logicalModels.flatMap((logicalModel) => keys.map((credential) => ({ id: `brain-${credential.id}`, sourceId: source.id, type: source.type, provider: source.provider, presetId: source.presetId, baseUrl: source.baseUrl, modelId: source.modelId, logicalModel, capabilities: source.capabilities, modalities: source.capabilities.filter((item) => ['text', 'image', 'audio', 'video'].includes(item)), priority: (source.rolePriorities?.[logicalModel] ?? source.priority) * 1000 + credential.priority, credentialId: source.type === 'API' ? credential.id : null, adapter: source.adapter })));
+    const modelsToRegister = [source.modelId, ...(Array.isArray(source.fallbackModels) ? source.fallbackModels : [])];
+    return source.logicalModels.flatMap((logicalModel) =>
+      modelsToRegister.flatMap((modelId, modelIdx) =>
+        keys.map((credential) => ({
+          id: `brain-${credential.id}${modelIdx > 0 ? `-${modelIdx}` : ''}`,
+          sourceId: source.id,
+          type: source.type,
+          provider: source.provider,
+          presetId: source.presetId,
+          baseUrl: source.baseUrl,
+          modelId,
+          logicalModel,
+          capabilities: source.capabilities,
+          modalities: source.capabilities.filter((item) => ['text', 'image', 'audio', 'video'].includes(item)),
+          priority: ((source.rolePriorities?.[logicalModel] ?? source.priority) * 1000) + (modelIdx * 10) + credential.priority,
+          credentialId: source.type === 'API' ? credential.id : null,
+          adapter: source.adapter,
+        }))
+      )
+    );
   });
   return { list, publicStatus, addSource, addPresetSource, updateSource, removeSource, addCredential, updateCredential, removeCredential, credentialSecret, poolEntries, find, envKeys };
 }

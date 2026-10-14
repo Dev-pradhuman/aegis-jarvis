@@ -5,7 +5,7 @@ export class VoicePipeline extends EventEmitter {
     super();
     this.state = 'idle'; // idle, wake_listening, capturing, transcribing, thinking, speaking, muted, error, confirm_listening
     
-    // Providers
+    this.enabled = false;
     this.audioSource = options.audioSource || null;
     this.wakeWordProvider = options.wakeWordProvider || null;
     this.sttProvider = options.sttProvider || null;

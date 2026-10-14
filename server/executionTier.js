@@ -8,7 +8,8 @@ export function classifyExecutionTier(request, { attachments = [], settings = {}
   const complex = /\b(?:deep (?:architecture|analysis|review|research|reasoning)|entire (?:repository|repo|codebase)|large[- ]context|complex (?:debugging|coding|planning|research)|difficult (?:reasoning|coding|problem)|multi[- ]file refactor|redesign .+ component|sophisticated writing)\b/i.test(text);
   const requiresWeb = /\b(?:research (?:the|current|latest)|latest (?:news|developments)|current sources)\b/i.test(text);
   const manual = settings.modelMode === 'manual';
-  const preferredExecutionTier = manual ? 'MANUAL_SOURCE' : requiresVision ? 'ZERO_COST_API' : explicitWeb || complex || requiresWeb ? 'HEADLESS_WEB' : 'LOCAL_MODEL';
+  const disableLocal = process.env.DISABLE_LOCAL_MODELS === 'true' || settings.disableLocalModels;
+  const preferredExecutionTier = manual ? 'MANUAL_SOURCE' : (requiresVision || disableLocal) ? 'ZERO_COST_API' : explicitWeb || complex || requiresWeb ? 'HEADLESS_WEB' : 'LOCAL_MODEL';
   return {
     intent: 'MODEL_RESPONSE',
     taskType: complex ? /\b(repo|codebase|coding|debugging|refactor)\b/i.test(text) ? 'CODING' : 'COMPLEX' : requiresVision ? 'VISION' : requiresWeb ? 'RESEARCH' : 'GENERAL',

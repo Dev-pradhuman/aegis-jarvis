@@ -1,7 +1,7 @@
 // Non-secret provider metadata. Endpoints and environment conventions are sourced
 // from each provider's documentation; model IDs are discovered at connection time.
 const api = (id, displayName, envName, defaultBaseUrl, documentationUrl, extra = {}) => ({
-  id, displayName, providerType: 'API', authType: 'bearer', envNames: envName ? [envName] : [],
+  id, displayName, providerType: 'API', authType: 'bearer', envNames: Array.isArray(envName) ? envName : envName ? [envName] : [],
   defaultBaseUrl, supportsModelDiscovery: true, discoveryPath: '/models',
   apiFormat: 'openai-chat', capabilities: ['text'], configurationFields: ['apiKey'],
   documentationUrl, ...extra,
@@ -21,7 +21,7 @@ export const providerPresetRegistry = Object.freeze({
   together: api('together', 'Together AI', 'TOGETHER_API_KEY', 'https://api.together.ai/v1', 'https://docs.together.ai/docs/inference/openai-compatibility'),
   fireworks: api('fireworks', 'Fireworks AI', 'FIREWORKS_API_KEY', 'https://api.fireworks.ai/inference/v1', 'https://fireworks.ai/docs/api-reference/post-responses', { supportsModelDiscovery: false }),
   cerebras: api('cerebras', 'Cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1', 'https://inference-docs.cerebras.ai/api-reference/models/list-models'),
-  opencode: api('opencode', 'OpenCode Zen', 'OPENCODE_API_KEY', 'https://opencode.ai/zen/v1', 'https://opencode.ai/docs/zen', { apiFormat: 'opencode-zen', capabilities: ['text'], autoRoute: false }),
+  opencode: api('opencode', 'OpenCode Inference', ['OPENCODE_ZEN_API_KEY', 'OPENCODE_API_KEY'], 'https://opencode.ai/inference/openai/v1', 'https://opencode.ai/docs/inference', { apiFormat: 'openai-chat', discoveryPath: '/inference/v1/models', capabilities: ['text', 'tools', 'coding', 'reasoning'], autoRoute: true }),
   ollama: { id: 'ollama', displayName: 'Ollama local', providerType: 'LOCAL', authType: 'none', envNames: [], defaultBaseUrl: 'http://127.0.0.1:11434/v1', supportsModelDiscovery: true, discoveryPath: '/models', apiFormat: 'openai-chat', capabilities: ['text'], configurationFields: [], documentationUrl: 'https://docs.ollama.com/api/openai-compatibility' },
   custom: { id: 'custom', displayName: 'Custom OpenAI-compatible', providerType: 'API', authType: 'bearer', envNames: [], defaultBaseUrl: '', supportsModelDiscovery: true, discoveryPath: '/models', apiFormat: 'openai-chat', capabilities: ['text'], configurationFields: ['baseUrl', 'apiKey'], documentationUrl: '' },
 });

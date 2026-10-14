@@ -57,3 +57,34 @@ test('GroqWhisperProvider respects disabled state', async () => {
     assert.strictEqual(res, 'local');
     assert.ok(localCalled);
 });
+
+import { detectReplyLanguage, getLanguageTtsCascade, synthesizeSpeech } from '../server/tts.js';
+
+test('detectReplyLanguage identifies English vs Hindi correctly', () => {
+    assert.strictEqual(detectReplyLanguage('Hello, this is JARVIS.'), 'en');
+    assert.strictEqual(detectReplyLanguage('नमस्ते, मैं जार्विस हूँ।'), 'hi');
+    assert.strictEqual(detectReplyLanguage('Haan main theek hoon, aap batao.'), 'hi');
+    assert.strictEqual(detectReplyLanguage('System is online.', 'hi'), 'hi');
+    assert.strictEqual(detectReplyLanguage('System is online.', 'en'), 'en');
+});
+
+test('getLanguageTtsCascade orders Fish Audio first for English and ElevenLabs first for Hindi', () => {
+    const enOrder = getLanguageTtsCascade('en');
+    assert.deepStrictEqual(enOrder, ['fish-audio', 'elevenlabs']);
+
+    const hiOrder = getLanguageTtsCascade('hi');
+    assert.deepStrictEqual(hiOrder, ['elevenlabs', 'fish-audio']);
+});
+
+test('synthesizeSpeech falls back to text-only mode when both providers fail', async () => {
+    // English cascade test
+    const enResult = await synthesizeSpeech({ text: 'Hello, systems are ready.' });
+    assert.strictEqual(enResult.textOnly, true);
+    assert.strictEqual(enResult.language, 'en');
+
+    // Hindi cascade test
+    const hiResult = await synthesizeSpeech({ text: 'नमस्ते, सिस्टम तैयार है।' });
+    assert.strictEqual(hiResult.textOnly, true);
+    assert.strictEqual(hiResult.language, 'hi');
+});
+

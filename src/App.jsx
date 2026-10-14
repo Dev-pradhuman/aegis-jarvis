@@ -12,20 +12,35 @@ import GalaxyHome from './components/GalaxyHome.jsx';
 import GlobalVoice from './components/GlobalVoice.jsx';
 import GlobalVision from './components/GlobalVision.jsx';
 
+import useAppearance from './hooks/useAppearance.js';
+
 function LegacyConsole() {
   const [activeView, setActiveView] = useState('overview');
   return <div className="app">
       <Sidebar activeView={activeView} onNavigate={setActiveView} />
       <TopBar />
-      <a href="/" className="legacy-return">Return to Galaxy</a>
+      <a href="/galaxy" className="legacy-return">Return to Galaxy</a>
       {activeView === 'overview' ? <main className="main overview-main"><div className="main-left"><NeuralCore /><div className="lower-row"><Approvals /><QuickActions /></div></div><div className="main-right"><Chat /><Tasks /></div></main> : <main className="main workspace-main"><WorkspaceViews view={activeView} /></main>}
       <StatusBar />
     </div>;
 }
 
 export default function App() {
-  const isLegacy = window.location.pathname === '/legacy';
-  useEffect(() => { document.title = isLegacy ? 'JARVIS // Legacy Console' : 'JARVIS // Galaxy'; }, [isLegacy]);
+  const [appearance] = useAppearance();
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const isLegacy = pathname === '/legacy' || (pathname !== '/galaxy' && appearance.defaultFrontend === 'legacy');
+
+  useEffect(() => {
+    document.title = isLegacy ? 'JARVIS // Legacy Console' : 'JARVIS // Galaxy';
+  }, [isLegacy]);
+
   return <AuthGate>{isLegacy ? <LegacyConsole /> : <GalaxyHome />}</AuthGate>;
 }
 

@@ -117,6 +117,7 @@ function modelFailureReply(error, runId) {
 import { VoicePipeline } from './voicePipeline.js';
 import { AudioCapture, AudioPlayback } from './audioIo.js';
 import { WhisperProvider } from './sttProvider.js';
+import { GroqWhisperProvider } from './cloudSTT.js';
 import { PiperProvider } from './ttsProvider.js';
 import { WakeWordProvider } from './wakeWordProvider.js';
 import { EnergyVADProvider } from './vadProvider.js';
@@ -127,7 +128,7 @@ const voicePipeline = new VoicePipeline({
   audioPlayback: new AudioPlayback(),
   wakeWordProvider: new WakeWordProvider(),
   vadProvider: new EnergyVADProvider(),
-  sttProvider: new WhisperProvider(),
+  sttProvider: new GroqWhisperProvider({ enabled: true, localProvider: new WhisperProvider() }),
   ttsProvider: new PiperProvider({ audioPlayback: new AudioPlayback() })
 });
 const handleVoiceRoute = voiceRoutes(voicePipeline);

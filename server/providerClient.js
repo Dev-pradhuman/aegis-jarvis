@@ -1,5 +1,5 @@
 const keyFor = { openrouter: 'OPENROUTER_API_KEY', 'opencode-zen': 'OPENCODE_ZEN_API_KEY', '9router': 'NINEROUTER_API_KEY', custom: 'CUSTOM_API_KEY', groq: 'GROQ_API_KEY' };
-const defaults = { groq: ['Groq', 'https://api.groq.com/openai/v1', 'GROQ_CHAT_MODEL', 'openai/gpt-oss-20b'], openrouter: ['OpenRouter', 'https://openrouter.ai/api/v1', 'OPENROUTER_MODEL', 'openai/gpt-oss-20b'], 'opencode-zen': ['OpenCode Zen', 'https://opencode.ai/zen/v1', 'OPENCODE_ZEN_MODEL', 'openai/gpt-oss-20b'], '9router': ['9router', 'https://9router.com/v1', 'NINEROUTER_MODEL', 'openai/gpt-oss-20b'] };
+const defaults = { groq: ['Groq', 'https://api.groq.com/openai/v1', 'GROQ_CHAT_MODEL', 'openai/gpt-oss-20b'], openrouter: ['OpenRouter', 'https://openrouter.ai/api/v1', 'OPENROUTER_MODEL', 'openai/gpt-oss-20b'], 'opencode-zen': ['OpenCode Inference', 'https://opencode.ai/inference/openai/v1', 'OPENCODE_ZEN_MODEL', 'glm-5.1'], '9router': ['9router', 'https://9router.com/v1', 'NINEROUTER_MODEL', 'openai/gpt-oss-20b'] };
 
 const opencodeLogicalModels = {
   'agent_brain': 'agent_brain',

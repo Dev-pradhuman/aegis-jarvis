@@ -229,7 +229,7 @@
 .form-grid input:not([type='range']):focus, .form-grid select:focus { border-color: var(--orange); box-shadow: 0 0 0 3px var(--orange-faint); }
 .primary-action, .secondary-action, .camera-action { border-radius: 7px; min-height: 40px; padding: 0 16px; }
 .appearance-panel { grid-column: 1 / -1; margin-bottom: 0; }
-.appearance-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.appearance-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .credential-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .provider-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .provider-grid label:nth-child(2) { grid-column: span 1; }
@@ -382,3 +382,166 @@
   margin-bottom: 8px;
   line-height: 1.3;
 }
+
+/* Multi-Tier Cascade Pipeline */
+.cascade-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cascade-pipeline-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.cascade-flow-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(14, 18, 22, 0.75);
+  border: 1px solid rgba(255, 157, 0, 0.2);
+  border-radius: 6px;
+  gap: 16px;
+  transition: all 0.2s ease;
+}
+.cascade-flow-card.active-stage {
+  border-color: rgba(30, 232, 136, 0.45);
+  background: rgba(30, 232, 136, 0.04);
+}
+.cascade-flow-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+.cascade-stage-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--orange-bright);
+  background: rgba(255, 157, 0, 0.12);
+  padding: 4px 8px;
+  border-radius: 4px;
+  min-width: 28px;
+  text-align: center;
+}
+.cascade-stage-meta h4 {
+  margin: 0 0 2px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.cascade-stage-meta p {
+  margin: 3px 0 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.cascade-stage-models {
+  font-family: var(--font-mono);
+  color: var(--cyan);
+  font-size: 11px;
+  word-break: break-word;
+}
+.cascade-flow-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cascade-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.cascade-tag.ready {
+  background: rgba(30, 232, 136, 0.12);
+  color: var(--green);
+  border: 1px solid rgba(30, 232, 136, 0.35);
+}
+.cascade-tag.needs-key {
+  background: rgba(255, 157, 0, 0.12);
+  color: var(--orange-bright);
+  border: 1px solid rgba(255, 157, 0, 0.35);
+}
+.cascade-key-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cascade-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cascade-key-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cascade-key-field input,
+.cascade-key-field select {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 14, 18, 0.9);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.cascade-key-field select {
+  cursor: pointer;
+}
+.cascade-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+.cascade-status-msg {
+  font-size: 12px;
+  color: var(--green);
+}
+
+.cascade-section-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+  text-transform: uppercase;
+  margin-top: 14px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cascade-section-kicker::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(31, 216, 234, 0.18);
+}
+.cascade-flow-card.output-card {
+  border-left: 3px solid var(--cyan);
+}
+.cascade-voice-test-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+

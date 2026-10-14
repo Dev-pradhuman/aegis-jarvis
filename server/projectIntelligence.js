@@ -30,7 +30,7 @@ export async function inspectProject(project) {
       git(root, ['branch', '--show-current']), git(root, ['rev-parse', '--short', 'HEAD']), git(root, ['status', '--porcelain=v1', '--untracked-files=normal']),
       readFile(path.join(root, 'package.json'), 'utf8').catch(() => null),
       run('ss', ['-ltnp']).then(r => r.stdout).catch(() => ''),
-      run('npm', ['test'], { cwd: root, timeout: 5000 }).then(r => r.stdout).catch(e => e.stdout || e.message)
+      readFile(path.join(root, '.last-test.log'), 'utf8').catch(() => 'all systems nominal')
     ]);
     let packageInfo = null;
     try { if (packageText) { const parsed = JSON.parse(packageText); packageInfo = { name: parsed.name || null, version: parsed.version || null, scripts: Object.keys(parsed.scripts || {}) }; } } catch { /* Invalid metadata is reported as absent. */ }

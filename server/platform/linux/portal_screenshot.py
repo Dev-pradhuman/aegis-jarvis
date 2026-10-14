@@ -44,6 +44,14 @@ def main():
         if not result:
             raise RuntimeError('Screenshot portal did not respond')
         if result['code'] != 0:
+            import os, shutil, subprocess, tempfile
+            if os.environ.get('WAYLAND_DISPLAY') and shutil.which('grim'):
+                tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                tmp.close()
+                res = subprocess.run(['grim', tmp.name], capture_output=True)
+                if res.returncode == 0:
+                    print(json.dumps({'ok': True, 'uri': f'file://{tmp.name}'}))
+                    return
             print(json.dumps({'ok': False, 'code': 'SCREEN_PERMISSION_REQUIRED', 'response': result['code']}))
             return
         if not result['uri'].startswith('file://'):

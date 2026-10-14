@@ -5,7 +5,7 @@ import { presetFor } from './providerPresets.js';
 import { paidApiUsageEnabled, zeroSpendEligible } from './spendPolicy.js';
 import { spawn } from 'node:child_process';
 
-const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Object.keys(process.env).filter((key) => /^OPENROUTER_API_KEY_\d+$/.test(key)).sort((a, b) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, priority: 500, ...extra }));
+const openRouterPool = (prefix, modelId, extra = {}) => ['OPENROUTER_API_KEY', ...Object.keys(process.env).filter((key) => /^OPENROUTER_API_KEY_\d+$/.test(key)).sort((a, b) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))].map((credentialRef, index) => ({ id: `${prefix}-${index + 1}`, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', modelId, credentialRef, priority: 990_000, ...extra }));
 const DEFAULT_POOL_MODELS = {
   'agent_brain': ['muse', 'muse/spark-1.2'],
   'deepseek-v4-flash': ['deepseek', 'deepseek/deepseek-v4-flash'],
@@ -127,7 +127,8 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
       headers: { 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}), ...(anthropic ? { 'anthropic-version': '2023-06-01' } : {}) },
       body: JSON.stringify(body),
     });
-    if ((!anthropic && !ollama) || !response.ok) return response;
+    if (!response.ok) return response;
+    if (!stream && !anthropic && !ollama) return response;
     
     if (stream && response.body) {
       let accumulatedContent = '';

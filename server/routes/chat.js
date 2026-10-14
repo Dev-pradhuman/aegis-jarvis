@@ -191,9 +191,10 @@ export default async function chatRoutes(req, res, url, state, ctx) {
       }
     if (req.method === 'POST' && url.pathname === '/api/chat') {
   
-        const input = await body(req); const text = String(input.message || '').trim();
+        const input = await body(req); const text = String(input.message || input.request || '').trim();
         const isSSE = req.headers.accept === 'text/event-stream';
-        if (!text) return json(res, 400, { error: 'message is required' });
+        if (!text) return json(res, 400, { error: 'message or request is required' });
+        if (text.length > 25000) return json(res, 413, { error: 'Request message exceeds maximum limit of 25,000 characters' });
         const routeStarted = performance.now(); const route = routeRequest(text);
         if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
           const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.origin = 'chat'; transitionRun(run, 'running');

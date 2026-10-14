@@ -134,8 +134,13 @@ export async function createComposioConnectLink(input = {}, fetchImpl = fetch) {
 }
 
 export function composioToolRisk(toolSlug) {
-  const action = String(toolSlug || '').toUpperCase().split('_').slice(1).join('_');
-  return /^(GET|LIST|FETCH|SEARCH|FIND|READ|CHECK|RESOLVE|LOOKUP|QUERY|DOWNLOAD)_/.test(`${action}_`) ? 'READ_ONLY' : 'EXTERNAL_ACTION';
+  const parts = String(toolSlug || '').toUpperCase().split('_');
+  const action = parts.slice(1).join('_');
+  if (/^(GET|LIST|FETCH|SEARCH|FIND|READ|CHECK|RESOLVE|LOOKUP|QUERY|DOWNLOAD)_/.test(`${action}_`)) return 'READ_ONLY';
+  const hasRead = parts.slice(1).some((part) => /^(GET|LIST|FETCH|SEARCH|FIND|READ|CHECK|RESOLVE|LOOKUP|QUERY|DOWNLOAD)$/.test(part));
+  const hasMutation = parts.slice(1).some((part) => /^(CREATE|UPDATE|DELETE|MODIFY|PATCH|POST|PUT|SEND|REMOVE|CANCEL|IMPORT|MOVE|INSERT|WATCH|BATCH)$/.test(part));
+  if (hasRead && !hasMutation) return 'READ_ONLY';
+  return 'EXTERNAL_ACTION';
 }
 
 export function composioActionHash(input = {}) {

@@ -20,7 +20,7 @@ grantCameraConsent();
 async function runVerification() {
   console.log("--- 1. Perception Provider Check ---");
   try {
-    const fixture = Buffer.from('synthetic-fixture');
+    const fixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
     const result = await perceive('What is this?', fixture);
     console.log(`✅ Provider responded: "${result.reply}" (Model: ${result.model})`);
   } catch (err) {

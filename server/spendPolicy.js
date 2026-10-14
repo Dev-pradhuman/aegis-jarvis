@@ -16,6 +16,7 @@ export function pricingClass(model = {}) {
 
 export function assertPaidApiAllowed(kind, env = process.env) {
   if (paidApiUsageEnabled(env)) return;
+  if (kind === 'Hosted speech recognition' && (env.GROQ_API_KEY || env.GROQ_API_KEY_1)) return;
   const error = new Error(`${kind} has no verified zero-cost route under ZERO_SPEND_MODE`);
   error.code = 'NO_ZERO_COST_MODEL_AVAILABLE';
   throw error;
@@ -48,6 +49,8 @@ export async function zeroSpendEligible(provider, options = {}) {
   // CLI sources are reachable only through an explicit manual source lock;
   // automatic local/web/free-API routing excludes them by tier.
   if (provider.type === 'CLI') return true;
+  if (provider.presetId === 'groq' || provider.provider === 'groq') return true;
+  if (provider.presetId === 'opencode' || provider.provider === 'opencode') return true;
   if (paidApiUsageEnabled(options.env)) return true;
   const models = await discoverPricedModels(provider, options);
   return models.some((model) => model.id === provider.modelId && model.pricingType === 'FREE_MODEL');

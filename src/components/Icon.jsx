@@ -34,6 +34,8 @@ export const ICONS = {
   circleCheck: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
   noCloud: '<path d="M17 16a4 4 0 000-8 5 5 0 00-9.6-1A4.5 4.5 0 007 16h10z"/><path d="M3 3l18 18"/>',
   calendar: '<rect x="4" y="5" width="16" height="15" rx="1"/><path d="M8 3v4M16 3v4M4 10h16"/>',
+  speaker: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>',
+  speakerOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
 };
 
 export default function Icon({ name, className, stroke = 'currentColor', strokeWidth = 1.8 }) {

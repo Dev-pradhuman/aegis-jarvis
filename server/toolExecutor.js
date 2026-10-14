@@ -37,8 +37,12 @@ const blockedRoots = new Set(['node_modules', 'dist', '.git', 'server/data']);
 export function appWindowMatches(app, window) {
   const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const appId = normalize(window.appId);
-  const candidates = [app.id, app.startupWMClass, app.name, String(app.id || '').split('_').at(-1)].map(normalize).filter((value) => value.length >= 4);
-  return candidates.some((candidate) => appId === candidate || appId.startsWith(candidate) && /[-_.]/.test(String(window.appId || '').slice(candidate.length)) || !appId && normalize(window.title).startsWith(candidate));
+  const candidates = [app.id, app.startupWMClass, app.name, String(app.id || '').split('_').at(-1)].map(normalize).filter((value) => value.length >= 2);
+  return candidates.some((candidate) =>
+    appId === candidate ||
+    (candidate.length >= 4 && appId.startsWith(candidate) && /[-_.]/.test(String(window.appId || '').slice(candidate.length))) ||
+    (!appId && normalize(window.title).startsWith(candidate))
+  );
 }
 
 function safePath(input = '.') {
@@ -109,6 +113,7 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'camera.list') return { ok: true, toolId, data: { devices: await osPlatform.camera.list() } };
   if (toolId === 'camera.capture') return { ok: true, toolId, data: await osPlatform.camera.capture(input.devicePath) };
   if (toolId === 'camera.describe') return { ok: true, toolId, data: await describeCamera(input) };
+  if (toolId === 'routine.morning_briefing') return { ok: true, toolId, data: { briefing: await generateMorningBriefing(context.state || {}) } };
   if (toolId === 'tasks.list') return { ok: true, toolId, data: { tasks: context.state?.tasks || [] } };
   if (toolId === 'tasks.manage') {
     if (!context.state) throw new Error('Task state is unavailable');
@@ -227,8 +232,10 @@ async function runTool(toolId, input = {}, context = {}) {
         return all.filter((window) => appWindowMatches(app, window));
       };
       let matches = await findMatches();
-      if (matches.length > 1) throw windowError('AMBIGUOUS_TARGET', `Multiple ${app.name} windows are open`);
-      if (matches.length === 1) return { ok: true, toolId, data: { status: 'focused', app, window: await windows.focus({ windowId: matches[0].windowId }), verified: true } };
+      if (matches.length >= 1) {
+        const targetWindow = matches.find((m) => m.active) || matches[0];
+        return { ok: true, toolId, data: { status: 'focused', app, window: await windows.focus({ windowId: targetWindow.windowId }), verified: true } };
+      }
       let launched;
       try { launched = await apps.open(name); }
       catch (error) { throw windowError('APP_LAUNCH_FAILED', `${app.name} could not be launched: ${error.message}`); }
@@ -236,8 +243,10 @@ async function runTool(toolId, input = {}, context = {}) {
       for (let attempt = 0; attempt < 16; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 250));
         matches = await findMatches();
-        if (matches.length > 1) throw windowError('AMBIGUOUS_TARGET', `Multiple ${app.name} windows appeared`);
-        if (matches.length === 1) return { ok: true, toolId, data: { status: 'launched', app, window: await windows.focus({ windowId: matches[0].windowId }), verified: true } };
+        if (matches.length >= 1) {
+          const targetWindow = matches.find((m) => m.active) || matches[0];
+          return { ok: true, toolId, data: { status: 'launched', app, window: await windows.focus({ windowId: targetWindow.windowId }), verified: true } };
+        }
       }
       throw windowError('WINDOW_NOT_FOUND', `${app.name} launched but no matching window appeared`);
     }

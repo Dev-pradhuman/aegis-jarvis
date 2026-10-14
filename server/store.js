@@ -11,7 +11,7 @@ const file = path.join(root, 'state.json');
 const seed = {
   runtime: { startedAt: new Date().toISOString(), usage: { requests: 0, tokens: 0, cost: 0 }, latency: { routerMs: 0, modelMs: 0, toolMs: 0, policyMs: 0, databaseMs: 0, totalMs: 0, samples: 0 } },
   provider: { id: 'local', label: 'Local model', model: 'qwen3:4b', baseUrl: 'http://127.0.0.1:11434/v1', configured: false },
-  modelRouting: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'agent_brain', manualFallbackAllowed: true, providerHealth: {}, telemetry: [] },
+  modelRouting: { jarvisMode: 'normal', modelMode: 'auto', manualModel: 'agent_brain', manualFallbackAllowed: true, routingWorkflow: 'cascade', providerHealth: {}, telemetry: [] },
   tasks: [],
   reminders: [],
   approvals: [],

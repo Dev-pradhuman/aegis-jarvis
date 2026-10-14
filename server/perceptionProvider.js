@@ -1,9 +1,21 @@
 import os from 'node:os';
 import { getVisionSettings } from './visionState.js';
 
+import fs from 'node:fs';
+
 export function defaultMemoryProbe() {
+  let freeBytes = os.freemem();
+  if (process.platform === 'linux') {
+    try {
+      const meminfo = fs.readFileSync('/proc/meminfo', 'utf8');
+      const match = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/);
+      if (match) {
+        freeBytes = parseInt(match[1], 10) * 1024;
+      }
+    } catch {}
+  }
   return {
-    freeBytes: os.freemem(),
+    freeBytes,
     totalBytes: os.totalmem(),
   };
 }
@@ -19,6 +31,7 @@ export class LocalOllamaMultimodalProvider {
   }
 
   checkMemoryBudget() {
+    if (this.status === 'idle') return;
     const memory = this.memoryProbe();
     if (memory.freeBytes < this.minFreeMemoryBytes) {
       const freeMB = Math.round(memory.freeBytes / (1024 * 1024));
@@ -143,6 +156,8 @@ export class CloudPerceptionProvider {
   }
 }
 
+let defaultLocalProvider = null;
+
 export async function perceive(prompt, imageBuffer, options = {}) {
   const { fetchImpl = fetch, testMode = false } = options;
   const settings = getVisionSettings();
@@ -152,8 +167,13 @@ export async function perceive(prompt, imageBuffer, options = {}) {
     provider = new FakePerceptionProvider(options);
   } else if (settings.cloudPerceptionEnabled) {
     provider = new CloudPerceptionProvider(options);
-  } else {
+  } else if (options.memoryProbe || options.minFreeMemoryBytes) {
     provider = new LocalOllamaMultimodalProvider(options);
+  } else {
+    if (!defaultLocalProvider) {
+      defaultLocalProvider = new LocalOllamaMultimodalProvider(options);
+    }
+    provider = defaultLocalProvider;
   }
 
   return provider.generate(prompt, imageBuffer, fetchImpl);

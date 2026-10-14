@@ -355,6 +355,8 @@ function CredentialsPanel() {
     { title: 'COMPOSIO', type: 'API Key', baseKey: 'COMPOSIO_API_KEY', single: true, desc: 'Managed integrations for Gmail, Calendar, etc.' },
     { title: 'OPENROUTER', type: 'API Key', baseKey: 'OPENROUTER_API_KEY', desc: 'Unified API for multiple LLM providers.' },
     { title: 'OPENCODE ZEN', type: 'API Key', baseKey: 'OPENCODE_ZEN_API_KEY', desc: 'Zen API keys for OpenCode services.' },
+    { title: 'FISH AUDIO', type: 'API Key', baseKey: 'FISH_AUDIO_API_KEY', single: true, desc: 'Expressive neural speech synthesis for English and Hindi.' },
+    { title: 'ELEVENLABS', type: 'API Key', baseKey: 'ELEVENLABS_API_KEY', single: true, desc: 'Multilingual neural speech synthesis for English and Hindi.' },
     { title: 'NINEROUTER', type: 'API Key', baseKey: 'NINEROUTER_API_KEY', desc: 'Alternative multi-model routing gateway.' },
     { title: 'CUSTOM MODEL', type: 'API Key', baseKey: 'MODEL_API_KEY', max: 12, desc: 'Generic keys for custom OpenAI-compatible endpoints.' },
     { title: 'SEARCH PROVIDER URL', type: 'URL', baseKey: 'SEARCH_PROVIDER_URL', single: true, desc: 'Endpoint for web search operations.' },
@@ -397,7 +399,17 @@ function CredentialsPanel() {
                 <span className="api-type">{card.type}</span>
               </div>
               {card.desc && <p className="api-desc">{card.desc}</p>}
-              <div className="api-card-inputs"></div>
+              <div className="api-card-inputs">
+                {visibleKeys.map(k => (
+                  <input
+                    key={k}
+                    type={card.type === 'URL' ? 'text' : 'password'}
+                    placeholder={status[k]?.configured ? '••••••••  (Configured)' : (card.single ? card.baseKey : k)}
+                    value={values[k] || ''}
+                    onChange={e => setValues(curr => ({ ...curr, [k]: e.target.value }))}
+                  />
+                ))}
+              </div>
               {canAdd && (
                 <button className="api-card-add" onClick={() => addInput(card.title)}>+</button>
               )}
@@ -446,20 +458,508 @@ function ComposioPanel() {
   return <section className="workspace-panel settings-section full composio-panel"><div className="routing-head"><div><div className="panel-label">Composio app connections</div><p className="setting-help">Connect Gmail, Google Calendar, Discord, and Instagram without exposing their OAuth tokens to JARVIS. Managed auth is created automatically. External sends, publishing, deletion, and calendar mutations remain approval-gated.</p>{status.configurationError && <p className="routing-summary composio-message">{status.configurationError}</p>}</div><button type="button" className="secondary-action" onClick={refresh}>Refresh</button></div>{!status.connectReady && <div className="composio-key-setup"><label>Composio Project API key<input type="password" value={projectKey} onChange={(event) => setProjectKey(event.target.value)} placeholder="ak_… from Platform → Project → Settings → API Keys" /></label><button type="button" className="primary-action" disabled={!projectKey.trim()} onClick={saveProjectKey}>Save &amp; validate</button></div>}<div className="composio-grid">{status.toolkits.map((toolkit) => <article key={toolkit.slug}><div><h3>{toolkit.label}</h3><p>{toolkit.capabilities.join(' · ')}</p>{toolkit.note && <small>{toolkit.note}</small>}</div><span className={accountCount(toolkit.slug) ? 'composio-state online' : 'composio-state'}>{accountCount(toolkit.slug) ? `${accountCount(toolkit.slug)} active` : !status.connectReady && status.hasCredential ? 'Project API key required' : !status.configured ? 'API key needed' : toolkit.authConfigured ? 'Ready to connect' : 'Managed auth available'}</span><button type="button" className="secondary-action" disabled={!status.connectReady || accountCount(toolkit.slug) > 0} onClick={() => connect(toolkit)}>{accountCount(toolkit.slug) > 0 ? 'Connected' : 'Connect'}</button></article>)}</div>{message && <p className="routing-summary composio-message">{message}</p>}</section>;
 }
 
+function CascadeWorkflowPanel() {
+  const [keys, setKeys] = useState({
+    GROQ_API_KEY: '',
+    GROQ_API_KEY_1: '',
+    GROQ_API_KEY_2: '',
+    GROQ_API_KEY_3: '',
+    OPENROUTER_API_KEY: '',
+    OPENCODE_ZEN_API_KEY: '',
+    FISH_AUDIO_API_KEY: '',
+    FISH_AUDIO_VOICE_ID: '',
+    FISH_AUDIO_VOICE_ID_HI: '',
+    ELEVENLABS_API_KEY: '',
+    ELEVENLABS_VOICE_ID: '',
+    ELEVENLABS_VOICE_ID_HI: '',
+  });
+  const [configStatus, setConfigStatus] = useState({});
+  const [workflow, setWorkflow] = useState('cascade');
+  const [statusMsg, setStatusMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testingVoice, setTestingVoice] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setConfigStatus(data || {}))
+      .catch(() => {});
+
+    fetch('/api/model-routing')
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => {
+        if (data.settings?.routingWorkflow) {
+          setWorkflow(data.settings.routingWorkflow);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function saveCascade() {
+    setSaving(true);
+    setStatusMsg('');
+    try {
+      const payload = {};
+      Object.entries(keys).forEach(([k, v]) => {
+        if (typeof v === 'string' && v.trim()) payload[k] = v.trim();
+      });
+
+      if (Object.keys(payload).length > 0) {
+        const res = await fetch('/api/config', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setConfigStatus(updated);
+          setKeys({
+            GROQ_API_KEY: '',
+            GROQ_API_KEY_1: '',
+            GROQ_API_KEY_2: '',
+            GROQ_API_KEY_3: '',
+            OPENROUTER_API_KEY: '',
+            OPENCODE_ZEN_API_KEY: '',
+            FISH_AUDIO_API_KEY: '',
+            FISH_AUDIO_VOICE_ID: '',
+            FISH_AUDIO_VOICE_ID_HI: '',
+            ELEVENLABS_API_KEY: '',
+            ELEVENLABS_VOICE_ID: '',
+            ELEVENLABS_VOICE_ID_HI: '',
+          });
+        }
+      }
+
+      await fetch('/api/model-routing', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ routingWorkflow: workflow }),
+      });
+
+      setStatusMsg('✓ Cascade architecture saved & active');
+      setTimeout(() => setStatusMsg(''), 4000);
+    } catch (err) {
+      setStatusMsg(`Error: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function testSpeech(language = 'en') {
+    setTestingVoice(true);
+    setStatusMsg(`Testing ${language === 'hi' ? 'Hindi' : 'English'} voice cascade...`);
+    try {
+      const testPhrase = language === 'hi'
+        ? 'नमस्ते, जार्विस ऑनलाइन है।'
+        : 'All JARVIS systems are operational.';
+      const res = await fetch('/api/voice/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: testPhrase, language })
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const payload = await res.json().catch(() => ({}));
+        if (payload.textOnly) {
+          setStatusMsg(`[${language === 'hi' ? 'Hindi' : 'English'}] Text-only fallback active (both TTS keys missing or failed).`);
+          return;
+        }
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+      const providerUsed = res.headers.get('x-tts-provider') || 'speech synthesis';
+      setStatusMsg(`Playing ${language === 'hi' ? 'Hindi' : 'English'} via ${providerUsed}`);
+    } catch (err) {
+      setStatusMsg(`Speech test error: ${err.message}`);
+    } finally {
+      setTestingVoice(false);
+    }
+  }
+
+  const groqPoolCount = ['GROQ_API_KEY', 'GROQ_API_KEY_1', 'GROQ_API_KEY_2', 'GROQ_API_KEY_3', 'GROQ_API_KEY_4']
+    .filter((k) => configStatus[k]?.configured).length;
+  const groqConfigured = groqPoolCount > 0;
+  const openrouterConfigured = Boolean(configStatus.OPENROUTER_API_KEY?.configured);
+  const opencodeConfigured = Boolean(configStatus.OPENCODE_ZEN_API_KEY?.configured || configStatus.OPENCODE_API_KEY?.configured);
+  const fishConfigured = Boolean(configStatus.FISH_AUDIO_API_KEY?.configured);
+  const elevenConfigured = Boolean(configStatus.ELEVENLABS_API_KEY?.configured);
+
+  const inputStages = [
+    {
+      num: 'IN-1',
+      title: 'Voice Request (Groq Whisper)',
+      models: 'whisper-large-v3-turbo ➔ whisper-large-v3 ➔ Ask user to type',
+      description: 'Audio input transcription with auto-cycling across Groq keys on rate limit. Large v3 Turbo ➔ Large v3 ➔ Type fallback.',
+      status: groqConfigured ? `Active (${groqPoolCount} key${groqPoolCount > 1 ? 's' : ''} in pool)` : 'Needs GROQ_API_KEY',
+      isReady: groqConfigured,
+    }
+  ];
+
+  const thinkingStages = [
+    {
+      num: 'TH-1',
+      title: 'Groq Thinking (Top Priority Cloud)',
+      models: 'openai/gpt-oss-120b ➔ meta-llama/llama-4-scout ➔ openai/gpt-oss-20b',
+      description: `Fastest reasoning cascade on Groq LPUs. Automatically rotates through ${groqPoolCount || 1} recycled key slots on 429 rate limit.`,
+      status: groqConfigured ? `Active (${groqPoolCount} key${groqPoolCount > 1 ? 's' : ''} recycling)` : 'Needs GROQ_API_KEY',
+      isReady: groqConfigured,
+    },
+    {
+      num: 'TH-2',
+      title: 'OpenRouter (Multi-Model Cloud)',
+      models: 'meta-llama/llama-3.3-70b-instruct:free ➔ deepseek/deepseek-r1:free ➔ anthropic/claude-3.5-sonnet',
+      description: 'Second priority tier. Cascades best free model, then second free model, then paid Claude 3.5 Sonnet.',
+      status: openrouterConfigured ? 'Active (Tier 2 Cloud)' : 'Needs OPENROUTER_API_KEY',
+      isReady: openrouterConfigured,
+    },
+    {
+      num: 'TH-3',
+      title: 'OpenCode Zen (Coding & Tool Inference)',
+      models: 'opencode-zen endpoints',
+      description: 'Dedicated code generation and agentic tool reasoning via OpenCode services.',
+      status: opencodeConfigured ? 'Active (OpenCode Zen)' : 'Optional (OPENCODE_ZEN_API_KEY)',
+      isReady: opencodeConfigured,
+    },
+    {
+      num: 'TH-4',
+      title: 'Local 4-5B Model (Offline Safeguard)',
+      models: 'qwen3.5:4b via Ollama (127.0.0.1:11434)',
+      description: 'Offline fallback with no network dependency or quota limits.',
+      status: 'Ready (Local Ollama)',
+      isReady: true,
+    },
+    {
+      num: 'TH-5',
+      title: 'Headless Browser (Autonomous Web AI)',
+      models: 'ChatGPT ➔ Claude ➔ Gemini',
+      description: 'Headless browser automation if all API and local models are exhausted.',
+      status: 'Ready (Browser Automation)',
+      isReady: true,
+    },
+  ];
+
+  const outputStages = [
+    {
+      num: 'OUT-EN',
+      title: 'English Voice Out (Preferred Order)',
+      models: 'Fish Audio (s2-pro: 05b36da8...) ➔ ElevenLabs (v2: bIHbv24M...) ➔ Text only',
+      description: 'Detects English reply text. Calls Fish Audio first; if it fails, falls back to ElevenLabs; if both fail, stays text-only.',
+      status: fishConfigured ? 'Fish Audio Ready (Top)' : elevenConfigured ? 'ElevenLabs Ready (Backup)' : 'Text Only (keys needed)',
+      isReady: fishConfigured || elevenConfigured,
+    },
+    {
+      num: 'OUT-HI',
+      title: 'Hindi Voice Out (Preferred Order)',
+      models: 'ElevenLabs (v2: czQ9pLzj...) ➔ Fish Audio (s2-pro: 817eba7f...) ➔ Text only',
+      description: 'Detects Hindi reply text. Calls ElevenLabs first; if it fails, falls back to Fish Audio; if both fail, stays text-only.',
+      status: elevenConfigured ? 'ElevenLabs Ready (Top)' : fishConfigured ? 'Fish Audio Ready (Backup)' : 'Text Only (keys needed)',
+      isReady: elevenConfigured || fishConfigured,
+    }
+  ];
+
+  return (
+    <section className="workspace-panel settings-section full cascade-panel">
+      <div className="panel-label">End-to-End Pipeline Architecture</div>
+      <p className="setting-help">
+        Full end-to-end fallback system: Input Audio (Groq Whisper) ➔ Thinking Multi-Tier LLMs (Groq Recycling ➔ OpenRouter ➔ OpenCode ➔ Ollama ➔ Browser) ➔ Output Speech (EN: Fish Studio ➔ ElevenLabs; HI: ElevenLabs ➔ Fish Studio). Add your API credentials below.
+      </p>
+
+      <div className="cascade-pipeline-flow">
+        <div className="cascade-section-kicker">01 · INPUT (Voice Transcription)</div>
+        {inputStages.map((stage) => (
+          <div key={stage.num} className={`cascade-flow-card ${stage.isReady ? 'active-stage' : ''}`}>
+            <div className="cascade-flow-card-left">
+              <span className="cascade-stage-num">{stage.num}</span>
+              <div className="cascade-stage-meta">
+                <h4>{stage.title}</h4>
+                <div className="cascade-stage-models">{stage.models}</div>
+                <p>{stage.description}</p>
+              </div>
+            </div>
+            <div className="cascade-flow-card-right">
+              <span className={`cascade-tag ${stage.isReady ? 'ready' : 'needs-key'}`}>
+                {stage.status}
+              </span>
+            </div>
+          </div>
+        ))}
+
+        <div className="cascade-section-kicker">02 · THINKING (Cognition Cascade)</div>
+        {thinkingStages.map((stage) => (
+          <div key={stage.num} className={`cascade-flow-card ${stage.isReady ? 'active-stage' : ''}`}>
+            <div className="cascade-flow-card-left">
+              <span className="cascade-stage-num">{stage.num}</span>
+              <div className="cascade-stage-meta">
+                <h4>{stage.title}</h4>
+                <div className="cascade-stage-models">{stage.models}</div>
+                <p>{stage.description}</p>
+              </div>
+            </div>
+            <div className="cascade-flow-card-right">
+              <span className={`cascade-tag ${stage.isReady ? 'ready' : 'needs-key'}`}>
+                {stage.status}
+              </span>
+            </div>
+          </div>
+        ))}
+
+        <div className="cascade-section-kicker">03 · OUTPUT (Speech by Reply Language)</div>
+        {outputStages.map((stage) => (
+          <div key={stage.num} className={`cascade-flow-card output-card ${stage.isReady ? 'active-stage' : ''}`}>
+            <div className="cascade-flow-card-left">
+              <span className="cascade-stage-num">{stage.num}</span>
+              <div className="cascade-stage-meta">
+                <h4>{stage.title}</h4>
+                <div className="cascade-stage-models">{stage.models}</div>
+                <p>{stage.description}</p>
+              </div>
+            </div>
+            <div className="cascade-flow-card-right">
+              <span className={`cascade-tag ${stage.isReady ? 'ready' : 'needs-key'}`}>
+                {stage.status}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="cascade-section-kicker">Groq Recycling Pool (Whisper STT &amp; Reasoning Cascade)</div>
+      <div className="cascade-key-bar">
+        <div className="cascade-key-field">
+          <label>
+            <span>Groq Primary Key</span>
+            <span style={{ color: configStatus.GROQ_API_KEY?.configured ? 'var(--green)' : 'var(--orange-bright)' }}>
+              {configStatus.GROQ_API_KEY?.configured ? '✓ Configured' : 'Key Required'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={configStatus.GROQ_API_KEY?.configured ? '••••••••  (Configured — enter to replace)' : 'Enter GROQ_API_KEY'}
+            value={keys.GROQ_API_KEY}
+            onChange={(e) => setKeys({ ...keys, GROQ_API_KEY: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>Groq Backup Key 1</span>
+            <span style={{ color: configStatus.GROQ_API_KEY_1?.configured ? 'var(--green)' : 'var(--text-muted)' }}>
+              {configStatus.GROQ_API_KEY_1?.configured ? '✓ Configured' : 'Optional Backup'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={configStatus.GROQ_API_KEY_1?.configured ? '••••••••  (Configured — enter to replace)' : 'Enter GROQ_API_KEY_1'}
+            value={keys.GROQ_API_KEY_1}
+            onChange={(e) => setKeys({ ...keys, GROQ_API_KEY_1: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>Groq Backup Key 2</span>
+            <span style={{ color: configStatus.GROQ_API_KEY_2?.configured ? 'var(--green)' : 'var(--text-muted)' }}>
+              {configStatus.GROQ_API_KEY_2?.configured ? '✓ Configured' : 'Optional Backup'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={configStatus.GROQ_API_KEY_2?.configured ? '••••••••  (Configured — enter to replace)' : 'Enter GROQ_API_KEY_2'}
+            value={keys.GROQ_API_KEY_2}
+            onChange={(e) => setKeys({ ...keys, GROQ_API_KEY_2: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>Groq Backup Key 3</span>
+            <span style={{ color: configStatus.GROQ_API_KEY_3?.configured ? 'var(--green)' : 'var(--text-muted)' }}>
+              {configStatus.GROQ_API_KEY_3?.configured ? '✓ Configured' : 'Optional Backup'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={configStatus.GROQ_API_KEY_3?.configured ? '••••••••  (Configured — enter to replace)' : 'Enter GROQ_API_KEY_3'}
+            value={keys.GROQ_API_KEY_3}
+            onChange={(e) => setKeys({ ...keys, GROQ_API_KEY_3: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="cascade-section-kicker" style={{ marginTop: '14px' }}>Thinking Cloud Providers (OpenRouter &amp; OpenCode)</div>
+      <div className="cascade-key-bar">
+        <div className="cascade-key-field">
+          <label>
+            <span>OpenRouter API Key (Tier 2 Cloud)</span>
+            <span style={{ color: openrouterConfigured ? 'var(--green)' : 'var(--orange-bright)' }}>
+              {openrouterConfigured ? '✓ Configured' : 'Key Required'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={openrouterConfigured ? '••••••••  (Configured — enter to replace)' : 'Enter OPENROUTER_API_KEY'}
+            value={keys.OPENROUTER_API_KEY}
+            onChange={(e) => setKeys({ ...keys, OPENROUTER_API_KEY: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>OpenCode Zen API Key</span>
+            <span style={{ color: opencodeConfigured ? 'var(--green)' : 'var(--text-muted)' }}>
+              {opencodeConfigured ? '✓ Configured' : 'Optional'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={opencodeConfigured ? '••••••••  (Configured — enter to replace)' : 'Enter OPENCODE_ZEN_API_KEY'}
+            value={keys.OPENCODE_ZEN_API_KEY}
+            onChange={(e) => setKeys({ ...keys, OPENCODE_ZEN_API_KEY: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="cascade-section-kicker" style={{ marginTop: '14px' }}>Voice Speech Synthesis (Fish Studio &amp; ElevenLabs)</div>
+      <div className="cascade-key-bar">
+        <div className="cascade-key-field">
+          <label>
+            <span>Fish Audio API Key</span>
+            <span style={{ color: fishConfigured ? 'var(--green)' : 'var(--orange-bright)' }}>
+              {fishConfigured ? '✓ Configured' : 'Key Required'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={fishConfigured ? '••••••••  (Configured)' : 'Enter FISH_AUDIO_API_KEY'}
+            value={keys.FISH_AUDIO_API_KEY}
+            onChange={(e) => setKeys({ ...keys, FISH_AUDIO_API_KEY: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>Fish Studio EN Voice ID (Model: s2-pro)</span>
+            <span style={{ color: 'var(--green)' }}>
+              {configStatus.FISH_AUDIO_VOICE_ID?.value ? '✓ Configured' : 'Default Ready'}
+            </span>
+          </label>
+          <input
+            type="text"
+            placeholder={configStatus.FISH_AUDIO_VOICE_ID?.value || '05b36da8574341d0803391491850db20'}
+            value={keys.FISH_AUDIO_VOICE_ID}
+            onChange={(e) => setKeys({ ...keys, FISH_AUDIO_VOICE_ID: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>Fish Studio HI Voice ID (Model: s2-pro)</span>
+            <span style={{ color: 'var(--green)' }}>
+              {configStatus.FISH_AUDIO_VOICE_ID_HI?.value ? '✓ Configured' : 'Default Ready'}
+            </span>
+          </label>
+          <input
+            type="text"
+            placeholder={configStatus.FISH_AUDIO_VOICE_ID_HI?.value || '817eba7f1aea469f9802326568d427b9'}
+            value={keys.FISH_AUDIO_VOICE_ID_HI}
+            onChange={(e) => setKeys({ ...keys, FISH_AUDIO_VOICE_ID_HI: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>ElevenLabs API Key</span>
+            <span style={{ color: elevenConfigured ? 'var(--green)' : 'var(--orange-bright)' }}>
+              {elevenConfigured ? '✓ Configured' : 'Key Required'}
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={elevenConfigured ? '••••••••  (Configured)' : 'Enter ELEVENLABS_API_KEY'}
+            value={keys.ELEVENLABS_API_KEY}
+            onChange={(e) => setKeys({ ...keys, ELEVENLABS_API_KEY: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>ElevenLabs EN Voice ID (multilingual_v2)</span>
+            <span style={{ color: 'var(--green)' }}>
+              {configStatus.ELEVENLABS_VOICE_ID?.value ? '✓ Configured' : 'Default Ready'}
+            </span>
+          </label>
+          <input
+            type="text"
+            placeholder={configStatus.ELEVENLABS_VOICE_ID?.value || 'bIHbv24MWmeRgasZH58o'}
+            value={keys.ELEVENLABS_VOICE_ID}
+            onChange={(e) => setKeys({ ...keys, ELEVENLABS_VOICE_ID: e.target.value })}
+          />
+        </div>
+
+        <div className="cascade-key-field">
+          <label>
+            <span>ElevenLabs HI Voice ID (multilingual_v2)</span>
+            <span style={{ color: 'var(--green)' }}>
+              {configStatus.ELEVENLABS_VOICE_ID_HI?.value ? '✓ Configured' : 'Default Ready'}
+            </span>
+          </label>
+          <input
+            type="text"
+            placeholder={configStatus.ELEVENLABS_VOICE_ID_HI?.value || 'czQ9pLzjRaF61EAYjcPC'}
+            value={keys.ELEVENLABS_VOICE_ID_HI}
+            onChange={(e) => setKeys({ ...keys, ELEVENLABS_VOICE_ID_HI: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="cascade-actions-row">
+        <button
+          type="button"
+          className="primary-action"
+          disabled={saving}
+          onClick={saveCascade}
+        >
+          {saving ? 'Saving...' : 'Save & Activate Pipeline'}
+        </button>
+        <div className="cascade-voice-test-btns">
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={testingVoice}
+            onClick={() => testSpeech('en')}
+          >
+            Test English (Fish Audio ➔ ElevenLabs)
+          </button>
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={testingVoice}
+            onClick={() => testSpeech('hi')}
+          >
+            Test Hindi (ElevenLabs ➔ Fish Audio)
+          </button>
+        </div>
+        {statusMsg && <span className="cascade-status-msg mono">{statusMsg}</span>}
+      </div>
+    </section>
+  );
+}
+
 function AppearancePanel() {
   const [appearance, setAppearance] = useAppearance();
-  return <section className="workspace-panel settings-section full appearance-panel"><div className="panel-label">Appearance</div><p className="setting-help">Personalize the interface locally. Changes persist in this browser.</p><div className="form-grid appearance-grid"><label>Theme<select value={appearance.theme} onChange={(event) => setAppearance((current) => ({ ...current, theme: event.target.value }))}><option value="carbon">Carbon / amber</option><option value="midnight">Midnight / cyan</option><option value="light">Light / amber</option></select></label><label>Font size <span className="range-value">{appearance.fontSize}px</span><input type="range" min="13" max="20" value={appearance.fontSize} onChange={(event) => setAppearance((current) => ({ ...current, fontSize: Number(event.target.value) }))} /></label><label>Accent colour<div className="colour-control"><input type="color" value={appearance.accent} onChange={(event) => setAppearance((current) => ({ ...current, accent: event.target.value }))} /><code>{appearance.accent.toUpperCase()}</code></div></label></div></section>;
+  return <section className="workspace-panel settings-section full appearance-panel"><div className="panel-label">Appearance &amp; Interface</div><p className="setting-help">Personalize the interface locally. Changes persist in this browser.</p><div className="form-grid appearance-grid"><label>Default interface<select value={appearance.defaultFrontend || 'galaxy'} onChange={(event) => setAppearance((current) => ({ ...current, defaultFrontend: event.target.value }))}><option value="galaxy">JARVIS Galaxy (3D Windowed OS)</option><option value="legacy">Legacy Console (Cyberpunk Dashboard)</option></select></label><label>Theme<select value={appearance.theme} onChange={(event) => setAppearance((current) => ({ ...current, theme: event.target.value }))}><option value="carbon">Carbon / amber</option><option value="midnight">Midnight / cyan</option><option value="light">Light / amber</option></select></label><label>Font size <span className="range-value">{appearance.fontSize}px</span><input type="range" min="13" max="20" value={appearance.fontSize} onChange={(event) => setAppearance((current) => ({ ...current, fontSize: Number(event.target.value) }))} /></label><label>Accent colour<div className="colour-control"><input type="color" value={appearance.accent} onChange={(event) => setAppearance((current) => ({ ...current, accent: event.target.value }))} /><code>{appearance.accent.toUpperCase()}</code></div></label></div></section>;
 }
 
 function SettingsWorkspace() {
   return <div className="workspace-page">
     <WorkspaceHeader view="settings" />
     <div className="settings-grid">
+      <CascadeWorkflowPanel />
       <AppearancePanel />
-      <section className="workspace-panel settings-section full">
-        <div className="panel-label">Intelligence sources</div>
-        <p className="setting-help">Routing order: deterministic tools → local Qwen → authorized ChatGPT or Claude web → verified zero-cost API models. Configure sources, manual locks, and API key pools in Brain. Paid API usage is disabled by default.</p>
-      </section>
       <CredentialsPanel />
       <VoicePanel />
     </div>
