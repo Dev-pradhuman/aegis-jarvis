@@ -42,6 +42,8 @@ export default function Chat() {
   });
   const [resumingBrowser, setResumingBrowser] = useState(false);
   const [pendingBrowserChallenge, setPendingBrowserChallenge] = useState(null);
+  const [resolvingApprovalId, setResolvingApprovalId] = useState(null);
+  const [activeApprovals, setActiveApprovals] = useState([]);
   const recorderRef = useRef(null);
   const logRef = useRef(null);
   const currentAudioRef = useRef(null);
@@ -118,8 +120,11 @@ export default function Chat() {
       }
 
       try {
-        const bRes = await fetch('/api/browser/status', { signal });
-        if (bRes.ok) {
+        const [bRes, appRes] = await Promise.all([
+          fetch('/api/browser/status', { signal }).catch(() => null),
+          fetch('/api/approvals', { signal }).catch(() => null)
+        ]);
+        if (bRes?.ok) {
           const bStatus = await bRes.json();
           if (bStatus?.humanActionRequired || bStatus?.state === 'HUMAN_ACTION_REQUIRED') {
             setPendingBrowserChallenge({
@@ -129,6 +134,10 @@ export default function Chat() {
           } else {
             setPendingBrowserChallenge(null);
           }
+        }
+        if (appRes?.ok) {
+          const appData = await appRes.json();
+          setActiveApprovals(Array.isArray(appData.approvals) ? appData.approvals : []);
         }
       } catch {}
 
@@ -322,6 +331,65 @@ export default function Chat() {
     }
   }
 
+  async function handleResolveApproval(approval, outcome, msgId) {
+    if (!approval?.id) return;
+    setResolvingApprovalId(approval.id);
+    visual('thinking');
+    try {
+      const response = await fetch(`/api/approvals/${encodeURIComponent(approval.id)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ outcome })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      const isApproved = outcome === 'approved';
+      const toolResult = data.result;
+      
+      let outcomeText = '';
+      if (isApproved) {
+        if (toolResult?.ok !== false) {
+          const stdout = toolResult?.data?.stdout ? `\nOutput: ${toolResult.data.stdout.trim()}` : '';
+          const windowInfo = toolResult?.data?.window ? `\nTarget window: ${toolResult.data.window.title || toolResult.data.window.appId || toolResult.data.window.windowId}` : '';
+          outcomeText = `Approved and executed "${approval.toolName || approval.title}".${stdout}${windowInfo}`;
+        } else {
+          outcomeText = `Approved "${approval.toolName || approval.title}", but execution reported: ${toolResult?.error || toolResult?.code || 'Action failed'}.`;
+        }
+      } else {
+        outcomeText = `Approval denied. Action "${approval.toolName || approval.title}" was cancelled.`;
+      }
+
+      setActiveApprovals((prev) => prev.filter((a) => a.id !== approval.id));
+      setMessages((prev) => {
+        const updated = prev.map((m) => m.id === msgId ? { ...m, approval: null, approvalResolved: outcome } : m);
+        return [...updated, {
+          id: makeMsgId('jarvis-approval-result'),
+          who: 'JARVIS',
+          time: nowTime(),
+          lines: [outcomeText]
+        }];
+      });
+
+      if (speechEnabled) {
+        void speakReply(outcomeText);
+      } else {
+        visual('idle');
+      }
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        id: makeMsgId('jarvis-approval-err'),
+        who: 'JARVIS',
+        time: nowTime(),
+        lines: [`Approval action failed: ${err.message || 'Network error'}`]
+      }]);
+      visual('idle');
+    } finally {
+      setResolvingApprovalId(null);
+    }
+  }
+
   async function sendMessage(value = input, speak = null) {
     const val = String(value).trim();
     if (!val) return;
@@ -412,11 +480,16 @@ export default function Chat() {
                     } : null;
                     if (isChallenge) setPendingBrowserChallenge(browserChallenge);
 
+                    const pendingApproval = (data.approvalRequired && data.approval) ? data.approval : (data.approval?.status === 'pending' ? data.approval : null);
+                    if (pendingApproval) {
+                      setActiveApprovals((prev) => [pendingApproval, ...prev.filter((a) => a.id !== pendingApproval.id)]);
+                    }
+
                     if (!placeholderAdded) {
                       placeholderAdded = true;
-                      setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge }]);
+                      setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval }]);
                     } else {
-                      setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge } : m));
+                      setMessages((prev) => prev.map((m) => m.id === assistantMsgId ? { ...m, lines: [finalReply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval } : m));
                     }
 
                     if (shouldSpeak) {
@@ -471,7 +544,12 @@ export default function Chat() {
         } : null;
         if (isChallenge) setPendingBrowserChallenge(browserChallenge);
 
-        setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge }]);
+        const pendingApproval = (data.approvalRequired && data.approval) ? data.approval : (data.approval?.status === 'pending' ? data.approval : null);
+        if (pendingApproval) {
+          setActiveApprovals((prev) => [pendingApproval, ...prev.filter((a) => a.id !== pendingApproval.id)]);
+        }
+
+        setMessages((prev) => [...prev, { id: assistantMsgId, who: 'JARVIS', time: nowTime(), lines: [reply], modelIndicator: data.modelIndicator, routingDebug, media: data.media, browserChallenge, approval: pendingApproval }]);
         if (shouldSpeak) void speakReply(reply);
       }
     } catch {
@@ -704,7 +782,7 @@ export default function Chat() {
                   onClick={() => handleResumeBrowser(m.browserChallenge || pendingBrowserChallenge, m.id)}
                 >
                   <Icon name="check" />
-                  {resumingBrowser ? 'Resuming JARVIS...' : 'Challenge Solved — Resume JARVIS'}
+                  {resumingBrowser ? 'Resuming Browser...' : 'Challenge Solved — Resume Browser'}
                 </button>
               </div>
             )}
@@ -712,6 +790,48 @@ export default function Chat() {
               <div className="browser-challenge-resolved">
                 <Icon name="check" />
                 <span>Challenge verified & browser session resumed.</span>
+              </div>
+            )}
+            {(m.approval || (activeApprovals.length > 0 && i === messages.length - 1 && m.who === 'JARVIS' && !m.approvalResolved)) && (() => {
+              const currentApproval = m.approval || activeApprovals[0];
+              const isResolving = resolvingApprovalId === currentApproval.id;
+              return (
+                <div className="approval-action-card">
+                  <div className="approval-action-header">
+                    <Icon name="shield" />
+                    <span>Action Approval Required</span>
+                  </div>
+                  <div className="approval-action-body">
+                    <div><strong>{currentApproval.title || `Approve ${currentApproval.toolName}`}</strong></div>
+                    {currentApproval.sub && <div className="approval-action-sub">{currentApproval.sub}</div>}
+                  </div>
+                  <div className="approval-action-buttons">
+                    <button
+                      type="button"
+                      className="approve-btn"
+                      disabled={isResolving}
+                      onClick={() => handleResolveApproval(currentApproval, 'approved', m.id)}
+                    >
+                      <Icon name="check" />
+                      {isResolving ? 'Executing...' : 'Approve Once'}
+                    </button>
+                    <button
+                      type="button"
+                      className="deny-btn"
+                      disabled={isResolving}
+                      onClick={() => handleResolveApproval(currentApproval, 'rejected', m.id)}
+                    >
+                      <Icon name="x" />
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+            {m.approvalResolved && (
+              <div className={`approval-resolved-status ${m.approvalResolved === 'approved' ? 'approved' : 'denied'}`}>
+                <Icon name={m.approvalResolved === 'approved' ? 'check' : 'x'} />
+                <span>Action {m.approvalResolved === 'approved' ? 'Approved & Executed' : 'Denied & Cancelled'}.</span>
               </div>
             )}
           </div>

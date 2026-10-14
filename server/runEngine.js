@@ -13,6 +13,7 @@ export function transitionRun(run, status, details = {}) {
   if (status === 'running' && !run.startedAt) run.startedAt = new Date().toISOString();
   if (['completed', 'failed', 'cancelled'].includes(status)) run.completedAt = new Date().toISOString();
   Object.assign(run, details);
+  run.events ??= [];
   run.events.push({ type: `run.${status}`, at: new Date().toISOString(), details });
   return run;
 }

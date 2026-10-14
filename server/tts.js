@@ -4,6 +4,7 @@ const textValue = (value, max = 5000) => String(value || '').trim().slice(0, max
 
 export const COOLDOWN_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 export const ttsProviderCooldownUntil = new Map();
+export const providerCooldownUntil = ttsProviderCooldownUntil;
 
 export function isProviderOnCooldown(provider) {
   const until = ttsProviderCooldownUntil.get(provider);

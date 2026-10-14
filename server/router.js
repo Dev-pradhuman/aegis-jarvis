@@ -51,8 +51,8 @@ export function routeRequest(text) {
   if (application && application[1].length <= 120 && !/\b(https?:\/\/|[a-z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu)\b|\band\b)/i.test(application[1])) return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: application[1] }, confidence: 0.99 };
   const latestEmail = value.match(/\b(?:latest|last|recent|newest)\s*(\d{1,2})?\s*(?:e-?mails?|mails?)\b/i);
   if (latestEmail) return { route: 'TOOL_CALL', capability: 'gmail.latest', args: { limit: Math.min(20, Math.max(1, Number(latestEmail[1] || 4))) }, confidence: 0.99 };
-  const calendarQuery = value.match(/\b(?:upcoming|next|today's|scheduled)?\s*(\d{1,2})?\s*(?:calendar events?|calendar|events?|meetings?)\b/i);
-  if (calendarQuery && /^(?:show|list|what(?:'s| is) on|check|get|fetch|read)\b/i.test(value)) {
+  const calendarQuery = value.match(/\b(?:upcoming|next|today's|scheduled)?\s*(\d{1,2})?\s*(?:calendar events?|calendar|events?|meetings?|schedules?|agenda)\b/i);
+  if (calendarQuery && /^(?:show|list|what(?:'s| is| do i have)?(?: on)?|check|get|fetch|read|do i have any)\b/i.test(value)) {
     return { route: 'TOOL_CALL', capability: 'calendar.upcoming', args: { limit: Math.min(50, Math.max(1, Number(calendarQuery[1] || 10))) }, confidence: 0.99 };
   }
   if (/^(show|list|what are)\s+(my\s+)?tasks\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'tasks.list', args: {}, confidence: 0.99 };

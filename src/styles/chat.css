@@ -224,3 +224,102 @@
   font-weight: 600;
 }
 
+.approval-action-card {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.4);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.approval-action-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cyan);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.approval-action-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.approval-action-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary, #94a3b8);
+  word-break: break-all;
+}
+.approval-action-buttons {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.approve-btn {
+  padding: 8px 14px;
+  background: var(--cyan);
+  color: #0b0f19;
+  font-weight: 700;
+  font-size: 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.approve-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.approve-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.deny-btn {
+  padding: 8px 14px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  font-weight: 700;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.deny-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  transform: translateY(-1px);
+}
+.deny-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.approval-resolved-status {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.approval-resolved-status.approved {
+  color: var(--green);
+}
+.approval-resolved-status.denied {
+  color: #ef4444;
+}
+
