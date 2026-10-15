@@ -11,6 +11,7 @@ import WorkspaceViews from './components/WorkspaceViews.jsx';
 import GalaxyHome from './components/GalaxyHome.jsx';
 import GlobalVoice from './components/GlobalVoice.jsx';
 import GlobalVision from './components/GlobalVision.jsx';
+import DynamicIsland from './components/DynamicIsland.jsx';
 
 import useAppearance from './hooks/useAppearance.js';
 
@@ -28,6 +29,7 @@ function LegacyConsole() {
 export default function App() {
   const [appearance] = useAppearance();
   const [pathname, setPathname] = useState(() => window.location.pathname);
+  const isIsland = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'island';
 
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname);
@@ -38,13 +40,21 @@ export default function App() {
   const isLegacy = pathname === '/legacy' || (pathname !== '/galaxy' && appearance.defaultFrontend === 'legacy');
 
   useEffect(() => {
-    document.title = isLegacy ? 'JARVIS // Legacy Console' : 'JARVIS // Galaxy';
-  }, [isLegacy]);
+    if (isIsland) {
+      document.title = 'JARVIS-ISLAND';
+    } else {
+      document.title = isLegacy ? 'JARVIS // Legacy Console' : 'JARVIS // Galaxy';
+    }
+  }, [isIsland, isLegacy]);
+
+  if (isIsland) {
+    return <AuthGate minimal><DynamicIsland /></AuthGate>;
+  }
 
   return <AuthGate>{isLegacy ? <LegacyConsole /> : <GalaxyHome />}</AuthGate>;
 }
 
-function AuthGate({ children }) {
+function AuthGate({ children, minimal = false }) {
   const [status, setStatus] = useState('checking');
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
@@ -75,7 +85,7 @@ function AuthGate({ children }) {
   };
 
   if (status === 'checking') return <div className="jarvis-auth" role="status">CONNECTING TO JARVIS</div>;
-  if (status !== 'locked') return <>{children}<GlobalVoice /><GlobalVision /></>;
+  if (status !== 'locked') return <>{children}{!minimal && <><GlobalVoice /><GlobalVision /></>}</>;
   return <main className="jarvis-auth"><form className="jarvis-auth-card" onSubmit={login}>
     <div className="jarvis-auth-eyebrow">SECURE LOCAL SESSION</div>
     <h1>JARVIS access</h1>

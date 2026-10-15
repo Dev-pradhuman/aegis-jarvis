@@ -45,10 +45,19 @@ import { unattendedTool, unattendedTools } from '../toolPolicy.js';
 import { brainCatalog } from '../brainSources.js';
 import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from '../brainService.js';
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
+import { getCaelestiaTheme } from '../themeBridge.js';
 
 export default async function systemRoutes(req, res, url, state, ctx) {
   const { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
 
+  if (req.method === 'GET' && url.pathname === '/api/theme/caelestia') return json(res, 200, await getCaelestiaTheme());
+  if (req.method === 'POST' && url.pathname === '/api/island/hide') {
+    try {
+      const { exec } = await import('node:child_process');
+      exec('hyprctl dispatch closewindow class:jarvis-island', () => {});
+    } catch {}
+    return json(res, 200, { ok: true });
+  }
   if (req.method === 'GET' && url.pathname === '/api/projects') return json(res, 200, { projects: await listProjectStatus() });
     if (req.method === 'GET' && url.pathname === '/api/messaging/status') return json(res, 200, { configured: Boolean(process.env.MESSAGING_API_URL || process.env.SLACK_WEBHOOK_URL || process.env.SLACK_BOT_TOKEN), whatsappConnected: false, message: 'WhatsApp provider is not connected' });
     if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicConfig());

@@ -1,0 +1,487 @@
+/* JARVIS Dynamic Island - Caelestia Shell Synced Theme */
+
+:root {
+  --island-bg: #0a0f0f;
+  --island-surface: #0e1514;
+  --island-surface-container: #131b1a;
+  --island-surface-high: #192120;
+  --island-primary: #9bd0cc;
+  --island-primary-dim: #8ec2bf;
+  --island-on-primary: #0d4845;
+  --island-glow: rgba(155, 208, 204, 0.4);
+  --island-text: #dce8e6;
+  --island-subtext: #a2adac;
+  --island-outline: #6d7876;
+  --island-outline-variant: rgba(155, 208, 204, 0.2);
+  --island-error: #fa746f;
+  --island-success: #b5ccba;
+}
+
+body.island-body {
+  background: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  font-family: 'Rajdhani', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+}
+
+.jarvis-island-page {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 10px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.jarvis-island-container {
+  width: 440px;
+  max-width: calc(100vw - 20px);
+  background: rgba(14, 21, 20, 0.90);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid var(--island-outline-variant);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 20px var(--island-glow);
+  border-radius: 28px;
+  color: var(--island-text);
+  overflow: hidden;
+  transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.jarvis-island-container.expanded {
+  border-radius: 20px;
+  max-height: calc(100vh - 24px);
+  height: 320px;
+}
+
+/* Island Top Pill */
+.island-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+/* Voice Orb */
+.island-orb-wrap {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.island-orb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, var(--island-primary), var(--island-on-primary));
+  box-shadow: 0 0 10px var(--island-glow);
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.island-orb.capturing {
+  background: radial-gradient(circle at 35% 35%, #ff5252, #b71c1c);
+  box-shadow: 0 0 14px rgba(255, 82, 82, 0.8);
+  animation: orb-pulse 1.2s infinite ease-in-out;
+}
+
+.island-orb.thinking {
+  background: radial-gradient(circle at 35% 35%, #1fd8ea, #0a4f57);
+  box-shadow: 0 0 14px rgba(31, 216, 234, 0.8);
+  animation: orb-spin 1.4s infinite linear;
+}
+
+.island-orb.speaking {
+  background: radial-gradient(circle at 35% 35%, #4caf50, #1b5e20);
+  box-shadow: 0 0 14px rgba(76, 175, 80, 0.8);
+  animation: orb-pulse 0.9s infinite ease-in-out;
+}
+
+.island-orb-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--island-primary);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.island-orb.capturing + .island-orb-ring {
+  border-color: #ff5252;
+  animation: ring-ripple 1.5s infinite cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.island-orb.speaking + .island-orb-ring {
+  border-color: #4caf50;
+  animation: ring-ripple 1.2s infinite cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes orb-pulse {
+  0% { transform: scale(0.95); opacity: 0.85; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.85; }
+}
+
+@keyframes orb-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes ring-ripple {
+  0% { transform: scale(0.7); opacity: 0.9; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* Island Input */
+.island-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.island-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--island-text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.island-input::placeholder {
+  color: var(--island-subtext);
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+/* Action Buttons */
+.island-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.island-icon-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--island-subtext);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.island-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--island-text);
+  border-color: var(--island-outline-variant);
+}
+
+.island-icon-btn.active {
+  background: var(--island-primary);
+  color: var(--island-on-primary);
+  box-shadow: 0 0 10px var(--island-glow);
+}
+
+.island-icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Expanded Content Area */
+.island-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--island-outline-variant);
+  box-sizing: border-box;
+}
+
+.island-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.island-content::-webkit-scrollbar-thumb {
+  background: var(--island-outline-variant);
+  border-radius: 4px;
+}
+
+/* Messages */
+.island-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.island-msg.user {
+  align-items: flex-end;
+}
+
+.island-msg.user .island-msg-bubble {
+  background: rgba(155, 208, 204, 0.15);
+  border: 1px solid var(--island-outline-variant);
+  color: var(--island-text);
+  border-radius: 14px 14px 2px 14px;
+  padding: 6px 12px;
+  max-width: 85%;
+}
+
+.island-msg.jarvis {
+  align-items: flex-start;
+}
+
+.island-msg.jarvis .island-msg-bubble {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--island-text);
+  border-radius: 14px 14px 14px 2px;
+  padding: 8px 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.island-msg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--island-subtext);
+}
+
+.island-msg-author {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--island-primary);
+}
+
+.island-speak-btn {
+  background: transparent;
+  border: none;
+  color: var(--island-subtext);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.island-speak-btn:hover {
+  color: var(--island-primary);
+}
+
+.island-speak-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Typing Indicator */
+.island-typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.island-typing span {
+  width: 5px;
+  height: 5px;
+  background: var(--island-primary);
+  border-radius: 50%;
+  animation: typing-dot 1.2s infinite ease-in-out;
+}
+
+.island-typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.island-typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1.1); opacity: 1; }
+}
+
+/* Approvals & Challenges inside Island */
+.island-card-block {
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.island-approval-card {
+  background: rgba(255, 180, 50, 0.12);
+  border: 1px solid rgba(255, 180, 50, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.island-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffb834;
+  font-weight: 600;
+}
+
+.island-approval-header svg {
+  width: 14px;
+  height: 14px;
+}
+
+.island-approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.island-btn-approve {
+  flex: 1;
+  background: var(--island-primary);
+  color: var(--island-on-primary);
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: opacity 0.2s;
+}
+
+.island-btn-approve:hover {
+  opacity: 0.9;
+}
+
+.island-btn-approve svg {
+  width: 12px;
+  height: 12px;
+}
+
+.island-btn-deny {
+  background: rgba(250, 116, 111, 0.15);
+  color: var(--island-error);
+  border: 1px solid var(--island-error);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.island-btn-deny:hover {
+  background: rgba(250, 116, 111, 0.25);
+}
+
+/* Browser Challenge inside Island */
+.island-challenge-card {
+  background: rgba(31, 216, 234, 0.10);
+  border: 1px solid rgba(31, 216, 234, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.island-challenge-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #1fd8ea;
+  font-weight: 600;
+}
+
+.island-challenge-header svg {
+  width: 14px;
+  height: 14px;
+}
+
+.island-btn-resume {
+  background: #1fd8ea;
+  color: #04272c;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.island-btn-resume:hover {
+  opacity: 0.9;
+}
+
+.island-btn-resume svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Status / Resolution pills */
+.island-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.island-status-pill.approved {
+  background: rgba(181, 204, 186, 0.15);
+  color: var(--island-success);
+}
+
+.island-status-pill.denied {
+  background: rgba(250, 116, 111, 0.15);
+  color: var(--island-error);
+}
+
+.island-status-pill svg {
+  width: 12px;
+  height: 12px;
+}
