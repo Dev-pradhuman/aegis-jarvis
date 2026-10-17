@@ -12,7 +12,7 @@ import RemindersPanel from '../components/RemindersPanel.jsx';
 const TITLES = {
   chat: 'Conversation', tasks: 'Tasks', reminders: 'Reminders', approvals: 'Approvals', runs: 'Execution runs',
   workflows: 'Workflows', memory: 'Memory', research: 'Research', mcp: 'MCP tools',
-  agents: 'Agents', projects: 'Projects', media: 'Media', integrations: 'Integrations',
+  agents: 'Agents', goals: 'Goals & autonomous agents', projects: 'Projects', media: 'Media', integrations: 'Integrations',
   system: 'System', settings: 'Settings', phone: 'Phone', messaging: 'Messaging', browser: 'Browser', brain: 'JARVIS Brain',
 };
 
@@ -56,6 +56,8 @@ function WindowBody({ id }) {
   if (id === 'approvals') return <div className="galaxy-approvals"><Approvals /><ApprovalPolicyPanel /></div>;
   if (id === 'reminders') return <RemindersPanel />;
   if (id === 'settings') return <WorkspaceViews view="settings" />;
+  if (id === 'goals') return <WorkspaceViews view="goals" />;
+  if (id === 'agents') return <WorkspaceViews view="agents" />;
   return <LiveModule id={id} />;
 }
 

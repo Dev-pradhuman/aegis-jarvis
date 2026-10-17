@@ -17,7 +17,7 @@ const VIEW_META = {
   connections: ['Connections', 'Services, channels, and runtime endpoints'],
   workflows: ['Workflows', 'Multi-stage automations and execution history'],
   goals: ['Goals', 'Outcomes, milestones, and completion signals'],
-  agents: ['Agent History', 'Observed model delegations; dynamic agents are not available'],
+  agents: ['Agent Orchestration', 'Dynamic autonomous agents and model delegations'],
   skills: ['Skills', 'Installable Skill runtime is not available yet'],
   settings: ['System Settings', 'Local policy, interface, and runtime controls'],
 };
@@ -259,13 +259,194 @@ function WorkflowsWorkspace() {
 }
 
 function GoalsWorkspace() {
-  return <div className="workspace-page"><WorkspaceHeader view="goals" /><p className="setting-help">Persistent Goals are not implemented. No goal progress is available.</p></div>;
+  const [data, setData] = useState({ goals: [], agents: [] });
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalDesc, setGoalDesc] = useState('');
+  const [agentRole, setAgentRole] = useState('Research');
+  const [selectedGoalId, setSelectedGoalId] = useState('');
+  const [savingGoal, setSavingGoal] = useState(false);
+  const [spawningAgent, setSpawningAgent] = useState(false);
+
+  async function loadData() {
+    try {
+      const res = await fetch('/api/agents');
+      if (!res.ok) throw new Error(`Agent service returned HTTP ${res.status}`);
+      const val = await res.json();
+      setData({ goals: val.goals || [], agents: val.agents || [] });
+      setStatus('ready');
+      setError('');
+    } catch (err) {
+      setStatus('error');
+      setError(err.message || 'Unable to load goals and agents');
+    }
+  }
+
+  useEffect(() => { void loadData(); }, []);
+
+  async function handleCreateGoal(e) {
+    e?.preventDefault();
+    if (!goalTitle.trim()) return;
+    setSavingGoal(true);
+    try {
+      const res = await fetch('/api/goals', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: goalTitle.trim(), description: goalDesc.trim() })
+      });
+      if (!res.ok) throw new Error(`Goal creation failed: HTTP ${res.status}`);
+      setGoalTitle('');
+      setGoalDesc('');
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingGoal(false);
+    }
+  }
+
+  async function handleSpawnAgent(e) {
+    e?.preventDefault();
+    if (!agentRole.trim()) return;
+    setSpawningAgent(true);
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ role: agentRole.trim(), goalId: selectedGoalId || null })
+      });
+      if (!res.ok) throw new Error(`Agent spawn failed: HTTP ${res.status}`);
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSpawningAgent(false);
+    }
+  }
+
+  const goals = data.goals || [];
+  const agents = data.agents || [];
+  const activeGoals = goals.filter((g) => g.status === 'active').length;
+
+  return (
+    <div className="workspace-page">
+      <WorkspaceHeader view="goals" />
+      <MetricStrip items={[
+        ['Active goals', status === 'ready' ? String(activeGoals).padStart(2, '0') : '—', 'green'],
+        ['Total goals', status === 'ready' ? String(goals.length).padStart(2, '0') : '—', 'cyan'],
+        ['Active agents', status === 'ready' ? String(agents.length).padStart(2, '0') : '—', 'green'],
+        ['Engine', 'Autonomous', 'cyan']
+      ]} />
+
+      {status === 'loading' && <p className="setting-help" role="status">Loading persistent goals and agents…</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', margin: '16px 0' }}>
+        <form onSubmit={handleCreateGoal} className="workspace-panel settings-section">
+          <div className="panel-label">Create Persistent Goal</div>
+          <p className="setting-help">Define an overarching autonomous objective for JARVIS agents.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+            <input
+              type="text"
+              placeholder="Goal title (e.g. System Observability)"
+              value={goalTitle}
+              onChange={(e) => setGoalTitle(e.target.value)}
+              required
+            />
+            <textarea
+              placeholder="Goal description & target outcomes..."
+              value={goalDesc}
+              onChange={(e) => setGoalDesc(e.target.value)}
+              rows={3}
+            />
+            <button type="submit" className="primary-action" disabled={savingGoal || !goalTitle.trim()}>
+              {savingGoal ? 'Creating...' : '+ Create Goal'}
+            </button>
+          </div>
+        </form>
+
+        <form onSubmit={handleSpawnAgent} className="workspace-panel settings-section">
+          <div className="panel-label">Spawn Autonomous Agent</div>
+          <p className="setting-help">Instantiate an agent worker scoped to a specific persistent goal.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
+              Agent Role:
+              <input
+                type="text"
+                placeholder="Role (e.g. Research, Coding, Auditor)"
+                value={agentRole}
+                onChange={(e) => setAgentRole(e.target.value)}
+                required
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
+              Assign to Goal:
+              <select value={selectedGoalId} onChange={(e) => setSelectedGoalId(e.target.value)}>
+                <option value="">Global (No specific goal)</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>{g.title || g.id}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="primary-action" disabled={spawningAgent || !agentRole.trim()}>
+              {spawningAgent ? 'Spawning...' : '⚡ Spawn Scoped Agent'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className="panel-label" style={{ marginTop: '24px', marginBottom: '8px' }}>Active Goals ({goals.length})</div>
+      {status === 'ready' && goals.length === 0 && (
+        <p className="setting-help">No persistent goals created yet. Create one above to anchor autonomous agents.</p>
+      )}
+      <div className="agent-grid">
+        {goals.map((goal) => {
+          const assignedAgents = agents.filter((a) => a.goalId === goal.id);
+          return (
+            <article className="workspace-panel agent-card" key={goal.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3>{goal.title || 'Untitled Goal'}</h3>
+                <span className={`state-mark ${goal.status || 'active'}`} />
+              </div>
+              <p style={{ marginTop: '6px', color: 'var(--text-muted, #aaa)', fontSize: '13px' }}>{goal.description || 'No description provided.'}</p>
+              <div style={{ marginTop: '10px', fontSize: '12px', opacity: 0.8 }}>
+                Status: <strong>{goal.status || 'active'}</strong> · Assigned Agents: <strong>{assignedAgents.length}</strong>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="panel-label" style={{ marginTop: '24px', marginBottom: '8px' }}>Active &amp; Historical Agents ({agents.length})</div>
+      {status === 'ready' && agents.length === 0 && (
+        <p className="setting-help">No agents currently spawned.</p>
+      )}
+      <div className="agent-grid">
+        {agents.map((ag) => (
+          <article className="workspace-panel agent-card" key={ag.id}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>{ag.role || ag.name || 'Agent'}</h3>
+              <span className={`state-mark ${ag.status || 'idle'}`} />
+            </div>
+            <p style={{ fontSize: '12px', marginTop: '4px' }}>
+              ID: <code>{ag.id}</code>
+            </p>
+            <p style={{ fontSize: '12px' }}>
+              Status: <strong>{ag.status || 'idle'}</strong>
+              {ag.goalId && <> · Goal: <code>{ag.goalId}</code></>}
+            </p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function AgentsWorkspace() {
   const [data, setData] = useState(null);
   useEffect(() => { let active = true; fetch('/api/agents').then((response) => response.ok ? response.json() : null).then((value) => { if (active) setData(value); }).catch(() => { if (active) setData({ agents: [], error: true }); }); return () => { active = false; }; }, []);
-  return <div className="workspace-page"><WorkspaceHeader view="agents" /><p className="setting-help">Dynamic agents: {data?.dynamicAgentsAvailable ? 'available' : 'not implemented'}. Historical model delegations are shown below; they are not live workers.</p>{data?.error && <p role="alert">Agent history is unavailable.</p>}{data?.agents?.length === 0 && <p className="setting-help">No model delegations recorded.</p>}<div className="agent-grid">{data?.agents?.map((agent) => <article className="workspace-panel agent-card" key={agent.id}><h3>{agent.name}</h3><p>{agent.status} · Run {agent.runId}</p></article>)}</div></div>;
+  return <div className="workspace-page"><WorkspaceHeader view="agents" /><p className="setting-help">Dynamic agents: {data?.dynamicAgentsAvailable ? 'available' : 'not implemented'}. Active and historical model delegations are shown below.</p>{data?.error && <p role="alert">Agent history is unavailable.</p>}{data?.agents?.length === 0 && <p className="setting-help">No agents or model delegations recorded.</p>}<div className="agent-grid">{data?.agents?.map((agent) => <article className="workspace-panel agent-card" key={agent.id}><h3>{agent.role ? `${agent.role} (Agent)` : agent.name}</h3><p>{agent.status}{agent.goalId ? ` · Goal: ${agent.goalId}` : agent.runId ? ` · Run ${agent.runId}` : ''}</p></article>)}</div></div>;
 }
 
 function SkillsWorkspace() {
@@ -647,15 +828,15 @@ function CascadeWorkflowPanel() {
     {
       num: 'OUT-EN',
       title: 'English Voice Out (Preferred Order)',
-      models: 'Fish Audio (s2-pro: 05b36da8...) ➔ ElevenLabs (v2: bIHbv24M...) ➔ Text only',
-      description: 'Detects English reply text. Calls Fish Audio first; if it fails, falls back to ElevenLabs; if both fail, stays text-only.',
-      status: fishConfigured ? 'Fish Audio Ready (Top)' : elevenConfigured ? 'ElevenLabs Ready (Backup)' : 'Text Only (keys needed)',
-      isReady: fishConfigured || elevenConfigured,
+      models: 'ElevenLabs (eleven_multilingual_v2) ➔ Fish Audio (s2-pro) ➔ Text only',
+      description: 'Detects English reply text. Calls ElevenLabs first; if it fails, falls back to Fish Audio; if both fail, stays text-only.',
+      status: elevenConfigured ? 'ElevenLabs Ready (Top)' : fishConfigured ? 'Fish Audio Ready (Backup)' : 'Text Only (keys needed)',
+      isReady: elevenConfigured || fishConfigured,
     },
     {
       num: 'OUT-HI',
       title: 'Hindi Voice Out (Preferred Order)',
-      models: 'ElevenLabs (v2: czQ9pLzj...) ➔ Fish Audio (s2-pro: 817eba7f...) ➔ Text only',
+      models: 'ElevenLabs (eleven_multilingual_v2) ➔ Fish Audio (s2-pro) ➔ Text only',
       description: 'Detects Hindi reply text. Calls ElevenLabs first; if it fails, falls back to Fish Audio; if both fail, stays text-only.',
       status: elevenConfigured ? 'ElevenLabs Ready (Top)' : fishConfigured ? 'Fish Audio Ready (Backup)' : 'Text Only (keys needed)',
       isReady: elevenConfigured || fishConfigured,
@@ -666,7 +847,7 @@ function CascadeWorkflowPanel() {
     <section className="workspace-panel settings-section full cascade-panel">
       <div className="panel-label">End-to-End Pipeline Architecture</div>
       <p className="setting-help">
-        Full end-to-end fallback system: Input Audio (Groq Whisper) ➔ Thinking Multi-Tier LLMs (Groq Recycling ➔ OpenRouter ➔ OpenCode ➔ Ollama ➔ Browser) ➔ Output Speech (EN: Fish Studio ➔ ElevenLabs; HI: ElevenLabs ➔ Fish Studio). Add your API credentials below.
+        Full end-to-end fallback system: Input Audio (Groq Whisper) ➔ Thinking Multi-Tier LLMs (Groq Recycling ➔ OpenRouter ➔ OpenCode ➔ Ollama ➔ Browser) ➔ Output Speech (EN &amp; HI: ElevenLabs eleven_multilingual_v2 ➔ Fish Audio). Add your API credentials below.
       </p>
 
       <div className="cascade-pipeline-flow">
@@ -933,7 +1114,7 @@ function CascadeWorkflowPanel() {
             disabled={testingVoice}
             onClick={() => testSpeech('en')}
           >
-            Test English (Fish Audio ➔ ElevenLabs)
+            Test English (ElevenLabs eleven_multilingual_v2)
           </button>
           <button
             type="button"
@@ -941,7 +1122,7 @@ function CascadeWorkflowPanel() {
             disabled={testingVoice}
             onClick={() => testSpeech('hi')}
           >
-            Test Hindi (ElevenLabs ➔ Fish Audio)
+            Test Hindi (ElevenLabs eleven_multilingual_v2)
           </button>
         </div>
         {statusMsg && <span className="cascade-status-msg mono">{statusMsg}</span>}

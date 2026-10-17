@@ -144,3 +144,43 @@ test('Hyprland wtype backend reports clean error when wtype binary is missing', 
     return true;
   });
 });
+
+test('Hyprland pointerMove backend dispatches movecursor with integer coordinates', async () => {
+  const spawned = [];
+  const spawnImpl = (cmd, args) => {
+    spawned.push({ cmd, args });
+    const proc = new EventEmitter();
+    process.nextTick(() => proc.emit('exit', 0));
+    return proc;
+  };
+  const input = createLinuxInput({ isHyprland: true, spawnImpl });
+  const result = await input.pointerMove(512.4, 768.8);
+  assert.equal(result.sent, 1);
+  assert.equal(result.backend, 'hyprctl');
+  assert.equal(spawned[0].cmd, 'hyprctl');
+  assert.deepEqual(spawned[0].args, ['dispatch', 'movecursor', '512', '769']);
+
+  await assert.rejects(async () => {
+    await input.pointerMove('abc', NaN);
+  }, (err) => {
+    assert.equal(err.code, 'INPUT_INVALID');
+    return true;
+  });
+});
+
+test('Hyprland pointerMove reports clean error when hyprctl binary is missing', async () => {
+  const spawnImpl = () => {
+    const proc = new EventEmitter();
+    process.nextTick(() => proc.emit('error', Object.assign(new Error('not found'), { code: 'ENOENT' })));
+    return proc;
+  };
+  const input = createLinuxInput({ isHyprland: true, spawnImpl });
+  await assert.rejects(async () => {
+    await input.pointerMove(100, 200);
+  }, (err) => {
+    assert.equal(err.code, 'INPUT_TOOL_MISSING');
+    assert.match(err.message, /requires "hyprctl"/);
+    return true;
+  });
+});
+

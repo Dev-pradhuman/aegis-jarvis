@@ -17,6 +17,25 @@ import useAppearance from './hooks/useAppearance.js';
 
 function LegacyConsole() {
   const [activeView, setActiveView] = useState('overview');
+
+  useEffect(() => {
+    const handleNav = (e) => {
+      const target = e.detail?.id || e.detail?.view;
+      if (target) {
+        if (target === 'reminders') setActiveView('tasks');
+        else if (['overview', 'chat', 'brain', 'tasks', 'approvals', 'connections', 'workflows', 'goals', 'agents', 'skills', 'settings'].includes(target)) {
+          setActiveView(target);
+        }
+      }
+    };
+    window.addEventListener('jarvis:open-window', handleNav);
+    window.addEventListener('jarvis:navigate', handleNav);
+    return () => {
+      window.removeEventListener('jarvis:open-window', handleNav);
+      window.removeEventListener('jarvis:navigate', handleNav);
+    };
+  }, []);
+
   return <div className="app">
       <Sidebar activeView={activeView} onNavigate={setActiveView} />
       <TopBar />

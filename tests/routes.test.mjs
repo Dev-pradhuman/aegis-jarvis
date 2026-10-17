@@ -42,6 +42,10 @@ test('HTTP Route Table Characterization', async (t) => {
     },
     {
         "method": "GET",
+        "path": "/api/goals"
+    },
+    {
+        "method": "GET",
         "path": "/api/research/status"
     },
     {
@@ -400,6 +404,19 @@ test('HTTP Route Table Characterization', async (t) => {
     const isGeneric404 = res.status === 404 && text.includes('"error":"Not found"');
     assert.strictEqual(isGeneric404, false, `Route ${route.method} ${route.path} should be mapped but returned generic 404`);
   }
+
+  // Verify GET /api/agents and GET /api/goals response contracts
+  const resAgents = await fetch('http://127.0.0.1:8800/api/agents');
+  const bodyAgents = await resAgents.json();
+  assert.strictEqual(resAgents.status, 200);
+  assert.strictEqual(bodyAgents.dynamicAgentsAvailable, true);
+  assert.ok(Array.isArray(bodyAgents.agents));
+  assert.ok(Array.isArray(bodyAgents.goals));
+
+  const resGoals = await fetch('http://127.0.0.1:8800/api/goals');
+  const bodyGoals = await resGoals.json();
+  assert.strictEqual(resGoals.status, 200);
+  assert.ok(Array.isArray(bodyGoals.goals));
   
   // Test that an unknown route DOES return generic 404
   const res404 = await fetch('http://127.0.0.1:8800/api/unknown-xyz');

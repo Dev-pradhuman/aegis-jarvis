@@ -98,7 +98,33 @@ export function createLinuxInput({ spawnImpl = spawn, idleTimeoutMs = 120_000, i
           throw Object.assign(new Error(`Hyprland typing failed: ${err.message}`), { code: 'INPUT_FAILED' });
         }
       },
-      pointerMove: async () => { throw Object.assign(new Error('Pointer move is not supported on Hyprland without ydotool daemon'), { code: 'INPUT_UNSUPPORTED' }); },
+      pointerMove: async (x, y) => {
+        const nx = Math.round(Number(x));
+        const ny = Math.round(Number(y));
+        if (!Number.isFinite(nx) || !Number.isFinite(ny)) {
+          throw Object.assign(new Error('Coordinates x and y must be finite numbers'), { code: 'INPUT_INVALID' });
+        }
+        try {
+          await new Promise((resolve, reject) => {
+            const proc = spawnImpl('hyprctl', ['dispatch', 'movecursor', `${nx}`, `${ny}`]);
+            proc.on('error', (err) => {
+              if (err.code === 'ENOENT') {
+                reject(Object.assign(new Error('Desktop input requires "hyprctl" on Hyprland.'), { code: 'INPUT_TOOL_MISSING' }));
+              } else {
+                reject(err);
+              }
+            });
+            proc.on('exit', (code) => {
+              if (code === 0) resolve({ sent: 1, backend: 'hyprctl' });
+              else reject(Object.assign(new Error(`hyprctl exited with code ${code}`), { code: 'INPUT_FAILED' }));
+            });
+          });
+          return { sent: 1, backend: 'hyprctl' };
+        } catch (err) {
+          if (err.code) throw err;
+          throw Object.assign(new Error(`Hyprland cursor move failed: ${err.message}`), { code: 'INPUT_FAILED' });
+        }
+      },
       pointerClick: async () => { throw Object.assign(new Error('Pointer click is not supported on Hyprland without ydotool daemon'), { code: 'INPUT_UNSUPPORTED' }); },
       pointerScroll: async () => { throw Object.assign(new Error('Pointer scroll is not supported on Hyprland without ydotool daemon'), { code: 'INPUT_UNSUPPORTED' }); },
       close: () => {}

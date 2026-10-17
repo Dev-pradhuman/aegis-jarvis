@@ -50,7 +50,6 @@ export default async function chatRoutes(req, res, url, state, ctx) {
   const { json, safeWrite, safeEnd, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
 
   if (req.method === 'GET' && url.pathname === '/api/mcp/servers') return json(res, 200, { servers: await discoverMcpServers() });
-    if (req.method === 'GET' && url.pathname === '/api/agents') return json(res, 200, { agents: (state.modelRouting?.telemetry || []).flatMap((route) => (route.delegations || []).map((stage, index) => ({ id: `${route.runId || route.requestId}-${index}`, name: stage.logicalModel, status: route.success === false ? 'failed' : 'completed', provider: stage.provider, runId: route.runId || route.requestId, at: route.timestamp }))).slice(0, 50), dynamicAgentsAvailable: false });
     if (req.method === 'POST' && url.pathname === '/api/device/events') {
         const input = await body(req); let result;
         try { await updateState((draft) => { result = ingestDeviceEvent(draft, req.headers.authorization?.replace(/^Bearer\s+/i, ''), input); return draft; }); }
@@ -158,7 +157,11 @@ export default async function chatRoutes(req, res, url, state, ctx) {
         toggleHUD();
         return json(res, 200, { ok: true });
       }
-    if (req.method === 'GET' && url.pathname === '/api/agents') return json(res, 200, { agents: state.agents || [], goals: state.goals || [] });
+    if (req.method === 'GET' && url.pathname === '/api/agents') {
+        const delegationHistory = (state.modelRouting?.telemetry || []).flatMap((route) => (route.delegations || []).map((stage, index) => ({ id: `${route.runId || route.requestId}-${index}`, name: stage.logicalModel, status: route.success === false ? 'failed' : 'completed', provider: stage.provider, runId: route.runId || route.requestId, at: route.timestamp })));
+        return json(res, 200, { agents: [...(state.agents || []), ...delegationHistory].slice(0, 50), goals: state.goals || [], dynamicAgentsAvailable: true });
+      }
+    if (req.method === 'GET' && url.pathname === '/api/goals') return json(res, 200, { goals: state.goals || [] });
     if (req.method === 'POST' && url.pathname === '/api/agents') {
         const input = await body(req);
         const agent = spawnAgent(state, input.role, input.goalId);

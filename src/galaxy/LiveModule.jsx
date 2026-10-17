@@ -9,10 +9,11 @@ const SOURCES = {
   mcp: ['/api/mcp/servers', 'servers'], projects: ['/api/projects', 'projects'],
   phone: ['/api/device/status', 'devices'], media: ['/api/media/jobs', 'jobs'],
   agents: ['/api/agents', 'agents'],
+  goals: ['/api/goals', 'goals'],
   research: ['/api/research/status', null], messaging: ['/api/messaging/status', null],
   system: ['/api/diagnostics', null],
 };
-const NAMES = { agents: 'Agent orchestration', research: 'Research workspace', projects: 'Project intelligence', media: 'Media studio', phone: 'Phone companion', messaging: 'Messaging channels' };
+const NAMES = { agents: 'Agent orchestration', goals: 'Goals & autonomous agents', research: 'Research workspace', projects: 'Project intelligence', media: 'Media studio', phone: 'Phone companion', messaging: 'Messaging channels' };
 
 function itemTitle(item) { return item.title || item.name || item.label || item.id || item.type || 'Entry'; }
 function itemDetail(item) { return item.status || item.description || item.summary || item.trigger || item.createdAt || item.state || ''; }
