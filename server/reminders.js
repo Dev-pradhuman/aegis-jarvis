@@ -18,29 +18,70 @@ export function reminderAction(state, action, input = {}, now = Date.now()) {
   if (action === 'create') {
     const title = String(input.title || '').trim();
     if (!title || title.length > 300) fail('REMINDER_TITLE_INVALID', 'Reminder title must contain 1 to 300 characters');
-    const reminder = { id: `reminder-${crypto.randomUUID()}`, title, dueAt: futureTime(input.dueAt, now), status: 'scheduled', createdAt: new Date(now).toISOString(), firedAt: null, completedAt: null };
+    const category = ['timer', 'alarm', 'reminder'].includes(input.category) ? input.category : 'reminder';
+    const repeat = ['daily', 'weekly', 'none'].includes(input.repeat) ? input.repeat : 'none';
+    const reminder = {
+      id: `reminder-${crypto.randomUUID()}`,
+      title,
+      dueAt: futureTime(input.dueAt, now),
+      category,
+      repeat,
+      ringing: false,
+      status: 'scheduled',
+      createdAt: new Date(now).toISOString(),
+      firedAt: null,
+      triggeredAt: null,
+      completedAt: null
+    };
     state.reminders.unshift(reminder);
     return { reminder };
   }
-  const reminder = state.reminders.find((item) => item.id === input.id);
-  if (!reminder) fail('REMINDER_NOT_FOUND', 'Reminder does not exist');
-  if (action === 'complete' || action === 'cancel') {
-    if (!['scheduled', 'due'].includes(reminder.status)) fail('REMINDER_STATE_INVALID', 'Reminder is already completed or cancelled');
-    reminder.status = action === 'complete' ? 'completed' : 'cancelled';
+  const reminderIndex = state.reminders.findIndex((item) => item.id === input.id);
+  if (reminderIndex === -1) fail('REMINDER_NOT_FOUND', 'Reminder does not exist');
+  const reminder = state.reminders[reminderIndex];
+
+  if (action === 'delete') {
+    state.reminders.splice(reminderIndex, 1);
+    return { deleted: true, id: input.id };
+  }
+
+  if (action === 'complete' || action === 'cancel' || action === 'dismiss') {
+    if (!['scheduled', 'due'].includes(reminder.status)) fail('REMINDER_STATE_INVALID', 'Reminder is already completed, dismissed, or cancelled');
+    reminder.ringing = false;
+    reminder.status = action === 'complete' ? 'completed' : action === 'dismiss' ? 'dismissed' : 'cancelled';
     reminder.completedAt = new Date(now).toISOString();
   } else if (action === 'snooze' || action === 'update') {
     if (!['scheduled', 'due'].includes(reminder.status)) fail('REMINDER_STATE_INVALID', 'Reminder cannot be rescheduled');
-    if (action === 'update' && input.title === undefined && input.dueAt === undefined) fail('REMINDER_ACTION_INVALID', 'Provide a title or due time to update');
-    if (action === 'snooze' || input.dueAt !== undefined) reminder.dueAt = futureTime(input.dueAt, now);
+    if (action === 'update' && input.title === undefined && input.dueAt === undefined && input.category === undefined) {
+      fail('REMINDER_ACTION_INVALID', 'Provide a title, due time, or category to update');
+    }
+    if (action === 'snooze') {
+      const minutes = Number(input.snoozeMinutes || 10);
+      const snoozeTarget = input.dueAt || new Date(now + Math.max(1, minutes) * 60_000).toISOString();
+      reminder.dueAt = futureTime(snoozeTarget, now);
+      reminder.ringing = false;
+    } else if (input.dueAt !== undefined) {
+      reminder.dueAt = futureTime(input.dueAt, now);
+    }
     if (action === 'update' && input.title !== undefined) {
       const title = String(input.title).trim();
       if (!title || title.length > 300) fail('REMINDER_TITLE_INVALID', 'Reminder title must contain 1 to 300 characters');
       reminder.title = title;
     }
-    reminder.status = 'scheduled'; reminder.firedAt = null;
+    if (action === 'update' && input.category !== undefined) {
+      reminder.category = ['timer', 'alarm', 'reminder'].includes(input.category) ? input.category : reminder.category;
+    }
+    reminder.status = 'scheduled';
+    reminder.ringing = false;
+    reminder.firedAt = null;
   } else fail('REMINDER_ACTION_INVALID', 'Unsupported reminder action');
   reminder.updatedAt = new Date(now).toISOString();
   return { reminder };
+}
+
+// Returns active ringing reminders
+export function getRingingReminders(state) {
+  return (state.reminders || []).filter((r) => r.status === 'due' && r.ringing === true);
 }
 
 // Claim before attempting delivery. A restart cannot fire the same reminder a
@@ -50,18 +91,41 @@ export function claimDueReminders(state, now = Date.now()) {
   for (const reminder of state.reminders || []) {
     const due = Date.parse(reminder.dueAt);
     if (reminder.status !== 'scheduled' || !Number.isFinite(due) || due > now) continue;
-    reminder.status = 'due'; reminder.firedAt = new Date(now).toISOString();
+    reminder.status = 'due';
+    reminder.ringing = true;
+    reminder.triggeredAt = new Date(now).toISOString();
+    reminder.firedAt = new Date(now).toISOString();
     reminder.desktopDelivery = 'pending';
     state.activity = [activityEntry('reminder.due', reminder.title, { reminderId: reminder.id }), ...(state.activity || [])].slice(0, 200);
-    claimed.push({ id: reminder.id, title: reminder.title, dueAt: reminder.dueAt });
+    claimed.push({ id: reminder.id, title: reminder.title, dueAt: reminder.dueAt, category: reminder.category || 'reminder' });
   }
   return claimed;
 }
 
-export async function deliverDesktopReminder(reminder, execute = execFileAsync) {
+export async function deliverDesktopReminder(reminder, options = {}) {
+  const execute = typeof options === 'function' ? options : (options.execute || execFileAsync);
+  const voicePipeline = typeof options === 'object' ? options.voicePipeline : null;
+
   if (process.platform !== 'linux') return { status: 'unsupported' };
   try {
-    await execute('notify-send', ['--app-name=JARVIS', 'JARVIS reminder', reminder.title], { timeout: 5000, windowsHide: true });
+    const alertPrefix = reminder.category === 'timer' ? '⏱️ JARVIS Timer' : reminder.category === 'alarm' ? '⏰ JARVIS Alarm' : '🔔 JARVIS Reminder';
+    await execute('notify-send', ['--app-name=JARVIS', '-u', 'critical', alertPrefix, reminder.title], { timeout: 5000, windowsHide: true });
+    
+    // Pop dynamic island in Hyprland if script exists
+    if (process.env.HYPRLAND_INSTANCE_SIGNATURE || process.env.WAYLAND_DISPLAY) {
+      try {
+        execute('/home/pradhuman/projects/aegis-jarvis/scripts/jarvis-island.sh', ['show'], { timeout: 4000 }).catch(() => {});
+      } catch {}
+    }
+
+    // Speak proactive TTS alert if voice pipeline is available
+    if (voicePipeline?.speak) {
+      try {
+        const spokenMsg = reminder.category === 'timer' ? `Timer complete: ${reminder.title}` : `Reminder: ${reminder.title}`;
+        voicePipeline.speak(spokenMsg).catch(() => {});
+      } catch {}
+    }
+
     return { status: 'delivered' };
   } catch (error) { return { status: 'unavailable', code: error.code || 'NOTIFY_FAILED' }; }
 }

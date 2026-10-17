@@ -1,7 +1,50 @@
 .topbar {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1.2fr auto auto;
+  grid-template-columns: 1fr 1fr 1.1fr 1.3fr 1.2fr auto auto;
   align-items: stretch;
+}
+.tb-clock {
+  min-width: 160px;
+}
+.tb-clock-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.tb-clock-val {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #ffb86c;
+}
+.tb-clock-date {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.tb-countdown-pill {
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: rgba(255, 149, 0, 0.12);
+  border: 1px solid rgba(255, 149, 0, 0.28);
+  border-radius: 12px;
+  color: #ffd49c;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.15s ease;
+  width: fit-content;
+  max-width: 100%;
+}
+.tb-countdown-pill:hover {
+  background: rgba(255, 149, 0, 0.22);
+  border-color: rgba(255, 149, 0, 0.5);
+  color: #fff;
 }
 .tb-seg {
   display: flex;

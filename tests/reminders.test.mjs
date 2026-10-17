@@ -39,3 +39,58 @@ test('scheduler claim is once across restart; snooze makes only a new due cycle'
   state.reminders.push({ id: 'corrupt-time', status: 'scheduled', dueAt: 'not-a-date' });
   assert.equal(claimDueReminders(state, now + 30_000).length, 0);
 });
+
+test('timers, alarms, snooze and dismiss route cleanly via natural language', () => {
+  const timer = routeRequest('set a timer for 15 minutes');
+  assert.equal(timer.capability, 'reminders.create');
+  assert.equal(timer.args.category, 'timer');
+  assert.match(timer.args.title, /Timer/);
+  assert.ok(Date.parse(timer.args.dueAt) > Date.now());
+
+  const alarm = routeRequest('wake me up at 6:30 am');
+  assert.equal(alarm.capability, 'reminders.create');
+  assert.equal(alarm.args.category, 'alarm');
+  assert.match(alarm.args.title, /Alarm/);
+
+  const snooze = routeRequest('snooze reminder for 10 minutes');
+  assert.equal(snooze.capability, 'reminders.snooze');
+  assert.equal(snooze.args.snoozeMinutes, 10);
+
+  const dismiss = routeRequest('dismiss ringing alarm');
+  assert.equal(dismiss.capability, 'reminders.complete');
+});
+
+test('reminderAction supports categories, delete, dismiss, and relative snoozeMinutes', () => {
+  const now = Date.now();
+  const state = { reminders: [], activity: [] };
+
+  // Create timer
+  const { reminder } = reminderAction(state, 'create', { title: 'Egg timer', dueAt: new Date(now + 180_000).toISOString(), category: 'timer' }, now);
+  assert.equal(reminder.category, 'timer');
+  assert.equal(reminder.ringing, false);
+
+  // Claim when due
+  const claimed = claimDueReminders(state, now + 200_000);
+  assert.equal(claimed.length, 1);
+  assert.equal(state.reminders[0].ringing, true);
+  assert.equal(state.reminders[0].status, 'due');
+
+  // Snooze for 5 minutes
+  const snoozed = reminderAction(state, 'snooze', { id: reminder.id, snoozeMinutes: 5 }, now + 200_000);
+  assert.equal(snoozed.reminder.ringing, false);
+  assert.equal(snoozed.reminder.status, 'scheduled');
+  assert.ok(Date.parse(snoozed.reminder.dueAt) >= now + 200_000 + 300_000);
+
+  // Dismiss
+  state.reminders[0].status = 'due';
+  state.reminders[0].ringing = true;
+  const dismissed = reminderAction(state, 'dismiss', { id: reminder.id }, now + 600_000);
+  assert.equal(dismissed.reminder.status, 'dismissed');
+  assert.equal(dismissed.reminder.ringing, false);
+
+  // Delete
+  const deleted = reminderAction(state, 'delete', { id: reminder.id });
+  assert.equal(deleted.deleted, true);
+  assert.equal(state.reminders.length, 0);
+});
+

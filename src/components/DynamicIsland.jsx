@@ -31,12 +31,20 @@ export default function DynamicIsland() {
   const [resolvingApprovalId, setResolvingApprovalId] = useState(null);
   const [pendingBrowserChallenge, setPendingBrowserChallenge] = useState(null);
   const [resumingBrowser, setResumingBrowser] = useState(false);
+  const [ringingReminders, setRingingReminders] = useState([]);
+  const [currentTimeStr, setCurrentTimeStr] = useState(() => nowTime());
 
   const inputRef = useRef(null);
   const contentRef = useRef(null);
   const currentAudioRef = useRef(null);
   const ttsAbortControllerRef = useRef(null);
   const activeObjectUrlsRef = useRef(new Set());
+
+  // Update clock display
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeStr(nowTime()), 10_000);
+    return () => clearInterval(timer);
+  }, []);
 
   // 1. Fetch & apply dynamic Caelestia Shell theme
   useEffect(() => {
@@ -73,15 +81,16 @@ export default function DynamicIsland() {
     };
   }, []);
 
-  // 2. Poll voice status and security approvals
+  // 2. Poll voice status, security approvals, browser challenges, and schedule ringing alerts
   useEffect(() => {
     let active = true;
     const pollStatus = async () => {
       try {
-        const [vRes, aRes, bRes] = await Promise.all([
+        const [vRes, aRes, bRes, sRes] = await Promise.all([
           fetch('/api/voice/status').catch(() => null),
           fetch('/api/approvals').catch(() => null),
-          fetch('/api/browser/status').catch(() => null)
+          fetch('/api/browser/status').catch(() => null),
+          fetch('/api/schedule/overview').catch(() => null)
         ]);
 
         if (active && vRes?.ok) {
@@ -107,6 +116,13 @@ export default function DynamicIsland() {
           } else {
             setPendingBrowserChallenge(null);
           }
+        }
+
+        if (active && sRes?.ok) {
+          const sData = await sRes.json();
+          const ringing = Array.isArray(sData.ringingReminders) ? sData.ringingReminders : [];
+          setRingingReminders(ringing);
+          if (ringing.length > 0) setExpanded(true);
         }
       } catch {}
     };
@@ -367,6 +383,32 @@ export default function DynamicIsland() {
     }
   };
 
+  const handleDismissReminder = async (id) => {
+    try {
+      await fetch(`/api/schedule/reminders/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'dismiss' })
+      });
+      setRingingReminders((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error('Failed to dismiss reminder:', err);
+    }
+  };
+
+  const handleSnoozeReminder = async (id, minutes = 10) => {
+    try {
+      await fetch(`/api/schedule/reminders/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'snooze', snoozeMinutes: minutes })
+      });
+      setRingingReminders((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error('Failed to snooze reminder:', err);
+    }
+  };
+
   // 10. Send Chat Message
   const sendMessage = async (e) => {
     if (e) e.preventDefault();
@@ -486,6 +528,11 @@ export default function DynamicIsland() {
             <div className="island-orb-ring" />
           </div>
 
+          {/* Clock Pill */}
+          <div className="island-clock" title="Current time">
+            {currentTimeStr}
+          </div>
+
           {/* Prompt Input Form */}
           <form className="island-input-wrap" onSubmit={sendMessage}>
             <input
@@ -542,7 +589,34 @@ export default function DynamicIsland() {
         {/* Expanded Conversation / Approvals / Challenges Area */}
         {expanded && (
           <div className="island-content" ref={contentRef}>
-            {messages.length === 0 && !isTyping && activeApprovals.length === 0 && !pendingBrowserChallenge && (
+            {/* Active Ringing Reminders Alert */}
+            {ringingReminders.length > 0 && (
+              <div className="island-card-block island-ringing-card">
+                <div className="island-ringing-header">
+                  <Icon name="bell" />
+                  <span>{ringingReminders[0].category ? ringingReminders[0].category.toUpperCase() : 'ALERT'} RINGING</span>
+                </div>
+                <div className="island-ringing-title">{ringingReminders[0].title}</div>
+                <div className="island-ringing-actions">
+                  <button
+                    type="button"
+                    className="island-btn-resume island-btn-dismiss"
+                    onClick={() => handleDismissReminder(ringingReminders[0].id)}
+                  >
+                    <Icon name="check" /> Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    className="island-btn-resume island-btn-snooze"
+                    onClick={() => handleSnoozeReminder(ringingReminders[0].id, 10)}
+                  >
+                    <Icon name="clock" /> Snooze 10m
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {messages.length === 0 && !isTyping && activeApprovals.length === 0 && !pendingBrowserChallenge && ringingReminders.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--island-subtext)', padding: '16px 0', fontSize: '12px' }}>
                 Type a prompt above or press <kbd style={{ padding: '2px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px' }}>Alt+Space</kbd> to speak.
               </div>

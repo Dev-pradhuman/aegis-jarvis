@@ -1,0 +1,20 @@
+[Unit]
+Description=AEGIS JARVIS Voice Assistant & Command Daemon
+After=network.target sound.target pipewire.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pradhuman/projects/aegis-jarvis
+Environment=NODE_ENV=production
+Environment=PORT=8787
+Environment=JARVIS_PORT=8787
+EnvironmentFile=-/home/pradhuman/projects/aegis-jarvis/.env
+PassEnvironment=WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS
+ExecStart=/usr/bin/node /home/pradhuman/projects/aegis-jarvis/server/index.js
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target

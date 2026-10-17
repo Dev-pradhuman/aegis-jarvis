@@ -1,4 +1,4 @@
-import { useReducer, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import { Minus, Maximize2, Minimize2, X, PanelTopOpen } from 'lucide-react';
 import Chat from '../components/Chat.jsx';
 import WorkspaceViews from '../components/WorkspaceViews.jsx';
@@ -104,6 +104,16 @@ export default function useWindowManager() {
   const [windows, dispatch] = useReducer(reducer, []);
   const open = (id) => dispatch({ type: 'open', id });
   const closeAll = () => dispatch({ type: 'closeAll' });
+
+  useEffect(() => {
+    const handleOpenWindow = (event) => {
+      if (event.detail?.id) {
+        dispatch({ type: 'open', id: event.detail.id });
+      }
+    };
+    window.addEventListener('jarvis:open-window', handleOpenWindow);
+    return () => window.removeEventListener('jarvis:open-window', handleOpenWindow);
+  }, []);
   const view = <>
     {windows.map((item, index) => <JarvisWindow key={item.id} windowData={item} index={index} dispatch={dispatch} />)}
     {windows.some((item) => item.minimized) && <div className="window-dock" aria-label="Minimized windows">

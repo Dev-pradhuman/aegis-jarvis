@@ -40,3 +40,5 @@ build/
 bin/
 scripts/archive/
 scratch/
+*.gif
+brag-output/

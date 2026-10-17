@@ -77,7 +77,7 @@ export const implementedToolIds = [
   'browser.resume', 'browser.close', 'apps.list', 'apps.open', 'project.inspect',
   'files.read', 'command.execute', 'composio.execute', 'tasks.list', 'tasks.manage',
   'reminders.list', 'reminders.create', 'reminders.update', 'reminders.complete', 'reminders.snooze', 'reminders.cancel',
-  'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'calendar.upcoming',
+  'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'gmail.send', 'calendar.upcoming',
   'media.generate', 'research.search', 'calendar.create', 'composio.read', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
@@ -176,8 +176,39 @@ async function runTool(toolId, input = {}, context = {}) {
   }
   if (toolId === 'calendar.create') {
     requireExactApproval(toolId, input, context.approval, context.runId);
-    const data = await calendarRequest('POST', input.payload);
+    if (process.env.COMPOSIO_API_KEY) {
+      const summary = input.summary || input.payload?.summary || input.title || 'New Event';
+      const startTime = input.startTime || input.payload?.startTime || input.start || new Date().toISOString();
+      const endTime = input.endTime || input.payload?.endTime || input.end || new Date(Date.now() + 3600000).toISOString();
+      const description = input.description || input.payload?.description || '';
+      const args = {
+        calendar_id: 'primary',
+        summary,
+        description,
+        start: { dateTime: startTime },
+        end: { dateTime: endTime }
+      };
+      const result = await executeComposioTool({ toolSlug: 'GOOGLECALENDAR_CREATE_EVENT', arguments: args }, context.fetchImpl || fetch);
+      if (!result.successful) throw new Error(result.error || 'Calendar event creation failed');
+      return { ok: true, toolId, data: result.data };
+    }
+    const data = await calendarRequest('POST', input.payload || input);
     return { ok: Boolean(data.configured), toolId, data };
+  }
+  if (toolId === 'gmail.send') {
+    requireExactApproval(toolId, input, context.approval, context.runId);
+    const recipient = input.to || input.recipient;
+    const subject = input.subject || '(No subject)';
+    const body = input.body || input.content || '';
+    const args = {
+      user_id: 'me',
+      recipient_email: recipient,
+      subject,
+      body
+    };
+    const result = await executeComposioTool({ toolSlug: 'GMAIL_SEND_EMAIL', arguments: args }, context.fetchImpl || fetch);
+    if (!result.successful) throw new Error(result.error || 'Gmail send failed');
+    return { ok: true, toolId, data: result.data };
   }
   if (toolId === 'media.generate') return { ok: true, toolId, data: await generateMedia(input.kind, input.prompt, context.fetchImpl || fetch) };
   if (toolId === 'research.search') return { ok: true, toolId, data: await researchSearch(input.query) };

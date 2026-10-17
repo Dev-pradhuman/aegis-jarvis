@@ -5,6 +5,7 @@ import ApprovalPolicyPanel from './ApprovalPolicyPanel.jsx';
 import Chat from './Chat.jsx';
 import Icon from './Icon.jsx';
 import Tasks from './Tasks.jsx';
+import RemindersPanel from './RemindersPanel.jsx';
 import useAppearance from '../hooks/useAppearance.js';
 import '../styles/workspaces.css';
 
@@ -176,8 +177,8 @@ function TasksWorkspace() {
           <Tasks />
         </div>
         <aside className="workspace-panel timeline-panel">
-          <div className="panel-label">Scheduling</div>
-          <p className="setting-help">Scheduled tasks and reminders are not implemented in this view.</p>
+          <div className="panel-toolbar"><div className="panel-label">Schedule & Reminders</div></div>
+          <RemindersPanel compact={true} />
         </aside>
       </div>
     </div>

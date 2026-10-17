@@ -54,6 +54,7 @@ import chatRoutes from './routes/chat.js';
 import deviceRoutes from './routes/device.js';
 import brainRoutes from './routes/brain.js';
 import { safeWrite, safeEnd } from './streamUtils.js';
+import { serveStatic } from './staticServer.js';
 
 
 const port = Number(process.env.JARVIS_PORT || 8787);
@@ -61,7 +62,7 @@ const processStartedAt = Date.now();
 const uptimeSeconds = () => Math.floor((Date.now() - processStartedAt) / 1000);
 const desktopErrorStatus = (code) => ({ WINDOW_NOT_FOUND: 404, AMBIGUOUS_TARGET: 409, WINDOW_FOCUS_FAILED: 409, TARGET_FOCUS_CHANGED: 409, WINDOW_OPERATION_UNSUPPORTED: 503, WINDOW_BACKEND_UNAVAILABLE: 503, WINDOW_BACKEND_TIMEOUT: 504, APP_LAUNCH_FAILED: 502 })[code];
 const schedulerEnabled = process.env.JARVIS_SCHEDULER !== '0';
-const schedulerInterval = Math.max(10_000, Number(process.env.JARVIS_SCHEDULER_INTERVAL_MS || 30_000));
+const schedulerInterval = Math.max(5_000, Number(process.env.JARVIS_SCHEDULER_INTERVAL_MS || 15_000));
 let lastSchedulerTick = null;
 let schedulerTickInFlight = null;
 async function processSchedulerTick() {
@@ -69,19 +70,11 @@ async function processSchedulerTick() {
   schedulerTickInFlight = (async () => {
     const current = await getState();
     expirePendingApprovals(current);
-    const runs = await tick(current);
-    const reminders = claimDueReminders(current);
+    const runs = await tick(current, Date.now(), { voicePipeline });
     lastSchedulerTick = new Date().toISOString();
     await updateState((draft) => draft);
-    for (const reminder of reminders) {
-      const delivered = await deliverDesktopReminder(reminder);
-      await updateState((draft) => {
-        const item = (draft.reminders || []).find((entry) => entry.id === reminder.id);
-        if (item?.status === 'due') item.desktopDelivery = delivered.status;
-        return draft;
-      });
-    }
-    return { runs, reminders };
+    const ringing = (current.reminders || []).filter((r) => r.status === 'due' && r.ringing);
+    return { runs, reminders: ringing, ringingReminders: ringing };
   })();
   try { return await schedulerTickInFlight; }
   finally { schedulerTickInFlight = null; }
@@ -226,6 +219,9 @@ const server = http.createServer(async (req, res) => {
     if (res.headersSent) return;
     await brainRoutes(req, res, url, state, ctx);
     if (res.headersSent) return;
+
+    const handledStatic = await serveStatic(req, res, url);
+    if (handledStatic || res.headersSent) return;
 
     return json(res, 404, { error: 'Not found' });
   } catch (error) { if (!desktopErrorStatus(error.code)) console.error(error); return json(res, desktopErrorStatus(error.code) || (error.code === 'PAYLOAD_TOO_LARGE' ? 413 : error.code === 'INVALID_JSON' || error.code === 'TOOL_INPUT_INVALID' ? 400 : error.code === 'HUMAN_ACTION_REQUIRED' ? 409 : error.code?.startsWith('BROWSER_') || error.code === 'NAVIGATION_FAILED' ? 502 : 500), { error: desktopErrorStatus(error.code) ? error.message : 'JARVIS service error', code: error.code || 'SERVICE_ERROR', detail: error.message }); }

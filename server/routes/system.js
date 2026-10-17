@@ -19,7 +19,7 @@ import { publicApprovalPolicy, validateApprovalRules } from '../approvalPolicy.j
 import { expirePendingApprovals } from '../approvalExpiry.js';
 import { diagnostics, ingestDocument, integrationStatus, researchSearch, searchMemory } from '../systemModules.js';
 import { tick } from '../scheduler.js';
-import { claimDueReminders, deliverDesktopReminder } from '../reminders.js';
+import { claimDueReminders, deliverDesktopReminder, reminderAction, getRingingReminders } from '../reminders.js';
 import crypto from 'node:crypto';
 import { adapterStatus, embed, extractDocument, mcpError, mcpResponse, vectorSearch } from '../extendedAdapters.js';
 import { calendarRequest, createSession, validSession } from '../liveAdapters.js';
@@ -29,7 +29,7 @@ import { routeRequest } from '../router.js';
 import { publicConfig, saveConfig } from '../config.js';
 import { synthesizeSpeech, transcribeAudio, ttsStatus } from '../tts.js';
 import { downloadVideoJob, generateMedia, readGeneratedMedia, refreshVideoJob } from '../mediaGeneration.js';
-import { composioStatus, composioToolRisk, createComposioConnectLink, listComposioAccounts, listComposioTools, validateComposioProjectKey } from '../composioAdapter.js';
+import { composioStatus, composioToolRisk, createComposioConnectLink, listComposioAccounts, listComposioTools, validateComposioProjectKey, executeComposioTool } from '../composioAdapter.js';
 import { complete as completeConfiguredProvider, providerForLogicalModel } from '../providerClient.js';
 import { systemMetrics } from '../systemMetrics.js';
 import { browserManager } from '../browser/index.js';
@@ -46,6 +46,49 @@ import { brainCatalog } from '../brainSources.js';
 import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from '../brainService.js';
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
 import { getCaelestiaTheme } from '../themeBridge.js';
+
+let calendarCache = { events: [], fetchedAt: 0 };
+async function getCachedCalendarEvents(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && calendarCache.events.length > 0 && (now - calendarCache.fetchedAt < 60_000)) {
+    return calendarCache.events;
+  }
+  if (!process.env.COMPOSIO_API_KEY) {
+    return calendarCache.events;
+  }
+  try {
+    const timeMin = new Date().toISOString();
+    const timeMax = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const result = await executeComposioTool({
+      toolSlug: 'GOOGLECALENDAR_EVENTS_LIST',
+      arguments: {
+        calendar_id: 'primary',
+        max_results: 30,
+        time_min: timeMin,
+        time_max: timeMax,
+        single_events: true,
+        order_by: 'startTime'
+      }
+    });
+    if (result && result.successful) {
+      const rawEvents = Array.isArray(result.data?.items) ? result.data.items : (Array.isArray(result.data) ? result.data : []);
+      const events = rawEvents.map((e) => ({
+        id: e.id || null,
+        title: e.summary || e.title || '(No title)',
+        start: e.start?.dateTime || e.start?.date || null,
+        end: e.end?.dateTime || e.end?.date || null,
+        location: e.location || null,
+        link: e.htmlLink || e.link || null,
+        status: e.status || 'confirmed'
+      }));
+      calendarCache = { events, fetchedAt: now };
+      return events;
+    }
+  } catch (err) {
+    console.warn('[calendarCache] failed to sync calendar:', err.message);
+  }
+  return calendarCache.events;
+}
 
 export default async function systemRoutes(req, res, url, state, ctx) {
   const { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
@@ -81,7 +124,7 @@ export default async function systemRoutes(req, res, url, state, ctx) {
     if (req.method === 'GET' && url.pathname === '/api/connections') return json(res, 200, { connections: connectionStatus(state.provider) });
     if (req.method === 'GET' && url.pathname === '/api/diagnostics') return json(res, 200, diagnostics(state));
     if (req.method === 'GET' && url.pathname === '/api/integrations') return json(res, 200, { integrations: integrationStatus(state) });
-    if (req.method === 'GET' && url.pathname === '/api/permissions') return json(res, 200, { mode: 'assisted', consequential: ['command.execute', 'browser.evaluate', 'messages.send', 'calendar.create', 'mcp.call', 'composio.execute'], default: 'deny' });
+    if (req.method === 'GET' && url.pathname === '/api/permissions') return json(res, 200, { mode: 'assisted', consequential: ['command.execute', 'browser.evaluate', 'messages.send', 'calendar.create', 'gmail.send', 'mcp.call', 'composio.execute'], default: 'deny' });
     if (req.method === 'GET' && url.pathname === '/api/adapters') return json(res, 200, adapterStatus());
     if (req.method === 'GET' && url.pathname === '/api/capabilities') return json(res, 200, { assistant: 'JARVIS', capabilities: listCapabilities(), status: capabilityStatus(state, { brainSources: brainCatalog.list(), web: webAiStatus() }) });
     if (req.method === 'GET' && url.pathname === '/api/capabilities/status') return json(res, 200, { status: capabilityStatus(state, { brainSources: brainCatalog.list(), web: webAiStatus() }) });
@@ -89,6 +132,51 @@ export default async function systemRoutes(req, res, url, state, ctx) {
     if (req.method === 'GET' && url.pathname === '/api/scheduler') return json(res, 200, { enabled: schedulerEnabled, intervalSeconds: schedulerInterval / 1000, lastTickAt: lastSchedulerTick });
     if (req.method === 'POST' && url.pathname === '/api/scheduler/tick') { const result = await processSchedulerTick(); return json(res, 200, { ...result, tickedAt: lastSchedulerTick }); }
     if (req.method === 'GET' && url.pathname === '/api/reminders') return json(res, 200, { reminders: state.reminders || [] });
+    if (req.method === 'GET' && url.pathname === '/api/schedule/overview') {
+      const forceRefresh = url.searchParams.get('refresh') === '1';
+      const calendarEvents = await getCachedCalendarEvents(forceRefresh);
+      const reminders = state.reminders || [];
+      const ringingReminders = reminders.filter((r) => r.status === 'due' && r.ringing);
+      const tasks = (state.tasks || []).map((t) => ({ id: t.id, title: t.title, status: t.status, priority: t.priority }));
+      return json(res, 200, {
+        serverTime: new Date().toISOString(),
+        reminders,
+        ringingReminders,
+        tasks,
+        calendarEvents
+      });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/schedule/reminders') {
+      const input = await body(req);
+      const { reminder } = reminderAction(state, 'create', input);
+      await updateState((draft) => {
+        draft.reminders = state.reminders;
+        return draft;
+      });
+      return json(res, 201, { ok: true, reminder });
+    }
+    const scheduleReminderMatch = url.pathname.match(/^\/api\/schedule\/reminders\/([^/]+)$/);
+    if (scheduleReminderMatch) {
+      const reminderId = scheduleReminderMatch[1];
+      if (req.method === 'PATCH') {
+        const input = await body(req);
+        const action = input.action || 'update';
+        const { reminder } = reminderAction(state, action, { id: reminderId, ...input });
+        await updateState((draft) => {
+          draft.reminders = state.reminders;
+          return draft;
+        });
+        return json(res, 200, { ok: true, reminder });
+      }
+      if (req.method === 'DELETE') {
+        const result = reminderAction(state, 'delete', { id: reminderId });
+        await updateState((draft) => {
+          draft.reminders = state.reminders;
+          return draft;
+        });
+        return json(res, 200, { ok: true, ...result });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/tools/execute') {
         const result = await executeApiTool(state, await body(req));
         return json(res, result.status, result.body);

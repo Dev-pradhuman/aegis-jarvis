@@ -1,0 +1,492 @@
+/* Reminders, Timers, Alarms & Calendar Hub Styles */
+
+.reminders-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  color: #d9ecff;
+  font-family: inherit;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.reminders-hub.compact {
+  padding: 10px;
+  gap: 12px;
+}
+
+/* Ringing Banner */
+.ringing-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 68, 68, 0.15);
+  border: 1px solid rgba(255, 68, 68, 0.55);
+  border-radius: 8px;
+  box-shadow: 0 0 16px rgba(255, 68, 68, 0.35);
+  animation: ringing-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes ringing-pulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(255, 68, 68, 0.3);
+    border-color: rgba(255, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(255, 68, 68, 0.7);
+    border-color: rgba(255, 68, 68, 0.9);
+  }
+}
+
+.ringing-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ringing-icon {
+  font-size: 20px;
+  animation: bell-shake 0.6s infinite ease-in-out;
+}
+
+@keyframes bell-shake {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-15deg); }
+  75% { transform: rotate(15deg); }
+}
+
+.ringing-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+}
+
+.ringing-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  background: rgba(255, 68, 68, 0.3);
+  border-radius: 4px;
+  color: #ff9e9e;
+  text-transform: uppercase;
+}
+
+.ringing-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ringing-actions button {
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-dismiss {
+  background: #ff4444;
+  border: 1px solid #ff6666;
+  color: #fff;
+}
+.btn-dismiss:hover {
+  background: #ff2222;
+}
+
+.btn-snooze {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+.btn-snooze:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Hero Clock Section */
+.reminders-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(10, 24, 46, 0.65);
+  border: 1px solid rgba(85, 151, 235, 0.25);
+  border-radius: 8px;
+}
+
+.reminders-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.reminders-hero-clock {
+  font-family: var(--font-mono, monospace);
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffb86c;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.reminders-hero-date {
+  font-size: 13px;
+  color: #92b6dc;
+  font-weight: 500;
+}
+
+/* Quick Countdown Timers */
+.quick-timers-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-timers-label {
+  font-size: 11px;
+  color: #8bb2d9;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.quick-timer-btn {
+  padding: 5px 10px;
+  background: rgba(255, 149, 0, 0.12);
+  border: 1px solid rgba(255, 149, 0, 0.35);
+  border-radius: 6px;
+  color: #ffd49c;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quick-timer-btn:hover {
+  background: rgba(255, 149, 0, 0.25);
+  border-color: rgba(255, 149, 0, 0.6);
+  color: #fff;
+}
+
+/* Mini Calendar */
+.mini-calendar {
+  padding: 14px;
+  background: rgba(10, 24, 46, 0.45);
+  border: 1px solid rgba(85, 151, 235, 0.2);
+  border-radius: 8px;
+}
+
+.cal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.cal-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #cbe3ff;
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cal-nav button {
+  padding: 3px 8px;
+  background: rgba(85, 151, 235, 0.12);
+  border: 1px solid rgba(85, 151, 235, 0.3);
+  border-radius: 4px;
+  color: #b5d5f5;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cal-nav button:hover {
+  background: rgba(85, 151, 235, 0.25);
+  color: #fff;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+
+.cal-day-header {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6c92ba;
+  padding: 4px 0;
+  text-transform: uppercase;
+}
+
+.cal-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #a4c7eb;
+  transition: all 0.12s ease;
+}
+
+.cal-cell:hover {
+  background: rgba(85, 151, 235, 0.15);
+}
+
+.cal-cell.empty {
+  cursor: default;
+  background: transparent;
+}
+
+.cal-cell.today {
+  border-color: rgba(255, 184, 108, 0.6);
+  color: #ffb86c;
+  font-weight: 700;
+}
+
+.cal-cell.selected {
+  background: rgba(85, 151, 235, 0.35);
+  border-color: #5597eb;
+  color: #fff;
+  font-weight: 700;
+}
+
+.cal-cell.has-events::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  background: #ff9500;
+  border-radius: 50%;
+}
+
+.cal-cell.has-calendar::after {
+  background: #4caf50;
+}
+
+/* Creation Form */
+.reminder-form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(6, 22, 46, 0.5);
+  border: 1px solid rgba(85, 151, 235, 0.22);
+  border-radius: 8px;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.form-group {
+  flex: 1;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 11px;
+  color: #8bb2d9;
+  font-weight: 600;
+}
+
+.reminder-form input,
+.reminder-form select {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid rgba(85, 151, 235, 0.35);
+  border-radius: 5px;
+  background: #06162e;
+  color: #e4f2ff;
+  font-size: 12px;
+}
+
+.reminder-form button[type="submit"] {
+  padding: 8px 14px;
+  background: rgba(85, 151, 235, 0.25);
+  border: 1px solid rgba(85, 151, 235, 0.5);
+  border-radius: 5px;
+  color: #e4f2ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: fit-content;
+}
+
+.reminder-form button[type="submit"]:hover {
+  background: rgba(85, 151, 235, 0.45);
+  color: #fff;
+}
+
+/* List & Filter Header */
+.schedule-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.schedule-tab {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(85, 151, 235, 0.2);
+  border-radius: 5px;
+  color: #92b6dc;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.schedule-tab.active {
+  background: rgba(85, 151, 235, 0.25);
+  border-color: rgba(85, 151, 235, 0.55);
+  color: #fff;
+  font-weight: 600;
+}
+
+.sync-cal-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  border-radius: 5px;
+  color: #a5d6a7;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sync-cal-btn:hover {
+  background: rgba(76, 175, 80, 0.25);
+  color: #fff;
+}
+
+/* Event Items */
+.schedule-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(10, 24, 46, 0.55);
+  border: 1px solid rgba(85, 151, 235, 0.2);
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.schedule-item.due {
+  border-color: rgba(255, 149, 0, 0.7);
+  background: rgba(255, 149, 0, 0.08);
+}
+
+.schedule-item.calendar {
+  border-left: 3px solid #4caf50;
+}
+
+.item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e4f2ff;
+}
+
+.item-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.badge-timer { background: rgba(255, 149, 0, 0.25); color: #ffd49c; }
+.badge-alarm { background: rgba(233, 30, 99, 0.25); color: #f48fb1; }
+.badge-reminder { background: rgba(85, 151, 235, 0.25); color: #b5d5f5; }
+.badge-calendar { background: rgba(76, 175, 80, 0.25); color: #a5d6a7; }
+
+.item-meta {
+  font-size: 11px;
+  color: #8bb2d9;
+}
+
+.item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.item-actions button {
+  padding: 4px 8px;
+  background: rgba(85, 151, 235, 0.12);
+  border: 1px solid rgba(85, 151, 235, 0.3);
+  border-radius: 4px;
+  color: #b5d5f5;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.item-actions button:hover {
+  background: rgba(85, 151, 235, 0.25);
+  color: #fff;
+}
+
+.btn-del {
+  border-color: rgba(255, 68, 68, 0.3) !important;
+  color: #ff9e9e !important;
+}
+.btn-del:hover {
+  background: rgba(255, 68, 68, 0.2) !important;
+  color: #fff !important;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  color: #7b9fc2;
+  font-size: 13px;
+}

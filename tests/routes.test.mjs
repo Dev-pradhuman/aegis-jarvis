@@ -317,6 +317,10 @@ test('HTTP Route Table Characterization', async (t) => {
         "path": "/api/reminders"
     },
     {
+        "method": "GET",
+        "path": "/api/schedule/overview"
+    },
+    {
         "method": "POST",
         "path": "/api/tools/execute"
     },

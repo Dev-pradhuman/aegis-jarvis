@@ -84,7 +84,7 @@ export async function tick(state, now = Date.now(), options = {}) {
   // 2. Process due reminders
   const dueReminders = claimDueReminders(state, now);
   for (const reminder of dueReminders) {
-    const result = await deliverDesktopReminder(reminder);
+    const result = await deliverDesktopReminder(reminder, options);
     const stored = (state.reminders || []).find(r => r.id === reminder.id);
     if (stored) stored.desktopDelivery = result.status;
   }

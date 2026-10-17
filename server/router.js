@@ -1,21 +1,51 @@
 export function routeRequest(text) {
   const value = String(text).trim();
-  const relativeReminder = value.match(/^(?:jarvis[, ]+)?remind me in (\d{1,4}) (minutes?|hours?|days?) to (.{1,300})$/i);
+  const timerMatch = value.match(/^(?:jarvis[, ]+)?(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|timer\s+(?:for\s+)?|start\s+(?:a\s+)?(?:timer\s+for\s+)?)(\d{1,4})\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?:\s+(?:for|to|called)\s+(.{1,100}))?[.!]?$/i);
+  if (timerMatch) {
+    const count = Number(timerMatch[1]);
+    const unitStr = timerMatch[2].toLowerCase();
+    const unit = unitStr.startsWith('sec') ? 1_000 : unitStr.startsWith('hour') || unitStr.startsWith('hr') ? 3_600_000 : 60_000;
+    if (count > 0) {
+      const customLabel = (timerMatch[3] || '').trim();
+      const title = customLabel || `Timer (${count} ${unitStr})`;
+      return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title, dueAt: new Date(Date.now() + count * unit).toISOString(), category: 'timer' }, confidence: 0.99 };
+    }
+  }
+  const alarmMatch = value.match(/^(?:jarvis[, ]+)?(?:wake\s+me\s+up\s+at|set\s+(?:an?\s+)?alarm\s+(?:for|at))\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)[.!]?$/i);
+  if (alarmMatch) {
+    const hour = Number(alarmMatch[1]), minute = Number(alarmMatch[2] || 0);
+    if (hour >= 1 && hour <= 12 && minute <= 59) {
+      const due = new Date();
+      due.setHours(hour % 12 + (alarmMatch[3].toLowerCase() === 'pm' ? 12 : 0), minute, 0, 0);
+      if (due.getTime() <= Date.now()) due.setDate(due.getDate() + 1);
+      return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: `Alarm (${hour}:${String(minute).padStart(2, '0')} ${alarmMatch[3].toUpperCase()})`, dueAt: due.toISOString(), category: 'alarm' }, confidence: 0.99 };
+    }
+  }
+  const relativeReminder = value.match(/^(?:jarvis[, ]+)?remind me in (\d{1,4}) (minutes?|hours?|days?)\s+(?:to|about)\s+(.{1,300})$/i);
   if (relativeReminder) {
     const count = Number(relativeReminder[1]);
     const unit = relativeReminder[2].toLowerCase().startsWith('minute') ? 60_000 : relativeReminder[2].toLowerCase().startsWith('hour') ? 3_600_000 : 86_400_000;
-    if (count > 0) return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: relativeReminder[3], dueAt: new Date(Date.now() + count * unit).toISOString() }, confidence: 0.99 };
+    if (count > 0) return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: relativeReminder[3], dueAt: new Date(Date.now() + count * unit).toISOString(), category: 'reminder' }, confidence: 0.99 };
   }
-  const clockReminder = value.match(/^(?:jarvis[, ]+)?remind me at (\d{1,2})(?::(\d{2}))?\s*(am|pm) to (.{1,300})$/i);
+  const clockReminder = value.match(/^(?:jarvis[, ]+)?remind me at (\d{1,2})(?::(\d{2}))?\s*(am|pm)\s+(?:to|about)\s+(.{1,300})$/i);
   if (clockReminder) {
     const hour = Number(clockReminder[1]), minute = Number(clockReminder[2] || 0);
     if (hour >= 1 && hour <= 12 && minute <= 59) {
       const due = new Date(); due.setHours(hour % 12 + (clockReminder[3].toLowerCase() === 'pm' ? 12 : 0), minute, 0, 0);
       if (due.getTime() <= Date.now()) due.setDate(due.getDate() + 1);
-      return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: clockReminder[4], dueAt: due.toISOString() }, confidence: 0.99 };
+      return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: clockReminder[4], dueAt: due.toISOString(), category: 'reminder' }, confidence: 0.99 };
     }
   }
-  if (/^(?:show|list|what are)\s+(?:my\s+)?reminders\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
+  const snoozeMatch = value.match(/^(?:jarvis[, ]+)?snooze(?:\s+the)?\s+(?:reminder|alarm|timer)?(?:\s+(?:for\s+)?(\d{1,3})\s*(?:minutes?|mins?))?[.!]?$/i);
+  if (snoozeMatch) {
+    const minutes = Number(snoozeMatch[1] || 10);
+    return { route: 'TOOL_CALL', capability: 'reminders.snooze', args: { snoozeMinutes: minutes }, confidence: 0.99 };
+  }
+  const dismissMatch = value.match(/^(?:jarvis[, ]+)?(?:dismiss|stop|turn\s+off)(?:\s+(?:the\s+)?(?:ringing|current|due)?\s*(?:reminder|alarm|timer))[.!]?$/i);
+  if (dismissMatch) {
+    return { route: 'TOOL_CALL', capability: 'reminders.complete', args: {}, confidence: 0.99 };
+  }
+  if (/^(?:show|list|what are)\s+(?:my\s+)?(?:reminders|alarms|timers)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
   const targetedType = value.match(/^(?:jarvis[, ]+)?type\s+(.{1,500}?)\s+into\s+(.{2,120})[.!]?$/i);
   if (targetedType) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: targetedType[1], target: { name: targetedType[2].trim() } }, confidence: 0.99 };
   const targetedPress = value.match(/^(?:jarvis[, ]+)?press\s+([A-Za-z0-9+ ]{1,60})\s+in\s+(.{2,120})[.!]?$/i);
@@ -52,6 +82,10 @@ export function routeRequest(text) {
       url = `https://${url.replace(/^www\./i, '')}`;
     }
     return { route: 'TOOL_CALL', capability: 'browser.handoff', args: { url: url || null }, confidence: 0.99 };
+  }
+  const browserResume = value.match(/^(?:jarvis[, ]+)?(?:resume(?:\s+the)?\s+browser|continue(?:\s+the)?\s+browser|(?:(?:i\s+(?:have\s+)?)?(?:solved|completed)\s+(?:the\s+)?(?:captcha|challenge|verification))|(?:(?:the\s+)?(?:captcha|challenge|verification)\s+(?:is\s+)?(?:solved|completed|passed|done))|(?:(?:i\s+(?:have\s+)?)?(?:signed|logged)\s*in))[.!]?$/i);
+  if (browserResume) {
+    return { route: 'TOOL_CALL', capability: 'browser.resume', args: {}, confidence: 0.99 };
   }
   if (/^(open|launch|go to)\s+(youtube|youtube\.com)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: 'https://www.youtube.com', label: 'YouTube' }, confidence: 1 };
   const application = value.match(/^(?:please\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application))?[.!]?$/i);
