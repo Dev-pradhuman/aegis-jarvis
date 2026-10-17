@@ -287,6 +287,19 @@ body.island-body {
   color: var(--island-primary);
 }
 
+.island-screen-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--island-primary);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--island-outline-variant);
+}
+
 .island-speak-btn {
   background: transparent;
   border: none;

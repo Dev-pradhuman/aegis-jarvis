@@ -36,6 +36,8 @@ build/
 .claude-flow/data/
 .claude-flow/logs/
 .claude-flow/sessions/
+.claude-flow/policy/
+.gravitas/
 
 bin/
 scripts/archive/

@@ -44,6 +44,7 @@ export default function Chat() {
   const [pendingBrowserChallenge, setPendingBrowserChallenge] = useState(null);
   const [resolvingApprovalId, setResolvingApprovalId] = useState(null);
   const [activeApprovals, setActiveApprovals] = useState([]);
+  const [attachScreen, setAttachScreen] = useState(false);
   const recorderRef = useRef(null);
   const logRef = useRef(null);
   const currentAudioRef = useRef(null);
@@ -406,9 +407,11 @@ export default function Chat() {
 
     const userMsgId = makeMsgId('user');
     const assistantMsgId = makeMsgId('jarvis');
+    const shouldAttachScreen = attachScreen;
 
-    setMessages((prev) => [...prev, { id: userMsgId, who: 'YOU', time: nowTime(), lines: [val] }]);
+    setMessages((prev) => [...prev, { id: userMsgId, who: 'YOU', time: nowTime(), lines: [val], attachScreen: shouldAttachScreen }]);
     setInput('');
+    setAttachScreen(false);
     updateTyping(true);
     visual('thinking');
 
@@ -416,7 +419,7 @@ export default function Chat() {
       const response = await fetch('/api/chat', { 
         method: 'POST', 
         headers: { 'content-type': 'application/json', 'Accept': 'text/event-stream' }, 
-        body: JSON.stringify({ message: val }) 
+        body: JSON.stringify({ message: val, attachScreen: shouldAttachScreen }) 
       });
 
       if (response.headers.get('content-type')?.includes('text/event-stream')) {
@@ -747,7 +750,10 @@ export default function Chat() {
         {messages.map((m, i) => (
           <div className={`msg ${m.who === 'JARVIS' ? 'jarvis' : 'user'}`} key={m.id || `msg-${i}`}>
             <div className="who">
-              <span>{m.who}</span>
+              <span>
+                {m.who}
+                {m.attachScreen && <span className="screen-tag" title="Attached screen capture">👁️ Screen</span>}
+              </span>
               <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                 <span className="time">{m.time}</span>
                 {m.who === 'JARVIS' && (
@@ -871,6 +877,15 @@ export default function Chat() {
           onKeyDown={handleKeyDown}
           disabled={transcribing}
         />
+        <button
+          type="button"
+          className={`send-btn screen-btn${attachScreen ? ' active' : ''}`}
+          onClick={() => setAttachScreen((prev) => !prev)}
+          title={attachScreen ? "Screen capture attached (Click to detach)" : "Attach current screen / window to prompt"}
+          aria-label="Toggle screen capture attachment"
+        >
+          <span style={{ fontSize: '1.05rem', lineHeight: 1 }}>👁️</span>
+        </button>
         <button
           type="button"
           className={`send-btn speech-toggle-btn${speechEnabled ? ' active' : ''}`}

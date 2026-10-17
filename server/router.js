@@ -46,6 +46,40 @@ export function routeRequest(text) {
     return { route: 'TOOL_CALL', capability: 'reminders.complete', args: {}, confidence: 0.99 };
   }
   if (/^(?:show|list|what are)\s+(?:my\s+)?(?:reminders|alarms|timers)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
+  const calendarCreateMatch = value.match(/^(?:jarvis[, ]+)?(?:schedule|create|add)(?:\s+(?:a|an))?\s+(?:calendar\s+event|meeting|event|appointment)\s+(?:called\s+|titled\s+|for\s+|named\s+)?(.+?)\s+(?:at|on|for)\s+(.+?)[.!]?$/i) ||
+    value.match(/^(?:jarvis[, ]+)?(?:add\s+to\s+(?:my\s+)?calendar)\s+(.+?)\s+(?:at|on|for)\s+(.+?)[.!]?$/i);
+  if (calendarCreateMatch) {
+    const summary = calendarCreateMatch[1].trim();
+    const timeStr = calendarCreateMatch[2].trim();
+    let startTime = timeStr;
+    const parsedDate = Date.parse(timeStr);
+    if (!isNaN(parsedDate)) {
+      startTime = new Date(parsedDate).toISOString();
+    }
+    return {
+      route: 'TOOL_CALL',
+      capability: 'calendar.create',
+      args: {
+        summary,
+        startTime,
+        endTime: !isNaN(parsedDate) ? new Date(parsedDate + 3600000).toISOString() : startTime
+      },
+      confidence: 0.99
+    };
+  }
+  const gmailSendMatch = value.match(/^(?:jarvis[, ]+)?(?:send\s+(?:an?\s+)?(?:email|gmail)\s+to|email)\s+([^\s,]+@[^\s,]+|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|\S+)(?:\s+(?:with\s+)?subject\s+([^,]+?))?(?:\s+(?:and\s+)?(?:body|message|saying)\s+(.+))?[.!]?$/i);
+  if (gmailSendMatch) {
+    const to = gmailSendMatch[1].trim();
+    const subject = (gmailSendMatch[2] || 'No subject').trim();
+    const body = (gmailSendMatch[3] || '').trim();
+    return { route: 'TOOL_CALL', capability: 'gmail.send', args: { to, subject, body }, confidence: 0.99 };
+  }
+  const gmailColonMatch = value.match(/^(?:jarvis[, ]+)?(?:send\s+(?:an?\s+)?(?:email|gmail)\s+to|email)\s+([^\s:]+@[^\s:]+):\s*(.+)$/i);
+  if (gmailColonMatch) {
+    const to = gmailColonMatch[1].trim();
+    const body = gmailColonMatch[2].trim();
+    return { route: 'TOOL_CALL', capability: 'gmail.send', args: { to, subject: body.slice(0, 50), body }, confidence: 0.99 };
+  }
   const targetedType = value.match(/^(?:jarvis[, ]+)?type\s+(.{1,500}?)\s+into\s+(.{2,120})[.!]?$/i);
   if (targetedType) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: targetedType[1], target: { name: targetedType[2].trim() } }, confidence: 0.99 };
   const targetedPress = value.match(/^(?:jarvis[, ]+)?press\s+([A-Za-z0-9+ ]{1,60})\s+in\s+(.{2,120})[.!]?$/i);
@@ -104,8 +138,17 @@ export function routeRequest(text) {
   if (/^(what('?s| is) in|read)\s+(the\s+)?readme/i.test(value)) return { route: 'TOOL_CALL', capability: 'files.read', args: { path: 'README.md' }, confidence: 0.99 };
   if (/\b(health|diagnostics|system status)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'diagnostics', args: {}, confidence: 0.98 };
   if (/\b(remember|decision|architecture)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'memory.search', args: { q: value }, confidence: 0.9 };
-  if (/^(?:jarvis[, ]+)?(?:what(?:'s| is) (?:on (?:my |the )?screen|this)|(?:describe|look at) (?:my |the )?screen)\??$/i.test(value)) {
-    return { route: 'TOOL_CALL', capability: 'screen.describe', args: {}, confidence: 0.99 };
+  const activeWinVision = value.match(/^(?:jarvis[, ]+)?(?:summarize|describe|look at|what(?:'s| is) (?:on|in)|explain|inspect)\s+(?:the\s+)?(?:current\s+|active\s+)window(?:(?:\s+and\s+|\s*,\s*|\s+)(.+?))?[.!?]?$/i);
+  if (activeWinVision) {
+    const subPrompt = activeWinVision[1] ? activeWinVision[1].trim() : value;
+    return { route: 'TOOL_CALL', capability: 'screen.describe', args: { target: 'window', prompt: subPrompt }, confidence: 0.99 };
+  }
+  const screenPromptVision = value.match(/^(?:jarvis[, ]+)?(?:look at (?:my |the )?screen(?:\s+and\s+|\s*,\s*|\s+)(.+)|explain (?:this |the )?error on (?:my |the )?screen(?:(?:\s+and\s+|\s*,\s*|\s+)(.+))?)[.!?]?$/i);
+  if (screenPromptVision) {
+    return { route: 'TOOL_CALL', capability: 'screen.describe', args: { target: 'desktop', prompt: value }, confidence: 0.99 };
+  }
+  if (/^(?:jarvis[, ]+)?(?:what(?:'s| is) (?:on (?:my |the )?screen(?:\s+right now)?|this)|(?:describe|look at|summarize|inspect) (?:my |the )?screen(?:\s+right now)?)\??$/i.test(value)) {
+    return { route: 'TOOL_CALL', capability: 'screen.describe', args: { target: 'desktop' }, confidence: 0.99 };
   }
   if (/^(?:jarvis[, ]+)?(?:what do you see on (?:the |my )?camera|what(?:'s| is) on (?:the |my )?camera|(?:look at|describe) (?:the |my )?camera)\??$/i.test(value)) {
     return { route: 'TOOL_CALL', capability: 'camera.describe', args: {}, confidence: 0.99 };

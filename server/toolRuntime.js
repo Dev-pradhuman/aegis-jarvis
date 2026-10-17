@@ -27,6 +27,16 @@ function approvalSummary(toolId, args, tool) {
   if (toolId === 'command.execute') return `Run exact command: ${args.command}`;
   if (toolId === 'messages.send') return `Send to ${args.recipient || args.destination || 'unspecified recipient'}: ${args.text || args.message}`;
   if (toolId === 'mcp.call') return `Call ${args.server}.${args.tool}`;
+  if (toolId === 'calendar.create') {
+    const summary = args.summary || args.title || 'New Event';
+    const time = args.startTime || args.start || 'unspecified time';
+    return `Create calendar event "${summary}" at ${time}`;
+  }
+  if (toolId === 'gmail.send') {
+    const recipient = args.to || args.recipient || 'unspecified recipient';
+    const subject = args.subject || '(No subject)';
+    return `Send email to ${recipient}: "${subject}"`;
+  }
   return tool.description;
 }
 

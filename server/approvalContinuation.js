@@ -11,6 +11,8 @@ function chatOutcome(draft, run, approval, result, succeeded) {
   const detail = succeeded
     ? tool === 'computer.type' || tool === 'computer.keypress' ? 'The desktop portal accepted the input for the verified target. Application content was not read back.'
       : tool === 'windows.close' ? 'The selected window close action completed.'
+      : tool === 'calendar.create' ? 'The calendar event was scheduled successfully.'
+      : tool === 'gmail.send' ? 'The email was sent successfully.'
         : `${tool} completed.`
     : `The approved ${tool} action failed: ${result?.error || result?.code || 'unknown error'}.`;
   draft.conversations ??= [];

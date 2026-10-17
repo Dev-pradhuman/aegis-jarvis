@@ -56,7 +56,7 @@ async function performCapture(input = {}) {
   setLooking(true);
   try {
     const target = input.target || 'desktop';
-    const capture = await osPlatform.screen.capture({ target: 'desktop' }); 
+    const capture = await osPlatform.screen.capture({ target }); 
     let buffer = capture?.buffer;
     if (!buffer && capture?.path) {
       try {

@@ -126,6 +126,33 @@
 .voice-btn { color: var(--cyan); }
 .voice-btn.listening { color: var(--red); background: rgba(255,59,47,.12); border-radius: 50%; animation: pulse-dot 1s ease-in-out infinite; }
 .voice-btn.transcribing { color: var(--orange); animation: pulse-dot 0.6s ease-in-out infinite; }
+.screen-btn {
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.screen-btn.active {
+  color: var(--cyan);
+  background: rgba(0, 240, 255, 0.16);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+}
+.screen-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--cyan);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+}
 .speech-toggle-btn {
   color: var(--text-muted);
   transition: color 0.2s ease, opacity 0.2s ease;

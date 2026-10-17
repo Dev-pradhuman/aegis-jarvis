@@ -29,6 +29,7 @@ export default function DynamicIsland() {
 
   const [activeApprovals, setActiveApprovals] = useState([]);
   const [resolvingApprovalId, setResolvingApprovalId] = useState(null);
+  const [attachScreen, setAttachScreen] = useState(false);
   const [pendingBrowserChallenge, setPendingBrowserChallenge] = useState(null);
   const [resumingBrowser, setResumingBrowser] = useState(false);
   const [ringingReminders, setRingingReminders] = useState([]);
@@ -415,12 +416,14 @@ export default function DynamicIsland() {
     const val = input.trim();
     if (!val || isTyping) return;
 
+    const shouldAttachScreen = attachScreen;
     setInput('');
+    setAttachScreen(false);
     setIsTyping(true);
     setExpanded(true);
     stopSpeaking();
 
-    const userMsg = { id: makeMsgId('user'), who: 'YOU', time: nowTime(), lines: [val] };
+    const userMsg = { id: makeMsgId('user'), who: 'YOU', time: nowTime(), lines: [val], attachScreen: shouldAttachScreen };
     const assistantId = makeMsgId('jarvis');
     setMessages((prev) => [...prev, userMsg]);
 
@@ -428,7 +431,7 @@ export default function DynamicIsland() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({ message: val })
+        body: JSON.stringify({ message: val, attachScreen: shouldAttachScreen })
       });
 
       if (response.headers.get('content-type')?.includes('text/event-stream')) {
@@ -550,6 +553,16 @@ export default function DynamicIsland() {
           <div className="island-actions">
             <button
               type="button"
+              className={`island-icon-btn ${attachScreen ? 'active' : ''}`}
+              onClick={() => setAttachScreen(!attachScreen)}
+              title={attachScreen ? 'Screen capture attached (Click to detach)' : 'Attach Screen Capture (1-click)'}
+              aria-label="Toggle screen capture attachment"
+            >
+              <span style={{ fontSize: '1rem', lineHeight: 1 }}>👁️</span>
+            </button>
+
+            <button
+              type="button"
               className={`island-icon-btn ${voiceState === 'capturing' ? 'active' : ''}`}
               onClick={toggleVoice}
               title="Push-to-Talk (Alt+Space)"
@@ -636,6 +649,11 @@ export default function DynamicIsland() {
                       >
                         <Icon name="speaker" />
                       </button>
+                    </div>
+                  )}
+                  {m.who === 'YOU' && m.attachScreen && (
+                    <div className="island-msg-header">
+                      <span className="island-screen-tag" title="Attached screen capture">👁️ Screen</span>
                     </div>
                   )}
                   {m.lines.map((l, lineIdx) => (

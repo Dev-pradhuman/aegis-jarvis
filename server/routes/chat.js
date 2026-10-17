@@ -202,6 +202,36 @@ export default async function chatRoutes(req, res, url, state, ctx) {
         if (!text) return json(res, 400, { error: 'message or request is required' });
         if (text.length > 25000) return json(res, 413, { error: 'Request message exceeds maximum limit of 25,000 characters' });
 
+        if (input.attachScreen) {
+          try {
+            const { osPlatform } = await import('../platform/index.js');
+            const target = input.screenTarget || 'desktop';
+            const cap = await osPlatform.screen.capture({ target });
+            let buffer = cap?.buffer;
+            if (!buffer && cap?.path) {
+              const fs = await import('node:fs/promises');
+              try {
+                buffer = await fs.readFile(cap.path);
+              } catch (readErr) {
+                console.warn('[chat] Failed to read screen capture file:', readErr.message);
+              }
+            }
+            if (buffer) {
+              input.attachments = input.attachments || [];
+              input.attachments.push({
+                type: 'image',
+                mimeType: cap.mimeType || 'image/png',
+                base64: buffer.toString('base64'),
+                width: cap.width,
+                height: cap.height,
+                target: cap.target || target
+              });
+            }
+          } catch (capErr) {
+            console.warn('[chat] Screen capture attachment failed:', capErr.message);
+          }
+        }
+
         // Natural browser verification/sign-in resume interception
         if (browserManager.state === 'HUMAN_ACTION_REQUIRED' && /^(?:i(?:'m| am)?\s+)?(?:done|finished|continue|resumed?|i\s+(?:have\s+)?(?:logged|signed)\s+in|challenge\s+solved|solved)[.!]?$/i.test(text)) {
           try {
@@ -355,6 +385,40 @@ export default async function chatRoutes(req, res, url, state, ctx) {
               return `${index + 1}. ${title} — ${startStr}${locationStr}`;
             }).join('\n')}` : 'You have no upcoming calendar events.';
           }
+          else if (route.capability === 'calendar.create') {
+            const result = await invokeChatTool('calendar.create', route.args);
+            if (result.approvalRequired) {
+              await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+              const approvalPayload = { reply: `Calendar event "${route.args.summary || 'New Event'}" requires your approval.`, runId: run.id, approvalRequired: true, approval: result.approval };
+              if (isSSE) {
+                if (!clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify({ type: 'done', ...approvalPayload })}\n\n`);
+                  safeEnd(res);
+                }
+                return true;
+              }
+              return json(res, 202, approvalPayload);
+            }
+            data = result.data;
+            reply = `Calendar event scheduled: "${route.args.summary || 'New Event'}".`;
+          }
+          else if (route.capability === 'gmail.send') {
+            const result = await invokeChatTool('gmail.send', route.args);
+            if (result.approvalRequired) {
+              await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+              const approvalPayload = { reply: `Sending email to ${route.args.to} requires your approval.`, runId: run.id, approvalRequired: true, approval: result.approval };
+              if (isSSE) {
+                if (!clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify({ type: 'done', ...approvalPayload })}\n\n`);
+                  safeEnd(res);
+                }
+                return true;
+              }
+              return json(res, 202, approvalPayload);
+            }
+            data = result.data;
+            reply = `Email sent to ${route.args.to}.`;
+          }
           else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
           else if (route.capability === 'models.list') { const result = await invokeChatTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }
           else if (route.capability === 'mcp.servers') { const result = await invokeChatTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }
@@ -364,7 +428,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           else if (route.capability === 'memory.search') { const result = await invokeChatTool('memory.search', { query: route.args.q }); data = { memories: result.data.results }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
           else if (route.capability === 'media.generate') { const media = (await invokeChatTool('media.generate', { kind: route.args.kind, prompt: route.args.prompt })).data; data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
           else if (route.capability === 'screen.describe') {
-            const tool = await invokeChatTool('screen.describe', { ...route.args, source: input.source, consent: input.consent });
+            const tool = await invokeChatTool('screen.describe', { ...route.args, source: input.source, consent: input.consent ?? true });
             data = tool.data;
             reply = data.description || 'No description available for screen.';
           }

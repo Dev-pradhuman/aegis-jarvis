@@ -12,6 +12,51 @@ const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 export function createLinuxScreen({ run = defaultRun, directory = path.join(tmpdir(), 'aegis-jarvis-screenshots') } = {}) {
   async function capture({ target = 'desktop' } = {}) {
+    const isWayland = run === defaultRun && Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE || process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland');
+
+    if (isWayland) {
+      try {
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        const destination = path.join(directory, `${randomUUID()}.png`);
+        let geom = null;
+
+        if (target === 'window' || target === 'active_window') {
+          try {
+            const winOut = await run('hyprctl', ['activewindow', '-j'], { timeout: 3000, windowsHide: true });
+            const win = JSON.parse(winOut.stdout || '{}');
+            if (Array.isArray(win.at) && Array.isArray(win.size) && win.size[0] > 0 && win.size[1] > 0) {
+              geom = `${win.at[0]},${win.at[1]} ${win.size[0]}x${win.size[1]}`;
+            }
+          } catch {}
+        }
+
+        const grimArgs = geom ? ['-g', geom, destination] : [destination];
+        await run('grim', grimArgs, { timeout: 10_000, windowsHide: true });
+
+        const sourceInfo = await stat(destination);
+        if (!sourceInfo.isFile() || sourceInfo.size > 40_000_000) throw new Error('Captured screenshot file is invalid');
+        const file = await open(destination, 'r');
+        const header = Buffer.alloc(24);
+        try { await file.read(header, 0, 24, 0); } finally { await file.close(); }
+        const png = header.subarray(0, 8).equals(pngSignature);
+        if (!png) throw new Error('Grim output is not valid PNG');
+        await chmod(destination, 0o600);
+        return {
+          path: destination,
+          mimeType: 'image/png',
+          bytes: sourceInfo.size,
+          width: header.readUInt32BE(16),
+          height: header.readUInt32BE(20),
+          backend: 'grim',
+          target
+        };
+      } catch (err) {
+        if (target === 'window' || target === 'active_window') {
+          // If window capture specifically failed, propagate or fall back if possible
+        }
+      }
+    }
+
     if (target !== 'desktop') throw Object.assign(new Error('Only full desktop capture is supported by this portal provider'), { code: 'SCREEN_TARGET_UNSUPPORTED' });
     let output;
     try {
