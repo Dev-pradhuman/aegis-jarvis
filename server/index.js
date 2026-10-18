@@ -238,13 +238,24 @@ startHUDManager(
     try {
       await fetch(`http://127.0.0.1:${port}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Origin': `http://127.0.0.1:${port}`
+        },
         body: JSON.stringify({ request: text })
       });
     } catch(e) {}
   },
   () => {
-    // trigger voice listen logic here
+    try {
+      if (voicePipeline) {
+        if (voicePipeline.state === 'capturing') {
+          voicePipeline.stopCapturing(voicePipeline.vadProvider?.flush() || Buffer.alloc(0));
+        } else {
+          voicePipeline.pushToTalk();
+        }
+      }
+    } catch(e) {}
   }
 );
 server.listen(port, '127.0.0.1', () => {
@@ -318,10 +329,15 @@ process.on('jarvis_resume_chat', async (runId) => {
     let providerResult = null; let modelRoute = null; let modelFailure = null; let reply = '';
     const modelStarted = performance.now();
     modelRoute = selectLogicalModel(text, state.modelRouting || {}, { hasMedia: false });
-    const toolResults = run.toolCalls.filter((call) => call.status === 'completed' || call.status === 'failed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId }));
+    const toolResults = run.toolCalls.filter((call) => call.status === 'completed' || call.status === 'failed').map((call) => {
+      const step = (run.steps || []).find((s) => s.id === call.id || s.capability === call.tool);
+      const execution = (state.toolExecutions || []).find((item) => item.idempotencyKey === call.resultId || (item.runId === run.id && item.toolId === call.tool));
+      const output = call.output || call.result || step?.result?.data || step?.result || execution?.result?.data || execution?.result || null;
+      return { id: call.id, tool: call.tool, resultId: call.resultId, output };
+    });
     const assembledContext = assembleModelContext({ query: text, toolResults, conversations: state.conversations || [], memories: state.memories || [], includeTools: modelRoute.requiresTools });
     try {
-      const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: run.toolCalls.filter((call) => call.status === 'completed' || call.status === 'failed').map((call) => ({ id: call.id, tool: call.tool, resultId: call.resultId })) }, state, attachments: [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
+      const brain = await executeBrainWorkflow({ route: modelRoute, request: text, context: assembledContext.context, continuationState: { runId: run.id, plan: run.plan, currentStep: run.currentStep, completedToolCalls: toolResults }, state, attachments: [], allowFallback: state.modelRouting?.manualFallbackAllowed !== false, execute: (options) => modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options) });
       providerResult = brain.result;
       modelRoute.executionDecision = brain.decision;
       if (providerResult.executedToolCalls?.length) run.toolCalls.push(...providerResult.executedToolCalls);

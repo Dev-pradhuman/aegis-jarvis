@@ -105,23 +105,54 @@ export class VoicePipeline extends EventEmitter {
 
   async speak(text) {
     this.transition('speaking');
-    if (this.ttsProvider) {
+    const isTest = process.env.JARVIS_TEST === '1';
+    const hasCloudKeys = Boolean(process.env.ELEVENLABS_API_KEY || process.env.GROQ_API_KEY);
+
+    if (hasCloudKeys && !isTest) {
       try {
-         await this.ttsProvider.speak(text);
-         if (this.state === 'speaking') {
-             this.transition('idle');
-         }
-         return;
+        const { synthesizeSpeech } = await import('./tts.js');
+        const res = await synthesizeSpeech({ text });
+        const audioBuf = res?.audio || res?.audioBuffer;
+        if (audioBuf && this.audioPlayback) {
+          const { spawn } = await import('node:child_process');
+          const ffmpeg = spawn('ffmpeg', ['-i', 'pipe:0', '-f', 's16le', '-ar', '22050', '-ac', '1', 'pipe:1']);
+          ffmpeg.stdin.on('error', () => {});
+          ffmpeg.on('error', () => {});
+          ffmpeg.stdin.end(audioBuf);
+          await this.audioPlayback.playStream(ffmpeg.stdout);
+          if (this.state === 'speaking') {
+            this.transition('idle');
+          }
+          return;
+        }
       } catch (err) {
-         // Log and attempt cloud fallback
+        // Fall back to local ttsProvider
       }
     }
+
+    if (this.ttsProvider) {
+      try {
+        await this.ttsProvider.speak(text);
+        if (this.state === 'speaking') {
+          this.transition('idle');
+        }
+        return;
+      } catch (err) {
+        // Log and attempt cloud fallback below
+      }
+    }
+
     try {
       const { synthesizeSpeech } = await import('./tts.js');
       const res = await synthesizeSpeech({ text });
-      if (res && res.audioBuffer && this.audioPlayback) {
-        const { Readable } = await import('node:stream');
-        await this.audioPlayback.playStream(Readable.from(res.audioBuffer));
+      const audioBuf = res?.audio || res?.audioBuffer;
+      if (audioBuf && this.audioPlayback) {
+        const { spawn } = await import('node:child_process');
+        const ffmpeg = spawn('ffmpeg', ['-i', 'pipe:0', '-f', 's16le', '-ar', '22050', '-ac', '1', 'pipe:1']);
+        ffmpeg.stdin.on('error', () => {});
+        ffmpeg.on('error', () => {});
+        ffmpeg.stdin.end(audioBuf);
+        await this.audioPlayback.playStream(ffmpeg.stdout);
       }
     } catch {
       // Fallback failed or text-only

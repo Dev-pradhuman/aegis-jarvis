@@ -133,13 +133,12 @@ export class CloudPerceptionProvider {
     this.status = 'loaded';
     try {
       const { executeModelPool } = await import('./modelPool.js');
-      // For WP6b: cloud perception using free catalog model
       const result = await executeModelPool({
         logicalModel: 'perception',
-        requiredModality: 'vision',
+        requiredModality: 'image',
         allowFallback: true,
-        sourceTier: 'free', 
-        context: [
+        sourceTier: 'api', 
+        messagesOverride: [
           { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBuffer.toString('base64')}` } }] }
         ],
         fetchImpl
@@ -162,19 +161,29 @@ export async function perceive(prompt, imageBuffer, options = {}) {
   const { fetchImpl = fetch, testMode = false } = options;
   const settings = getVisionSettings();
   
-  let provider;
   if (testMode) {
-    provider = new FakePerceptionProvider(options);
-  } else if (settings.cloudPerceptionEnabled) {
-    provider = new CloudPerceptionProvider(options);
-  } else if (options.memoryProbe || options.minFreeMemoryBytes) {
-    provider = new LocalOllamaMultimodalProvider(options);
-  } else {
-    if (!defaultLocalProvider) {
-      defaultLocalProvider = new LocalOllamaMultimodalProvider(options);
-    }
-    provider = defaultLocalProvider;
+    const provider = new FakePerceptionProvider(options);
+    return provider.generate(prompt, imageBuffer, fetchImpl);
   }
 
-  return provider.generate(prompt, imageBuffer, fetchImpl);
+  const useCloud = settings.cloudPerceptionEnabled || process.env.DISABLE_LOCAL_MODELS === 'true';
+  if (useCloud) {
+    const cloudProvider = new CloudPerceptionProvider(options);
+    return cloudProvider.generate(prompt, imageBuffer, fetchImpl);
+  }
+
+  let localProvider = (options.memoryProbe || options.minFreeMemoryBytes)
+    ? new LocalOllamaMultimodalProvider(options)
+    : (defaultLocalProvider ||= new LocalOllamaMultimodalProvider(options));
+
+  try {
+    return await localProvider.generate(prompt, imageBuffer, fetchImpl);
+  } catch (err) {
+    const hasCloudKeys = Boolean(process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+    if (hasCloudKeys && (err.message?.includes('unreachable') || err.message?.includes('ECONNREFUSED') || err.code === 'ECONNREFUSED' || err.message?.includes('not installed'))) {
+      const cloudProvider = new CloudPerceptionProvider(options);
+      return await cloudProvider.generate(prompt, imageBuffer, fetchImpl);
+    }
+    throw err;
+  }
 }

@@ -221,10 +221,13 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             }
             if (buffer) {
               input.attachments = input.attachments || [];
+              const b64 = buffer.toString('base64');
+              const mime = cap.mimeType || 'image/png';
               input.attachments.push({
                 type: 'image',
-                mimeType: cap.mimeType || 'image/png',
-                base64: buffer.toString('base64'),
+                mimeType: mime,
+                base64: b64,
+                dataUrl: `data:${mime};base64,${b64}`,
                 width: cap.width,
                 height: cap.height,
                 target: cap.target || target
@@ -369,6 +372,8 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             reply = 'The desktop portal accepted the input. The focused application result has not been verified.';
           }
           else if (route.capability === 'reminders.create') { data = (await invokeChatTool('reminders.create', route.args)).data; reply = `Reminder scheduled for ${new Date(data.reminder.dueAt).toLocaleString('en-IN')}: ${data.reminder.title}.`; }
+          else if (route.capability === 'reminders.snooze') { data = (await invokeChatTool('reminders.snooze', route.args)).data; reply = `Reminder "${data.reminder.title}" snoozed until ${new Date(data.reminder.dueAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`; }
+          else if (route.capability === 'reminders.complete' || route.capability === 'reminders.cancel') { data = (await invokeChatTool(route.capability, route.args)).data; reply = `Reminder "${data.reminder.title}" has been dismissed.`; }
           else if (route.capability === 'reminders.list') { data = (await invokeChatTool('reminders.list')).data; const active = data.reminders.filter((item) => ['scheduled', 'due'].includes(item.status)); reply = active.length ? `${active.length} active reminders:\n${active.map((item) => `${item.title} — ${item.status === 'due' ? 'due now' : new Date(item.dueAt).toLocaleString('en-IN')}`).join('\n')}` : 'You have no active reminders.'; }
           else if (route.capability === 'tasks.list') { data = (await invokeChatTool('tasks.list')).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
           else if (route.capability === 'gmail.latest') {

@@ -87,16 +87,26 @@ export function assembleModelContext({ query = '', toolResults = [], conversatio
   }
 
   if (toolResults && toolResults.length) {
+    const confirmedOutputs = [];
     for (const tr of toolResults) {
       const isPerception = ['screen.describe', 'screen.locate', 'screen.read_region', 'screen.readRegion', 'camera.describe'].includes(tr.tool) || String(tr.tool || '').startsWith('perception') || tr.isPerception;
-      const text = tr.output || tr.result || (typeof tr.data === 'string' ? tr.data : JSON.stringify(tr.data || tr.resultId || tr));
-      if (isPerception) {
+      const text = tr.output || tr.result || (typeof tr.data === 'string' ? tr.data : (tr.data ? JSON.stringify(tr.data) : null));
+      if (isPerception && text) {
         const isOcr = Boolean(tr.tool?.includes('read_region') || tr.tool?.includes('readRegion'));
         candidates.push({
           role: 'system',
           content: wrapUntrustedContent(text, isOcr ? 'ocr' : 'vision'),
         });
+      } else if (!isPerception && text) {
+        const val = typeof text === 'object' ? JSON.stringify(text) : String(text);
+        confirmedOutputs.push(`- Tool \`${tr.tool || tr.id}\` returned: ${val}`);
       }
+    }
+    if (confirmedOutputs.length) {
+      candidates.push({
+        role: 'system',
+        content: `Confirmed tool execution results for this Run:\n${confirmedOutputs.join('\n')}\nSynthesize the final answer using these confirmed outputs.`,
+      });
     }
   }
   if (includeTools) {

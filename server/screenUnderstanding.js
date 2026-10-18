@@ -44,12 +44,12 @@ async function performCapture(input = {}) {
       if (!input.consent && !hasCloudConsent()) {
         throw new Error('Explicit cloud consent required: each cloud capture must be explicitly approved.');
       }
-      consumeCloudConsent();
+      if (hasCloudConsent()) consumeCloudConsent();
     } else {
       if (!input.consent && !hasScreenConsent()) {
         throw new Error('Explicit consent required: screen capture has not been authorized for this session');
       }
-      consumeScreenConsent();
+      if (hasScreenConsent()) consumeScreenConsent();
     }
   }
 

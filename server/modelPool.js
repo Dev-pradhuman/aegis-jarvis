@@ -224,7 +224,10 @@ function userContent(request, attachments, modality) {
   const content = [{ type: 'text', text: request }];
   for (const attachment of attachments) {
     if (attachment.providerContent && typeof attachment.providerContent === 'object') { content.push(attachment.providerContent); continue; }
-    if (modality === 'image' && (attachment.url || attachment.dataUrl)) { content.push({ type: 'image_url', image_url: { url: attachment.url || attachment.dataUrl } }); continue; }
+    if (modality === 'image') {
+      const url = attachment.url || attachment.dataUrl || (attachment.base64 ? `data:${attachment.mimeType || 'image/png'};base64,${attachment.base64}` : null);
+      if (url) { content.push({ type: 'image_url', image_url: { url } }); continue; }
+    }
     if (modality === 'audio' && attachment.data) { content.push({ type: 'input_audio', input_audio: { data: attachment.data, format: attachment.format || 'wav' } }); continue; }
     const error = new Error(`Attachment cannot be encoded for ${modality} provider input`);
     error.code = 'REQUEST_ERROR';

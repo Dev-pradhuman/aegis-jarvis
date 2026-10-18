@@ -36,7 +36,18 @@ export function reminderAction(state, action, input = {}, now = Date.now()) {
     state.reminders.unshift(reminder);
     return { reminder };
   }
-  const reminderIndex = state.reminders.findIndex((item) => item.id === input.id);
+  let reminderIndex = -1;
+  if (input.id) {
+    reminderIndex = state.reminders.findIndex((item) => item.id === input.id);
+  } else {
+    reminderIndex = state.reminders.findIndex((item) => item.status === 'due' && item.ringing);
+    if (reminderIndex === -1) {
+      reminderIndex = state.reminders.findIndex((item) => item.status === 'due');
+    }
+    if (reminderIndex === -1) {
+      reminderIndex = state.reminders.findIndex((item) => item.status === 'scheduled');
+    }
+  }
   if (reminderIndex === -1) fail('REMINDER_NOT_FOUND', 'Reminder does not exist');
   const reminder = state.reminders[reminderIndex];
 
