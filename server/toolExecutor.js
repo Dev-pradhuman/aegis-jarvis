@@ -22,6 +22,7 @@ import { actionFingerprint } from './idempotency.js';
 import { diagnostics, researchSearch, searchMemory } from './systemModules.js';
 import { generateMedia } from './mediaGeneration.js';
 import { reminderAction } from './reminders.js';
+import { resolveKnownSiteOrDomain } from './router.js';
 
 import { describeScreen, locateElement, readRegion } from './screenUnderstanding.js';
 
@@ -291,7 +292,14 @@ async function runTool(toolId, input = {}, context = {}) {
     if (windows?.supported) {
       const apps = context.platform?.apps || osPlatform.apps;
       const resolution = resolveApp(name, await apps.list());
-      if (resolution.status !== 'resolved') return { ok: false, toolId, data: resolution };
+      if (resolution.status !== 'resolved') {
+        const site = resolveKnownSiteOrDomain(name);
+        if (site) {
+          const browserData = await browserManager.handoff(site.url);
+          return { ok: true, toolId, data: { ...browserData, status: 'opened_in_browser', url: site.url, verified: true } };
+        }
+        return { ok: false, toolId, data: resolution };
+      }
       const app = resolution.app;
       const findMatches = async () => {
         const all = await windows.list();
@@ -317,6 +325,13 @@ async function runTool(toolId, input = {}, context = {}) {
       throw windowError('WINDOW_NOT_FOUND', `${app.name} launched but no matching window appeared`);
     }
     const result = await osPlatform.apps.open(name);
+    if (result.status !== 'launched') {
+      const site = resolveKnownSiteOrDomain(name);
+      if (site) {
+        const browserData = await browserManager.handoff(site.url);
+        return { ok: true, toolId, data: { ...browserData, status: 'opened_in_browser', url: site.url, verified: true } };
+      }
+    }
     return { ok: result.status === 'launched', toolId, data: result };
   }
   if (toolId === 'project.inspect') return { ok: true, toolId, data: { root: workspaceRoot, entries: await inspectDirectory(workspaceRoot) } };

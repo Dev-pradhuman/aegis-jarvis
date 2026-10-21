@@ -7,7 +7,7 @@ const unattendedAllowedIds = new Set([
   'audio.get_volume', 'audio.set_volume', 'audio.mute', 'audio.unmute', 'audio.volume_up', 'audio.volume_down',
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
   'windows.list', 'windows.get_active', 'windows.focus',
-  'apps.list', 'apps.open', 'browser.navigate', 'browser.read', 'browser.screenshot', 'browser.handoff',
+  'apps.list', 'apps.open', 'browser.open', 'browser.navigate', 'browser.click', 'browser.type', 'browser.read', 'browser.content', 'browser.accessibility', 'browser.screenshot', 'browser.wait', 'browser.handoff', 'browser.resume', 'browser.close',
   'gmail.latest', 'calendar.upcoming', 'composio.read',
   'screen.describe', 'camera.describe', 'clipboard.read', 'clipboard.write', 'files.read',
 ]);

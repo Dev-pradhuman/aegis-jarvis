@@ -1,3 +1,38 @@
+export const KNOWN_SITES = {
+  instagram: { url: 'https://www.instagram.com', label: 'Instagram' },
+  youtube: { url: 'https://www.youtube.com', label: 'YouTube' },
+  github: { url: 'https://github.com', label: 'GitHub' },
+  whatsapp: { url: 'https://web.whatsapp.com', label: 'WhatsApp' },
+  gmail: { url: 'https://mail.google.com', label: 'Gmail' },
+  chatgpt: { url: 'https://chatgpt.com', label: 'ChatGPT' },
+  claude: { url: 'https://claude.ai', label: 'Claude' },
+  gemini: { url: 'https://gemini.google.com', label: 'Gemini' },
+  x: { url: 'https://x.com', label: 'X' },
+  twitter: { url: 'https://x.com', label: 'Twitter' },
+  reddit: { url: 'https://www.reddit.com', label: 'Reddit' },
+  linkedin: { url: 'https://www.linkedin.com', label: 'LinkedIn' },
+  netflix: { url: 'https://www.netflix.com', label: 'Netflix' },
+};
+
+export function resolveKnownSiteOrDomain(input) {
+  const trimmed = String(input || '').trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      return { url: trimmed, label: parsed.hostname };
+    } catch {}
+  }
+  const clean = trimmed.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/+$/, '');
+  const baseKey = clean.replace(/\.(com|org|net|io|ai|dev|app|in|co|so|me|tech)$/, '');
+  if (KNOWN_SITES[clean]) return KNOWN_SITES[clean];
+  if (KNOWN_SITES[baseKey]) return KNOWN_SITES[baseKey];
+  const domainMatch = clean.match(/^([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(com|org|net|io|ai|dev|app|in|co|so|me|tech))(?:\/[^\s]*)?$/i);
+  if (domainMatch) {
+    return { url: `https://${clean}`, label: domainMatch[1] };
+  }
+  return null;
+}
+
 export function routeRequest(text) {
   const value = String(text).trim();
   const timerMatch = value.match(/^(?:jarvis[, ]+)?(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|timer\s+(?:for\s+)?|start\s+(?:a\s+)?(?:timer\s+for\s+)?)(\d{1,4})\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?:\s+(?:for|to|called)\s+(.{1,100}))?[.!]?$/i);
@@ -121,12 +156,29 @@ export function routeRequest(text) {
   if (browserResume) {
     return { route: 'TOOL_CALL', capability: 'browser.resume', args: {}, confidence: 0.99 };
   }
-  if (/^(open|launch|go to)\s+(youtube|youtube\.com)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: 'https://www.youtube.com', label: 'YouTube' }, confidence: 1 };
-  const application = value.match(/^(?:please\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application))?[.!]?$/i);
   const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
   if (windowAction) return { route: 'TOOL_CALL', capability: `windows.${windowAction[1].toLowerCase()}`, args: { target: { name: windowAction[2].trim() } }, confidence: 0.99 };
   if (/^(?:what(?:'s| is) (?:the )?active window|which window is active)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
-  if (application && application[1].length <= 120 && !/\b(https?:\/\/|[a-z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu)\b|\band\b)/i.test(application[1])) return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: application[1] }, confidence: 0.99 };
+
+  const webOrAppMatch = value.match(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application|website|web\s+page|site|page))?[.!?]?$/i);
+  if (webOrAppMatch) {
+    const rawTarget = webOrAppMatch[1].replace(/[.!?]+$/, '').trim();
+    const site = resolveKnownSiteOrDomain(rawTarget);
+    if (site) {
+      if (site.label === 'YouTube') {
+        return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: site.url, label: site.label }, confidence: 1 };
+      }
+      return {
+        route: 'TOOL_CALL',
+        capability: 'browser.handoff',
+        args: { url: site.url, label: site.label },
+        confidence: 0.99
+      };
+    }
+    if (rawTarget.length <= 120 && !/\b(https?:\/\/|[a-z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu)\b|\band\b)/i.test(rawTarget)) {
+      return { route: 'TOOL_CALL', capability: 'apps.open', args: { name: rawTarget }, confidence: 0.99 };
+    }
+  }
   const latestEmail = value.match(/\b(?:latest|last|recent|newest)\s*(\d{1,2})?\s*(?:e-?mails?|mails?)\b/i);
   if (latestEmail) return { route: 'TOOL_CALL', capability: 'gmail.latest', args: { limit: Math.min(20, Math.max(1, Number(latestEmail[1] || 4))) }, confidence: 0.99 };
   const calendarQuery = value.match(/\b(?:upcoming|next|today's|scheduled)?\s*(\d{1,2})?\s*(?:calendar events?|calendar|events?|meetings?|schedules?|agenda)\b/i);

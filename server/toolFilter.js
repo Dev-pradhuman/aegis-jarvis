@@ -2,7 +2,16 @@ import crypto from 'node:crypto';
 import { embed } from './extendedAdapters.js';
 
 const DEFAULT_TOP_K = 12;
-const CORE_TOOLS = new Set(['tasks.list', 'memory.search', 'runtime.telemetry', 'diagnostics']);
+const CORE_TOOLS = new Set([
+  'tasks.list',
+  'memory.search',
+  'runtime.telemetry',
+  'diagnostics',
+  'browser.navigate',
+  'browser.open',
+  'browser.handoff',
+  'apps.open'
+]);
 let cachedIndex = null;
 export const clearToolFilterCache = () => { cachedIndex = null; };
 

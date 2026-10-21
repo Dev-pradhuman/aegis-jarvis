@@ -315,11 +315,19 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             return response.body;
           };
           try {
-          if (route.capability === 'browser.open') { data = { action: 'open_url', url: route.args.url, label: route.args.label }; reply = `Opening ${route.args.label}.`; }
+          if (route.capability === 'browser.open') {
+            data = { action: 'open_url', url: route.args.url, label: route.args.label };
+            reply = `Opening ${route.args.label || route.args.url}.`;
+            try {
+              if (route.args.url) await browserManager.handoff(route.args.url);
+            } catch {}
+          }
           else if (route.capability === 'browser.handoff') {
             await browserManager.handoff(route.args.url);
-            reply = `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`;
-            data = { action: 'browser.handoff', url: route.args.url };
+            reply = route.args.isSignIn
+              ? `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`
+              : `Opened ${route.args.label || route.args.url} in browser.`;
+            data = { action: 'browser.handoff', url: route.args.url, label: route.args.label };
           }
           else if (route.capability.startsWith('audio.')) {
             const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
