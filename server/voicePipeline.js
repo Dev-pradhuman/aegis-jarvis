@@ -12,6 +12,13 @@ export class VoicePipeline extends EventEmitter {
     this.sttProvider = options.sttProvider || null;
     this.ttsProvider = options.ttsProvider || null;
     this.vadProvider = options.vadProvider || null;
+
+    this.lastTranscript = '';
+    this.lastReply = '';
+    this.lastRunId = null;
+    this.activeTurnId = null;
+    this.updatedAt = null;
+    this.lastUpdatedAt = null;
   }
 
   transition(newState) {
@@ -93,6 +100,17 @@ export class VoicePipeline extends EventEmitter {
     }
     try {
       const text = await this.sttProvider.transcribe(audioBuffer);
+      if (text && typeof text === 'string') {
+        const cleaned = text.trim();
+        this.lastTranscript = cleaned;
+        this.lastReply = '';
+        const turnId = `voice-${Date.now()}`;
+        this.lastRunId = turnId;
+        this.activeTurnId = turnId;
+        const nowIso = new Date().toISOString();
+        this.updatedAt = nowIso;
+        this.lastUpdatedAt = nowIso;
+      }
       if (this.state !== 'confirming_response') {
          this.transition('thinking');
       }

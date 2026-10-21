@@ -177,6 +177,17 @@ export default async function systemRoutes(req, res, url, state, ctx) {
         return json(res, 200, { ok: true, ...result });
       }
     }
+    if (req.method === 'POST' && url.pathname === '/api/island/resize') {
+      const input = await body(req);
+      const expanded = Boolean(input.expanded);
+      const width = expanded ? 500 : 460;
+      const height = expanded ? 380 : 64;
+      if (process.platform === 'linux' && process.env.HYPRLAND_INSTANCE_SIGNATURE) {
+        const { exec } = await import('node:child_process');
+        exec(`hyprctl repl 'hl.dispatch(hl.dsp.window.resize({ x = ${width}, y = ${height}, window = "class:jarvis-island" }))'`, () => {});
+      }
+      return json(res, 200, { ok: true, expanded, width, height });
+    }
     if (req.method === 'POST' && url.pathname === '/api/tools/execute') {
         const result = await executeApiTool(state, await body(req));
         return json(res, result.status, result.body);

@@ -10,7 +10,13 @@ export function voiceRoutes(voicePipeline) {
     if (req.url.startsWith('/api/voice/status') && req.method === 'GET') {
       return json(res, 200, {
         state: voicePipeline.state,
-        enabled: voicePipeline.enabled
+        enabled: voicePipeline.enabled,
+        lastTranscript: voicePipeline.lastTranscript || '',
+        lastReply: voicePipeline.lastReply || '',
+        lastRunId: voicePipeline.lastRunId || voicePipeline.activeTurnId || null,
+        activeTurnId: voicePipeline.activeTurnId || voicePipeline.lastRunId || null,
+        updatedAt: voicePipeline.updatedAt || voicePipeline.lastUpdatedAt || null,
+        lastUpdatedAt: voicePipeline.lastUpdatedAt || voicePipeline.updatedAt || null
       });
     }
 

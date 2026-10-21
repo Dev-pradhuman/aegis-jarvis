@@ -143,6 +143,20 @@ voicePipeline.on('transcription', async (text) => {
     return;
   }
   try {
+    const activeTurnId = voicePipeline.activeTurnId || `voice-${Date.now()}`;
+    await updateState((draft) => {
+      draft.conversations ??= [];
+      draft.conversations.push({
+        who: 'YOU',
+        time: new Date().toISOString(),
+        lines: [cleaned],
+        turnId: activeTurnId,
+        source: 'voice'
+      });
+      draft.conversations = draft.conversations.slice(-100);
+      return draft;
+    });
+
     const chatUrl = `http://127.0.0.1:${port}/api/chat`;
     const response = await fetch(chatUrl, {
       method: 'POST',
@@ -153,11 +167,31 @@ voicePipeline.on('transcription', async (text) => {
       body: JSON.stringify({
         message: cleaned,
         source: 'voice',
-        retainTranscript: true
+        retainTranscript: false,
+        turnId: activeTurnId
       })
     });
     const result = await response.json().catch(() => ({}));
     if (result && result.reply) {
+      voicePipeline.lastReply = result.reply;
+      if (result.runId) voicePipeline.lastRunId = result.runId;
+      const nowIso = new Date().toISOString();
+      voicePipeline.updatedAt = nowIso;
+      voicePipeline.lastUpdatedAt = nowIso;
+
+      await updateState((draft) => {
+        draft.conversations ??= [];
+        draft.conversations.push({
+          who: 'JARVIS',
+          time: new Date().toISOString(),
+          lines: [result.reply],
+          turnId: activeTurnId,
+          source: 'voice'
+        });
+        draft.conversations = draft.conversations.slice(-100);
+        return draft;
+      });
+
       await voicePipeline.speak(result.reply);
     } else {
       if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');

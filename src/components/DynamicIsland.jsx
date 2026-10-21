@@ -11,13 +11,64 @@ function makeMsgId(prefix = 'island') {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function renderFormattedContent(lines = []) {
+  const text = lines.join('\n');
+  if (!text) return null;
+
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, pIdx) => {
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const firstLineEnd = part.indexOf('\n');
+      const lang = firstLineEnd > 3 ? part.slice(3, firstLineEnd).trim() : '';
+      const code = firstLineEnd !== -1 ? part.slice(firstLineEnd + 1, -3) : part.slice(3, -3);
+      return (
+        <div key={pIdx} className="island-code-block">
+          <div className="island-code-header">
+            <span>{lang || 'code'}</span>
+            <button
+              type="button"
+              className="island-action-btn"
+              onClick={() => navigator.clipboard?.writeText(code.trim())}
+              title="Copy code"
+            >
+              <Icon name="copy" />
+            </button>
+          </div>
+          <pre className="island-code-content">{code.trim()}</pre>
+        </div>
+      );
+    }
+
+    const lineSubparts = part.split('\n');
+    return lineSubparts.map((sub, sIdx) => {
+      if (!sub.trim()) return <div key={`${pIdx}-${sIdx}`} style={{ height: '4px' }} />;
+      const boldParts = sub.split(/(\*\*[^*]+\*\*)/g);
+      return (
+        <div key={`${pIdx}-${sIdx}`} className="island-msg-text">
+          {boldParts.map((bp, bIdx) => {
+            if (bp.startsWith('**') && bp.endsWith('**')) {
+              return <strong key={bIdx}>{bp.slice(2, -2)}</strong>;
+            }
+            if (bp.startsWith('`') && bp.endsWith('`') && bp.length > 2) {
+              return <code key={bIdx} style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: '3px' }}>{bp.slice(1, -1)}</code>;
+            }
+            return bp;
+          })}
+        </div>
+      );
+    });
+  });
+}
+
 export default function DynamicIsland() {
   const [theme, setTheme] = useState(null);
   const [voiceState, setVoiceState] = useState('idle');
+  const [voiceStatus, setVoiceStatus] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
   const [speechEnabled, setSpeechEnabled] = useState(() => {
     try {
       const saved = localStorage.getItem('jarvis_speech_enabled');
@@ -40,6 +91,21 @@ export default function DynamicIsland() {
   const currentAudioRef = useRef(null);
   const ttsAbortControllerRef = useRef(null);
   const activeObjectUrlsRef = useRef(new Set());
+  const lastSeenTurnIdRef = useRef(null);
+  const isTypingRef = useRef(false);
+
+  useEffect(() => {
+    isTypingRef.current = isTyping;
+  }, [isTyping]);
+
+  // Dynamic Hyprland Window Resizing on Expand / Collapse
+  useEffect(() => {
+    fetch('/api/island/resize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expanded })
+    }).catch(() => {});
+  }, [expanded]);
 
   // Update clock display
   useEffect(() => {
@@ -82,13 +148,14 @@ export default function DynamicIsland() {
     };
   }, []);
 
-  // 2. Poll voice status, security approvals, browser challenges, and schedule ringing alerts
+  // 2. Poll voice status, chat transcripts, security approvals, browser challenges, and schedule ringing alerts
   useEffect(() => {
     let active = true;
     const pollStatus = async () => {
       try {
-        const [vRes, aRes, bRes, sRes] = await Promise.all([
+        const [vRes, cRes, aRes, bRes, sRes] = await Promise.all([
           fetch('/api/voice/status').catch(() => null),
+          fetch('/api/chats').catch(() => null),
           fetch('/api/approvals').catch(() => null),
           fetch('/api/browser/status').catch(() => null),
           fetch('/api/schedule/overview').catch(() => null)
@@ -96,7 +163,35 @@ export default function DynamicIsland() {
 
         if (active && vRes?.ok) {
           const vData = await vRes.json();
-          setVoiceState(vData.state || 'idle');
+          const nextVoiceState = vData.state || 'idle';
+          setVoiceState(nextVoiceState);
+          setVoiceStatus(vData);
+
+          if (['capturing', 'transcribing', 'thinking', 'speaking'].includes(nextVoiceState)) {
+            setExpanded(true);
+          }
+          if (vData.activeTurnId && vData.activeTurnId !== lastSeenTurnIdRef.current) {
+            lastSeenTurnIdRef.current = vData.activeTurnId;
+            setExpanded(true);
+          }
+        }
+
+        if (active && cRes?.ok) {
+          const cData = await cRes.json();
+          const serverMessages = Array.isArray(cData.messages) ? cData.messages : [];
+          if (serverMessages.length > 0 && !isTypingRef.current) {
+            setMessages((prev) => {
+              // Map server messages to local island format
+              return serverMessages.map((sm, idx) => ({
+                id: sm.turnId || sm.id || `chat-${idx}`,
+                who: sm.who,
+                time: sm.time ? (sm.time.length > 16 ? sm.time.slice(11, 16) : sm.time) : nowTime(),
+                lines: Array.isArray(sm.lines) ? sm.lines : [sm.text || ''],
+                attachScreen: sm.attachScreen,
+                media: sm.media
+              }));
+            });
+          }
         }
 
         if (active && aRes?.ok) {
@@ -261,12 +356,12 @@ export default function DynamicIsland() {
     }
   };
 
-  // 5. Hide / Close Island
+  // 5. Hide / Close Island (parks in special scratchpad without cold starting)
   const closeIsland = async () => {
     try {
       await fetch('/api/island/hide', { method: 'POST' }).catch(() => {});
     } catch {}
-    window.close();
+    setExpanded(false);
   };
 
   // 6. Keyboard Shortcuts inside Island
@@ -536,18 +631,52 @@ export default function DynamicIsland() {
             {currentTimeStr}
           </div>
 
-          {/* Prompt Input Form */}
-          <form className="island-input-wrap" onSubmit={sendMessage}>
-            <input
-              ref={inputRef}
-              className="island-input"
-              type="text"
-              autoFocus
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={isTyping ? 'JARVIS is thinking...' : 'Ask JARVIS... (Alt+Space for mic)'}
-            />
-          </form>
+          {/* Prompt Input Form or Live Voice Waveform */}
+          {voiceState === 'capturing' ? (
+            <div className="island-voice-active-indicator" onClick={toggleVoice} title="Click or Super+J to finish speaking">
+              <div className="island-voice-wave">
+                <span className="wave-bar b1" />
+                <span className="wave-bar b2" />
+                <span className="wave-bar b3" />
+                <span className="wave-bar b4" />
+                <span className="wave-bar b5" />
+              </div>
+              <span className="island-voice-banner" style={{ color: '#ff6e6e' }}>Listening... Press Super+J to send</span>
+            </div>
+          ) : voiceState === 'transcribing' ? (
+            <div className="island-voice-active-indicator">
+              <div className="island-voice-pulse" />
+              <span className="island-voice-banner" style={{ color: '#1fd8ea' }}>Transcribing speech...</span>
+            </div>
+          ) : voiceState === 'thinking' ? (
+            <div className="island-voice-active-indicator">
+              <div className="island-voice-spin" />
+              <span className="island-voice-banner" style={{ color: 'var(--island-primary)' }}>JARVIS Thinking...</span>
+            </div>
+          ) : voiceState === 'speaking' ? (
+            <div className="island-voice-active-indicator" onClick={stopSpeaking} title="Click to stop speaking">
+              <div className="island-voice-wave" style={{ filter: 'hue-rotate(90deg)' }}>
+                <span className="wave-bar b1" />
+                <span className="wave-bar b2" />
+                <span className="wave-bar b3" />
+                <span className="wave-bar b4" />
+                <span className="wave-bar b5" />
+              </div>
+              <span className="island-voice-banner" style={{ color: '#4caf50' }}>JARVIS Speaking... (Click to stop)</span>
+            </div>
+          ) : (
+            <form className="island-input-wrap" onSubmit={sendMessage}>
+              <input
+                ref={inputRef}
+                className="island-input"
+                type="text"
+                autoFocus
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={isTyping ? 'JARVIS is thinking...' : 'Ask JARVIS... (Super+J to speak)'}
+              />
+            </form>
+          )}
 
           {/* Quick Action Icons */}
           <div className="island-actions">
@@ -629,36 +758,68 @@ export default function DynamicIsland() {
               </div>
             )}
 
+            {messages.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px 6px 4px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--island-subtext)' }}>
+                  {messages.length} {messages.length === 1 ? 'Turn' : 'Turns'} Synced
+                </span>
+                <button
+                  type="button"
+                  className="island-clear-btn"
+                  onClick={() => {
+                    setMessages([]);
+                    stopSpeaking();
+                  }}
+                  title="Clear conversation display"
+                >
+                  <Icon name="trash" /> Clear
+                </button>
+              </div>
+            )}
+
             {messages.length === 0 && !isTyping && activeApprovals.length === 0 && !pendingBrowserChallenge && ringingReminders.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--island-subtext)', padding: '16px 0', fontSize: '12px' }}>
-                Type a prompt above or press <kbd style={{ padding: '2px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px' }}>Alt+Space</kbd> to speak.
+                Type a prompt above or press <kbd style={{ padding: '2px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px' }}>Super+J</kbd> to speak.
               </div>
             )}
 
             {messages.map((m, idx) => (
               <div key={m.id || idx} className={`island-msg ${m.who === 'YOU' ? 'user' : 'jarvis'}`}>
                 <div className="island-msg-bubble">
-                  {m.who === 'JARVIS' && (
-                    <div className="island-msg-header">
-                      <span className="island-msg-author">JARVIS</span>
+                  <div className="island-msg-header">
+                    <span className="island-msg-author">{m.who === 'YOU' ? 'YOU' : 'JARVIS'}</span>
+                    {m.who === 'YOU' && m.attachScreen && (
+                      <span className="island-screen-tag" title="Attached screen capture">👁️ Screen</span>
+                    )}
+                    <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '6px' }}>{m.time}</span>
+                    <div className="island-msg-actions">
                       <button
                         type="button"
-                        className="island-speak-btn"
-                        onClick={() => speakReply(m.lines.join(' '))}
-                        title="Replay Voice"
+                        className={`island-action-btn ${copiedId === (m.id || idx) ? 'copied' : ''}`}
+                        onClick={() => {
+                          const fullText = Array.isArray(m.lines) ? m.lines.join('\n') : String(m.lines || '');
+                          navigator.clipboard?.writeText(fullText);
+                          setCopiedId(m.id || idx);
+                          setTimeout(() => setCopiedId(null), 1800);
+                        }}
+                        title="Copy message"
                       >
-                        <Icon name="speaker" />
+                        <Icon name={copiedId === (m.id || idx) ? 'check' : 'copy'} />
+                        {copiedId === (m.id || idx) ? <span>Copied</span> : null}
                       </button>
+                      {m.who === 'JARVIS' && (
+                        <button
+                          type="button"
+                          className="island-action-btn"
+                          onClick={() => speakReply(Array.isArray(m.lines) ? m.lines.join(' ') : String(m.lines || ''))}
+                          title="Replay Voice"
+                        >
+                          <Icon name="speaker" />
+                        </button>
+                      )}
                     </div>
-                  )}
-                  {m.who === 'YOU' && m.attachScreen && (
-                    <div className="island-msg-header">
-                      <span className="island-screen-tag" title="Attached screen capture">👁️ Screen</span>
-                    </div>
-                  )}
-                  {m.lines.map((l, lineIdx) => (
-                    <div key={lineIdx}>{l}</div>
-                  ))}
+                  </div>
+                  {renderFormattedContent(m.lines)}
 
                   {/* Inline Pending Browser Challenge */}
                   {(m.browserChallenge || (pendingBrowserChallenge && idx === messages.length - 1 && m.who === 'JARVIS')) && (

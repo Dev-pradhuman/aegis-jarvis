@@ -59,6 +59,8 @@ fi
 
 case "$ACTION" in
   start)
+    # Automatically show visual Voice HUD popup
+    "${SCRIPT_DIR}/jarvis-island.sh" show >/dev/null 2>&1 &
     RES=$(curl -s -X POST "${JARVIS_URL}/api/voice/ptt" \
       -H "Content-Type: application/json" \
       -d '{"action":"start"}')
@@ -77,6 +79,8 @@ case "$ACTION" in
     echo "$RES"
     ;;
   toggle|*)
+    # Automatically show visual Voice HUD popup
+    "${SCRIPT_DIR}/jarvis-island.sh" show >/dev/null 2>&1 &
     RES=$(curl -s -X POST "${JARVIS_URL}/api/voice/ptt" \
       -H "Content-Type: application/json" \
       -d '{"action":"toggle"}')

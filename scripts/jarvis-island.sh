@@ -27,6 +27,30 @@ find_island_pid() {
   echo ""
 }
 
+find_island_address() {
+  if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    local addr
+    addr=$(hyprctl clients -j 2>/dev/null | jq -r '.[] | select((.title | test("JARVIS-ISLAND"; "i")) or (.class | test("jarvis-island"; "i")) or (.class == "chrome-127.0.0.1__-Default")) | .address' 2>/dev/null | head -n 1 || echo "")
+    if [[ -n "$addr" && "$addr" != "null" ]]; then
+      echo "$addr"
+      return 0
+    fi
+  fi
+  echo ""
+}
+
+find_island_workspace() {
+  if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    local ws
+    ws=$(hyprctl clients -j 2>/dev/null | jq -r '.[] | select((.title | test("JARVIS-ISLAND"; "i")) or (.class | test("jarvis-island"; "i")) or (.class == "chrome-127.0.0.1__-Default")) | .workspace.name' 2>/dev/null | head -n 1 || echo "")
+    if [[ -n "$ws" && "$ws" != "null" ]]; then
+      echo "$ws"
+      return 0
+    fi
+  fi
+  echo ""
+}
+
 cleanup_stale_locks() {
   local cache_dir="/home/pradhuman/.cache/jarvis-island"
   if [[ -f "$cache_dir/SingletonLock" || -L "$cache_dir/SingletonLock" ]]; then
@@ -87,7 +111,13 @@ close_island() {
 case "$ACTION" in
   show)
     PID="$(find_island_pid)"
-    if [[ -z "$PID" ]]; then
+    ADDR="$(find_island_address)"
+    if [[ -n "$PID" && -n "$ADDR" ]] && command -v hyprctl >/dev/null 2>&1; then
+      ACTIVE_WS=$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.name // .id // "1"' 2>/dev/null || echo "1")
+      hyprctl dispatch movetoworkspacesilent "${ACTIVE_WS},address:${ADDR}" >/dev/null 2>&1 || true
+      hyprctl dispatch focuswindow "address:${ADDR}" >/dev/null 2>&1 || true
+      echo "Brought JARVIS Dynamic Island to workspace ${ACTIVE_WS} (PID $PID)"
+    elif [[ -z "$PID" ]]; then
       launch_island
       echo "Launched JARVIS Dynamic Island"
     else
@@ -96,13 +126,26 @@ case "$ACTION" in
     ;;
 
   hide)
+    PID="$(find_island_pid)"
+    ADDR="$(find_island_address)"
+    if [[ -n "$PID" && -n "$ADDR" ]] && command -v hyprctl >/dev/null 2>&1; then
+      hyprctl dispatch movetoworkspacesilent "special:jarvis_island,address:${ADDR}" >/dev/null 2>&1 || true
+      echo "Moved JARVIS Dynamic Island to special scratchpad (PID $PID)"
+    else
+      close_island
+    fi
+    ;;
+
+  close|kill)
     close_island
     ;;
 
   status)
     PID="$(find_island_pid)"
+    ADDR="$(find_island_address)"
+    WS="$(find_island_workspace)"
     if [[ -n "$PID" ]]; then
-      echo "JARVIS Dynamic Island is ACTIVE (PID $PID)"
+      echo "JARVIS Dynamic Island is ACTIVE (PID $PID, ADDR ${ADDR:-unknown}, WORKSPACE ${WS:-unknown})"
     else
       echo "JARVIS Dynamic Island is INACTIVE"
     fi
@@ -110,7 +153,19 @@ case "$ACTION" in
 
   toggle|*)
     PID="$(find_island_pid)"
-    if [[ -n "$PID" ]]; then
+    ADDR="$(find_island_address)"
+    if [[ -n "$PID" && -n "$ADDR" ]] && command -v hyprctl >/dev/null 2>&1; then
+      WS="$(find_island_workspace)"
+      if [[ "$WS" == *"special:jarvis_island"* ]]; then
+        ACTIVE_WS=$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.name // .id // "1"' 2>/dev/null || echo "1")
+        hyprctl dispatch movetoworkspacesilent "${ACTIVE_WS},address:${ADDR}" >/dev/null 2>&1 || true
+        hyprctl dispatch focuswindow "address:${ADDR}" >/dev/null 2>&1 || true
+        echo "Showed JARVIS Dynamic Island on workspace ${ACTIVE_WS}"
+      else
+        hyprctl dispatch movetoworkspacesilent "special:jarvis_island,address:${ADDR}" >/dev/null 2>&1 || true
+        echo "Parked JARVIS Dynamic Island in special scratchpad"
+      fi
+    elif [[ -n "$PID" ]]; then
       close_island
     else
       launch_island

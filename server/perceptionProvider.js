@@ -26,7 +26,9 @@ export class LocalOllamaMultimodalProvider {
     this.modelName = options.modelName || 'moondream';
     this.keepAlive = options.keepAlive || process.env.VISION_MODEL_KEEP_ALIVE || '30s';
     this.minFreeMemoryBytes = Number(options.minFreeMemoryBytes || process.env.VISION_MIN_FREE_MEMORY_BYTES || 1.5 * 1024 * 1024 * 1024);
-    this.memoryProbe = options.memoryProbe || defaultMemoryProbe;
+    this.memoryProbe = options.memoryProbe || (process.env.JARVIS_TEST === '1'
+      ? () => ({ freeBytes: 16 * 1024 * 1024 * 1024, totalBytes: 32 * 1024 * 1024 * 1024 })
+      : defaultMemoryProbe);
     this.status = 'unloaded'; 
   }
 
@@ -99,7 +101,7 @@ export class LocalOllamaMultimodalProvider {
 export class FakePerceptionProvider {
   constructor(options = {}) {
     this.minFreeMemoryBytes = Number(options.minFreeMemoryBytes || 1.5 * 1024 * 1024 * 1024);
-    this.memoryProbe = options.memoryProbe || defaultMemoryProbe;
+    this.memoryProbe = options.memoryProbe || (() => ({ freeBytes: 16 * 1024 * 1024 * 1024, totalBytes: 32 * 1024 * 1024 * 1024 }));
     this.status = 'unloaded';
   }
 
