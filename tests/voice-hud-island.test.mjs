@@ -138,3 +138,33 @@ test('AC4: POST /api/island/resize resizes window dimensions and jarvis-island.s
   assert.match(islandContent, /find_island_workspace/, 'jarvis-island.sh must resolve island workspace');
   assert.match(islandContent, /movetoworkspacesilent/, 'jarvis-island.sh must use movetoworkspacesilent for instant toggle');
 });
+
+test('AC1 & AC2: Dynamic Island CSS flex containment, auto-sizing, and input/button visibility', () => {
+  const cssPath = path.resolve('src/styles/island.css');
+  assert.ok(fs.existsSync(cssPath), 'island.css must exist');
+  const css = fs.readFileSync(cssPath, 'utf8');
+
+  // AC1: .jarvis-island-container.expanded max-height: 380px; height: auto;
+  assert.match(css, /\.jarvis-island-container\.expanded\s*\{[^}]*max-height:\s*380px;/, 'expanded container must use max-height: 380px');
+  assert.match(css, /\.jarvis-island-container\.expanded\s*\{[^}]*height:\s*auto;/, 'expanded container must use height: auto');
+  assert.ok(!css.includes('height: 320px;'), 'must not contain rigid height: 320px;');
+
+  // AC1: .island-content has flex: 1; min-height: 0; overflow-y: auto;
+  assert.match(css, /\.island-content\s*\{[^}]*flex:\s*1;/, 'island-content must have flex: 1');
+  assert.match(css, /\.island-content\s*\{[^}]*min-height:\s*0;/, 'island-content must have min-height: 0');
+  assert.match(css, /\.island-content\s*\{[^}]*overflow-y:\s*auto;/, 'island-content must have overflow-y: auto');
+
+  // AC2: .island-input-wrap and .island-input have min-width: 0 to prevent pushing buttons
+  assert.match(css, /\.island-input-wrap\s*\{[^}]*min-width:\s*0;/, 'island-input-wrap must have min-width: 0');
+  assert.match(css, /\.island-input\s*\{[^}]*min-width:\s*0;/, 'island-input must have min-width: 0');
+
+  // AC2: .island-actions and .island-icon-btn have flex-shrink: 0
+  assert.match(css, /\.island-actions\s*\{[^}]*flex-shrink:\s*0;/, 'island-actions must have flex-shrink: 0');
+  assert.match(css, /\.island-icon-btn\s*\{[^}]*flex-shrink:\s*0;/, 'island-icon-btn must have flex-shrink: 0');
+
+  // AC2: JSX has accessible input and expand button
+  const jsxPath = path.resolve('src/components/DynamicIsland.jsx');
+  const jsx = fs.readFileSync(jsxPath, 'utf8');
+  assert.match(jsx, /aria-label="Chat with JARVIS"/, 'input must have aria-label');
+  assert.match(jsx, /aria-label=\{expanded \? 'Collapse Island' : 'Expand Island'\}/, 'expand/collapse button must have aria-label');
+});

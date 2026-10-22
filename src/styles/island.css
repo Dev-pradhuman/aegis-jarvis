@@ -55,19 +55,22 @@ body.island-body {
 }
 
 .jarvis-island-container.expanded {
+  width: 480px;
+  max-width: calc(100vw - 16px);
   border-radius: 20px;
-  max-height: calc(100vh - 24px);
-  height: 320px;
+  max-height: 380px;
+  height: auto;
 }
 
 /* Island Top Pill */
 .island-top-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
+  gap: 8px;
+  padding: 6px 12px;
   min-height: 44px;
   box-sizing: border-box;
+  width: 100%;
 }
 
 /* Voice Orb */
@@ -155,18 +158,20 @@ body.island-body {
   flex: 1;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .island-input {
   width: 100%;
+  min-width: 0;
   background: transparent;
   border: none;
   outline: none;
   color: var(--island-text);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
 
 .island-input::placeholder {
@@ -179,7 +184,7 @@ body.island-body {
 .island-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
@@ -189,6 +194,9 @@ body.island-body {
   border-radius: 50%;
   width: 28px;
   height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -196,6 +204,7 @@ body.island-body {
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
+  box-sizing: border-box;
 }
 
 .island-icon-btn:hover {
@@ -218,6 +227,7 @@ body.island-body {
 /* Expanded Content Area */
 .island-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 14px 12px;
   display: flex;
@@ -572,13 +582,15 @@ body.island-body {
 /* Voice Active Indicator in Top Bar */
 .island-voice-active-indicator {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
 }
 
 .island-voice-wave {
@@ -625,13 +637,14 @@ body.island-body {
 }
 
 .island-voice-banner {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--island-text);
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Message Actions Toolbar */

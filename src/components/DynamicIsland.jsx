@@ -674,6 +674,7 @@ export default function DynamicIsland() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isTyping ? 'JARVIS is thinking...' : 'Ask JARVIS... (Super+J to speak)'}
+                aria-label="Chat with JARVIS"
               />
             </form>
           )}
@@ -713,8 +714,9 @@ export default function DynamicIsland() {
               className="island-icon-btn"
               onClick={() => setExpanded(!expanded)}
               title={expanded ? 'Collapse Island' : 'Expand Island'}
+              aria-label={expanded ? 'Collapse Island' : 'Expand Island'}
             >
-              <Icon name={expanded ? 'newTask' : 'chat'} />
+              <Icon name={expanded ? 'chevronUp' : 'chevronDown'} />
             </button>
 
             <button
