@@ -68,7 +68,17 @@ export async function discoverLinuxApps({ env = process.env, home = os.homedir()
 }
 
 const normalize = (value) => String(value || '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const aliases = { 'vs code': 'visual studio code', vscode: 'visual studio code', code: 'visual studio code' };
+const aliases = {
+  'vs code': 'visual studio code',
+  vscode: 'visual studio code',
+  code: 'visual studio code',
+  'brave browser': 'brave',
+  brave: 'brave',
+  'brave-browser': 'brave',
+  chrome: 'chromium',
+  'google chrome': 'chromium',
+  chromium: 'chromium',
+};
 
 function distance(a, b) {
   let prior = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -82,7 +92,12 @@ function distance(a, b) {
 
 export function resolveApp(query, apps) {
   const raw = normalize(query);
-  const target = aliases[raw] || raw;
+  const stripped = raw.replace(/\s+(?:browser|app|application)$/i, '').trim();
+  const hasDirectMatch = apps.some((app) => normalize(app.name) === raw || normalize(app.id) === raw);
+  const target = (hasDirectMatch && !aliases[raw])
+    ? raw
+    : (aliases[raw] || aliases[stripped] || (stripped && stripped.length > 1 ? stripped : raw));
+
   if (!target) return { status: 'not_found', candidates: [] };
   const scored = apps.map((app) => {
     const names = [app.name, app.genericName, app.id, app.startupWMClass].filter(Boolean).map(normalize);
@@ -107,11 +122,14 @@ export function createLinuxApps(options = {}) {
   const discover = () => discoverLinuxApps({ env, home });
   return {
     list: discover,
-    async open(query) {
+    async open(query, extraArgs = []) {
       const resolution = resolveApp(query, await discover());
       if (resolution.status !== 'resolved') return resolution;
       await access(resolution.app.file, constants.R_OK);
-      await run('gio', ['launch', resolution.app.file], { timeout: 10_000, windowsHide: true });
+      const launchArgs = Array.isArray(extraArgs) && extraArgs.length > 0
+        ? ['launch', resolution.app.file, ...extraArgs]
+        : ['launch', resolution.app.file];
+      await run('gio', launchArgs, { timeout: 10_000, windowsHide: true });
       return { status: 'launched', app: resolution.app, match: resolution.match, verified: false, verification: 'Desktop launcher accepted the request; window state is unavailable.' };
     },
   };

@@ -37,6 +37,9 @@ import { composioStatus, composioToolRisk, createComposioConnectLink, listCompos
 import { complete as completeConfiguredProvider, providerForLogicalModel } from './providerClient.js';
 import { systemMetrics } from './systemMetrics.js';
 import { browserManager } from './browser/index.js';
+import { ensureDisplayEnvironment } from './browser/engines.js';
+
+ensureDisplayEnvironment();
 import { listProjectStatus } from './projectIntelligence.js';
 import { discoverMcpServers } from './mcpDiscovery.js';
 import { deviceStatus, ingestDeviceEvent, pairDevice, revokeDevice } from './deviceBridge.js';

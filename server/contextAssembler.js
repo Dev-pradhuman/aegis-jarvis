@@ -124,6 +124,14 @@ export function assembleModelContext({ query = '', toolResults = [], conversatio
       candidates.push({ role: 'system', content });
     }
   }
+
+  // Always inject strict anti-hallucination guard
+  const antiHallucinationContent = 'CRITICAL RULE: NEVER claim to have sent an email, sent a message (WhatsApp, etc.), or performed any desktop action unless a tool in this turn confirmed ok: true. If no tool was run, state honestly that you cannot perform the action directly and offer to open the web app.';
+  candidates.push({
+    role: 'system',
+    content: antiHallucinationContent.slice(0, Math.max(100, perMessageChars)),
+  });
+
   candidates.push(...history);
 
   const toolResultsChars = toolResults.reduce((sum, tr) => sum + String(tr.resultId || tr).length, 0);

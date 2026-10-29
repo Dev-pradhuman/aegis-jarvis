@@ -288,6 +288,7 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'apps.open') {
     const name = String(input.name || '').trim();
     if (!name || name.length > 120) throw new Error('Application name must contain 1 to 120 characters');
+    const extraArgs = Array.isArray(input.args) ? input.args : [];
     const windows = context.platform?.windows || osPlatform.windows;
     if (windows?.supported) {
       const apps = context.platform?.apps || osPlatform.apps;
@@ -306,12 +307,12 @@ async function runTool(toolId, input = {}, context = {}) {
         return all.filter((window) => appWindowMatches(app, window));
       };
       let matches = await findMatches();
-      if (matches.length >= 1) {
+      if (matches.length >= 1 && extraArgs.length === 0) {
         const targetWindow = matches.find((m) => m.active) || matches[0];
         return { ok: true, toolId, data: { status: 'focused', app, window: await windows.focus({ windowId: targetWindow.windowId }), verified: true } };
       }
       let launched;
-      try { launched = await apps.open(name); }
+      try { launched = await apps.open(name, extraArgs); }
       catch (error) { throw windowError('APP_LAUNCH_FAILED', `${app.name} could not be launched: ${error.message}`); }
       if (launched.status !== 'launched') return { ok: false, toolId, data: launched };
       for (let attempt = 0; attempt < 16; attempt++) {
@@ -324,7 +325,7 @@ async function runTool(toolId, input = {}, context = {}) {
       }
       throw windowError('WINDOW_NOT_FOUND', `${app.name} launched but no matching window appeared`);
     }
-    const result = await osPlatform.apps.open(name);
+    const result = await osPlatform.apps.open(name, extraArgs);
     if (result.status !== 'launched') {
       const site = resolveKnownSiteOrDomain(name);
       if (site) {

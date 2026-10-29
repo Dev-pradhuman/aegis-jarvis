@@ -33,6 +33,31 @@ export function resolveKnownSiteOrDomain(input) {
   return null;
 }
 
+export function parseWhatsAppRequest(value) {
+  const clean = String(value || '')
+    .replace(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?/i, '')
+    .replace(/[.!?]+$/, '')
+    .trim();
+
+  // Format 1: send (a) (whatsapp) (message|text) to <recipient> [on whatsapp]
+  let m = clean.match(/^send\s+(?:a\s+)?(?:whatsapp\s+message|whatsapp|message|text)\s+to\s+([^,:]+?)(?:\s+(?:on|via|through)\s+whatsapp)?(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
+          clean.match(/^send\s+(?:a\s+)?(?:whatsapp\s+message|whatsapp)\s+to\s+([^,:]+?)$/i) ||
+          clean.match(/^send\s+(?:a\s+)?(?:message|text)\s+to\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp$/i);
+  if (m) return { recipient: m[1].trim(), message: m[2]?.trim() || '' };
+
+  // Format 2: (message|text) <recipient> on whatsapp (:|saying|that)? (message)?
+  m = clean.match(/^(?:message|text)\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
+      clean.match(/^(?:message|text)\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp$/i);
+  if (m) return { recipient: m[1].trim(), message: m[2]?.trim() || '' };
+
+  // Format 3: whatsapp <recipient> (:|saying|that)? (message)?
+  m = clean.match(/^whatsapp\s+([^,:]+?)(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
+      clean.match(/^whatsapp\s+([^,:]+?)$/i);
+  if (m) return { recipient: m[1].trim(), message: m[2]?.trim() || '' };
+
+  return null;
+}
+
 export function routeRequest(text) {
   const value = String(text).trim();
   const timerMatch = value.match(/^(?:jarvis[, ]+)?(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|timer\s+(?:for\s+)?|start\s+(?:a\s+)?(?:timer\s+for\s+)?)(\d{1,4})\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?:\s+(?:for|to|called)\s+(.{1,100}))?[.!]?$/i);
@@ -159,6 +184,54 @@ export function routeRequest(text) {
   const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
   if (windowAction) return { route: 'TOOL_CALL', capability: `windows.${windowAction[1].toLowerCase()}`, args: { target: { name: windowAction[2].trim() } }, confidence: 0.99 };
   if (/^(?:what(?:'s| is) (?:the )?active window|which window is active)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
+
+  const wa = parseWhatsAppRequest(value);
+  if (wa && wa.recipient) {
+    return {
+      route: 'TOOL_CALL',
+      capability: 'browser.handoff',
+      args: {
+        url: 'https://web.whatsapp.com',
+        recipient: wa.recipient,
+        message: wa.message,
+        isWhatsAppMessage: true,
+      },
+      confidence: 0.99,
+    };
+  }
+
+  const siteOnBrowserMatch = value.match(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)\s+(?:on|in|using|with)\s+(?:the\s+)?(.+?)(?:\s+(?:browser|app))?[.!?]?$/i);
+  if (siteOnBrowserMatch) {
+    const rawSite = siteOnBrowserMatch[1].replace(/[.!?]+$/, '').trim();
+    const rawBrowser = siteOnBrowserMatch[2].replace(/[.!?]+$/, '').trim().toLowerCase();
+    const site = resolveKnownSiteOrDomain(rawSite);
+    const targetUrl = site ? site.url : (/^https?:\/\//i.test(rawSite) ? rawSite : (/\.[a-z]{2,}/i.test(rawSite) ? `https://${rawSite.replace(/^www\./i, '')}` : null));
+
+    const browserAliases = {
+      brave: 'brave',
+      'brave-browser': 'brave',
+      chrome: 'chromium',
+      chromium: 'chromium',
+      firefox: 'firefox',
+      zen: 'zen',
+      safari: 'safari',
+      edge: 'edge',
+    };
+    const browserKey = rawBrowser.replace(/\s+(?:browser|app)$/i, '').trim();
+    const browserName = browserAliases[rawBrowser] || browserAliases[browserKey] || browserKey;
+
+    if (targetUrl) {
+      return {
+        route: 'TOOL_CALL',
+        capability: 'apps.open',
+        args: {
+          name: browserName,
+          args: [targetUrl],
+        },
+        confidence: 0.99,
+      };
+    }
+  }
 
   const webOrAppMatch = value.match(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application|website|web\s+page|site|page))?[.!?]?$/i);
   if (webOrAppMatch) {

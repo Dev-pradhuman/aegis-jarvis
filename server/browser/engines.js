@@ -1,11 +1,68 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 
 const defaultProfile = fileURLToPath(new URL('../data/browser-profile/', import.meta.url));
 
+export function ensureDisplayEnvironment(env = process.env) {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 1000;
+  const runtimeDir = env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
+  if (!env.XDG_RUNTIME_DIR && fs.existsSync(runtimeDir)) {
+    env.XDG_RUNTIME_DIR = runtimeDir;
+  }
+
+  // 1. Detect WAYLAND_DISPLAY if not set
+  if (!env.WAYLAND_DISPLAY && fs.existsSync(runtimeDir)) {
+    try {
+      const files = fs.readdirSync(runtimeDir);
+      const waylandSocket = files.find((f) => /^wayland-\d+$/.test(f));
+      if (waylandSocket) {
+        env.WAYLAND_DISPLAY = waylandSocket;
+      }
+    } catch {}
+  }
+
+  // 2. Detect DISPLAY if not set
+  if (!env.DISPLAY) {
+    const x11Dir = '/tmp/.X11-unix';
+    if (fs.existsSync(x11Dir)) {
+      try {
+        const xFiles = fs.readdirSync(x11Dir);
+        const xSocket = xFiles.find((f) => /^X\d+$/.test(f));
+        if (xSocket) {
+          const displayNum = xSocket.slice(1);
+          env.DISPLAY = `:${displayNum}`;
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Detect HYPRLAND_INSTANCE_SIGNATURE if not set
+  if (!env.HYPRLAND_INSTANCE_SIGNATURE && fs.existsSync(runtimeDir)) {
+    try {
+      const hyprDir = path.join(runtimeDir, 'hypr');
+      if (fs.existsSync(hyprDir)) {
+        const entries = fs.readdirSync(hyprDir);
+        const sigs = entries.filter((e) => !e.startsWith('.'));
+        if (sigs.length > 0) {
+          env.HYPRLAND_INSTANCE_SIGNATURE = sigs[0];
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    WAYLAND_DISPLAY: env.WAYLAND_DISPLAY || null,
+    DISPLAY: env.DISPLAY || null,
+    HYPRLAND_INSTANCE_SIGNATURE: env.HYPRLAND_INSTANCE_SIGNATURE || null,
+    XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR || null,
+  };
+}
+
 export function focusBrowserWindow() {
   try {
+    ensureDisplayEnvironment();
     if (process.env.HYPRLAND_INSTANCE_SIGNATURE) {
       execFile('hyprctl', ['dispatch', 'focuswindow', 'class:(?i)chromium|chrome|firefox'], () => {});
     }
@@ -93,16 +150,25 @@ export class PatchrightEngine {
   }
 
   async start({ headed = false } = {}) {
+    ensureDisplayEnvironment();
     const { chromium } = await import('patchright');
     const profile = path.resolve(this.options.profileDir || process.env.BROWSER_PROFILE_DIR || defaultProfile);
+    const args = [
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+    ];
+    if (headed) {
+      args.push('--ozone-platform-hint=auto');
+      if (process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) {
+        args.push('--ozone-platform=wayland');
+      }
+    }
     this.context = await chromium.launchPersistentContext(profile, {
       headless: !headed,
       viewport: { width: 1440, height: 900 },
       acceptDownloads: true,
-      args: [
-        '--no-sandbox',
-        '--disable-blink-features=AutomationControlled',
-      ],
+      args,
+      env: process.env,
     });
     this.headed = headed;
     this.page = this.context.pages()[0] || await this.context.newPage();

@@ -290,7 +290,15 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           const toolStarted = performance.now(); let data; let reply;
           const invokeChatTool = async (toolId, args = {}) => {
             const tool = getTool(toolId);
-            if (input.source === 'voice' && tool?.sideEffects && ctx.voicePipeline) {
+            const isLowRiskAction = [
+              'apps.open',
+              'browser.open',
+              'browser.handoff',
+            ].includes(toolId) ||
+            toolId.startsWith('audio.') ||
+            toolId.startsWith('media.') ||
+            toolId.startsWith('reminders.');
+            if (input.source === 'voice' && tool?.sideEffects && !isLowRiskAction && (tool.riskLevel === 'HIGH_RISK_IRREVERSIBLE' || tool.requiresApproval) && ctx.voicePipeline) {
                 const confirmed = await ctx.voicePipeline.confirm(`Are you sure you want to execute ${tool.name}?`);
                 if (!confirmed) {
                     throw Object.assign(new Error('Voice confirmation failed or timed out'), { code: 'VOICE_CONFIRMATION_FAILED' });
@@ -324,10 +332,15 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           }
           else if (route.capability === 'browser.handoff') {
             await browserManager.handoff(route.args.url);
-            reply = route.args.isSignIn
-              ? `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`
-              : `Opened ${route.args.label || route.args.url} in browser.`;
-            data = { action: 'browser.handoff', url: route.args.url, label: route.args.label };
+            if (route.args.isWhatsAppMessage) {
+              const who = route.args.recipient ? ` ${route.args.recipient}` : '';
+              reply = `Direct WhatsApp sending is not automated without approval. I have opened WhatsApp Web for you so you can message${who} directly.`;
+            } else if (route.args.isSignIn) {
+              reply = `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`;
+            } else {
+              reply = `Opened ${route.args.label || route.args.url} in browser.`;
+            }
+            data = { action: 'browser.handoff', url: route.args.url, label: route.args.label, recipient: route.args.recipient, isWhatsAppMessage: route.args.isWhatsAppMessage };
           }
           else if (route.capability.startsWith('audio.')) {
             const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
@@ -354,7 +367,8 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             const result = await invokeChatTool('apps.open', route.args);
             data = result.data;
             if (data.window) { state.runtime ??= {}; state.runtime.lastDesktopTarget = { windowId: data.window.windowId, appId: data.window.appId, ...(data.window.processId ? { processId: data.window.processId } : {}) }; }
-            reply = data.window ? `${data.app.name} is ${data.status === 'focused' ? 'focused' : 'open'} in window ${data.window.windowId}.`
+            reply = (data?.app && route.args.args?.length) ? `Opened ${route.args.args[0]} in ${data.app.name}.`
+              : data.window ? `${data.app.name} is ${data.status === 'focused' ? 'focused' : 'open'} in window ${data.window.windowId}.`
               : data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
               : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
                 : `I could not find an installed application named ${route.args.name}.`;
