@@ -113,3 +113,116 @@ The zero-mock live verification script `scripts/verify-real-e2e.mjs` was execute
 ```
 
 All 367 unit tests pass with 100% success rate (`npm test`).
+
+---
+
+## 4. Full Live User Dogfooding Test Results (`scripts/dogfood-live.mjs`)
+
+Executed against running daemon `http://127.0.0.1:8787` on Arch Linux + Hyprland (zero mocks):
+
+```text
+============================================================
+🚀 STARTING AEGIS-JARVIS LIVE USER DOGFOODING SUITE
+Target Daemon: http://127.0.0.1:8787
+Mode: Real OS & Cloud API (Zero Mocks)
+============================================================
+
+--- [Suite 1: Audio & Media Control] ---
+1.1 Querying system volume (fast-path)...
+  ✓ System volume read: 36%
+1.2 Lowering speaker volume via conversational LLM tool loop...
+  ✓ Natural volume lowering succeeded: "Volume lowered by 5 percent to 31 percent." (Model: nvidia/nemotron-3.5-lightning:free)
+1.3 Restoring original speaker volume...
+  ✓ Speaker volume restored: "Speaker volume increased by 5 percent to 36 percent."
+1.4 Querying media player status...
+  ✓ Media player status: "spotify is paused: Promise."
+✓ Suite 1 Passed!
+
+--- [Suite 2: Hyprland Window Management & App Launching] ---
+2.1 Listing open desktop windows...
+  ✓ Windows list reported: 5 items found
+2.2 Querying focused active window...
+  ✓ Focused window: "get_active: GitHub · Change is constant. GitHub keeps you ahead. · GitHub · GitHub - Brave (0x564d0dfda1d0)."
+2.3 Launching/focusing Brave browser conversatingly...
+  ✓ Brave launched/focused: "Brave is focused in window 0x564d0dfda1d0."
+2.4 Opening github.com on Brave browser...
+  ✓ URL opened on browser: "Opened https://github.com in Brave."
+✓ Suite 2 Passed!
+
+--- [Suite 3: Grounded Screen Vision & Active-Window Vision] ---
+3.1 Testing 1-click Screen Vision (grim capture -> OpenRouter Nemotron VL)...
+  ✓ Full screen vision perceived (read menu bar, battery 52%, time 9:57 PM, Brave GitHub tab)
+3.2 Testing Active Window Vision (target: window)...
+  ✓ Active window vision perceived ("Software still starts with you", GitHub Universe recap)
+✓ Suite 3 Passed!
+
+--- [Suite 4: Timers, Alarms, Reminders & Voice Snooze/Dismiss] ---
+4.1 Creating timer: "set a timer for 2 minutes called dogfood-tea"...
+  ✓ Timer created: "Reminder scheduled for 30/10/2026, 10:01:42 pm: dogfood-tea."
+4.2 Listing active reminders...
+  ✓ Active reminders listed: "1 active reminders: dogfood-tea" (Zero README fallthrough)
+4.3 Snoozing timer without specifying ID: "snooze the timer for 5 minutes"...
+  ✓ Timer snoozed: "Reminder "dogfood-tea" snoozed until 10:04 pm."
+4.4 Dismissing timer without specifying ID: "dismiss the timer"...
+  ✓ Timer dismissed: "Reminder "dogfood-tea" has been dismissed."
+✓ Suite 4 Passed!
+
+--- [Suite 5: Tasks, Durable Memory & Project Intelligence] ---
+5.1 Creating task: "create task: Finish CBSE Class 10 math practice"...
+  ✓ Task created: "Task created: Finish CBSE Class 10 math practice"
+5.2 Listing tasks via: "what tasks are on my to-do list?"...
+  ✓ Tasks list: Finish CBSE Class 10 math practice
+5.3 Storing durable memory via POST /api/memory...
+  ✓ Durable memory stored (ID: memory-1793377782894)
+5.4 Retrieving memory via: "what do you remember about my math practice?"...
+  ✓ Memory retrieved: quadratic equations and trigonometry formulas
+5.5 Inspecting project status via: "what changed in the project?"...
+  ✓ Project status reported: "JARVIS: available on phase45-brain-mode, 16 changed files"
+✓ Suite 5 Passed!
+
+--- [Suite 6: Consequential Approval Gate & Same-Run Resumption] ---
+6.1 Triggering consequential command execution...
+  ✓ Approval gate triggered: HTTP 202 (Approval ID: approval-41f7a9ba-76ed-4fcd-a268-341ce25e3da4)
+6.2 Resolving approval with outcome: "approved"...
+  ✓ Approval resumed and executed: "JARVIS_LIVE_OK"
+6.3 Verifying completed outcome in GET /api/chats...
+  ✓ Chat history verified: "Command completed: JARVIS_LIVE_OK"
+✓ Suite 6 Passed!
+
+--- [Suite 7: Managed Stealth Browser & Honest Messaging Handoff] ---
+7.1 Navigating to https://example.com in managed browser...
+  ✓ Navigation verified: "Example Domain" (https://example.com/)
+7.2 Reading page content via browser.read...
+  ✓ Page content read successfully (917 chars)
+7.3 Testing browser handoff for "open instagram"...
+  ✓ Instagram handoff verified: "Opened Instagram in browser."
+7.4 Testing WhatsApp messaging anti-hallucination handoff...
+  ✓ Honest WhatsApp handoff verified: "Direct WhatsApp API sending is not connected. I have opened WhatsApp Web for you so you can send your message to arjun directly."
+7.5 Closing managed browser via browser.close...
+  ✓ Managed browser cleanly closed
+✓ Suite 7 Passed!
+
+--- [Suite 8: Voice Pipeline TTS, STT & Dynamic Island Endpoints] ---
+8.1 Testing English TTS: "All systems operational."...
+  ✓ English TTS generated 27210 audio bytes
+8.2 Testing Hindi TTS: "नमस्ते, जार्विस तैयार है।"...
+  ✓ Hindi TTS generated 28464 audio bytes
+8.3 Checking GET /api/voice/status...
+  ✓ Voice pipeline status: state=idle, enabled=false
+8.4 Checking GET /api/schedule/overview...
+  ✓ Schedule overview: verified
+8.5 Checking GET /api/theme/caelestia...
+  ✓ Caelestia theme loaded: background=#0a0f0f, primary=#9bd0cc
+8.6 Testing Dynamic Island resize (expanded -> collapsed)...
+  ✓ Dynamic Island expand and collapse transitions verified
+✓ Suite 8 Passed!
+
+--- [Suite 9: Teardown & Clean State Verification] ---
+  ✓ State cleaned: removed test tasks, test reminders, test memories.
+✓ Suite 9 Cleanup Complete!
+
+============================================================
+🎉 ALL 9 LIVE USER DOGFOODING SUITES PASSED IN 46.6s!
+Zero Mocks · 100% Grounded · Real Desktop & Cloud Execution
+============================================================
+```

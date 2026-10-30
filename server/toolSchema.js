@@ -14,6 +14,7 @@ function validate(value, schema, location, errors) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) { errors.push(`${location}: expected object`); return; }
     for (const key of schema.required || []) if (!(key in value)) errors.push(`${location}.${key}: required`);
     for (const [key, item] of Object.entries(value)) {
+      if (item === undefined) continue;
       if (schema.properties?.[key]) validate(item, schema.properties[key], `${location}.${key}`, errors);
       else if (schema.additionalProperties === false) errors.push(`${location}.${key}: unexpected property`);
     }

@@ -20,20 +20,27 @@ export async function executeModelDelegation({ route, request, context = [], con
     const logicalModel = sequence[index];
     const prior = stages.map((stage) => ({ logicalModel: stage.logicalModel, output: stage.reply }));
     const stageRequest = `${assignments[logicalModel] || 'Complete the assigned JARVIS stage.'}\n\nUser request: ${request}${prior.length ? `\n\nCompleted specialist outputs:\n${JSON.stringify(prior)}` : ''}`;
-    latest = await execute({
-      logicalModel,
-      request: stageRequest,
-      context,
-      continuationState: { ...continuationState, delegationStage: index, delegationSequence: sequence, completedSpecialists: prior },
-      state,
-      allowFallback,
-      sourceTier,
-      attachments: index === 0 ? attachments : [],
-      requiredModality: index === 0 && attachments.length ? attachments[0].type || 'text' : 'text',
-      requiredCapability: logicalModel === 'minimax-m3' ? 'computer_use' : logicalModel === 'laguna-s-2.1' ? 'tools' : 'text',
-    });
-    executedToolCalls.push(...(latest.executedToolCalls || []));
-    stages.push({ logicalModel, finalModel: latest.logicalModel, provider: latest.provider, reply: latest.reply, tokens: latest.tokens || 0, inputTokens: latest.inputTokens || 0, outputTokens: latest.outputTokens || 0, cost: latest.cost || 0, routingTelemetry: latest.routingTelemetry });
+    try {
+      latest = await execute({
+        logicalModel,
+        request: stageRequest,
+        context,
+        continuationState: { ...continuationState, delegationStage: index, delegationSequence: sequence, completedSpecialists: prior },
+        state,
+        allowFallback,
+        sourceTier,
+        attachments: index === 0 ? attachments : [],
+        requiredModality: index === 0 && attachments.length ? attachments[0].type || 'text' : 'text',
+        requiredCapability: logicalModel === 'minimax-m3' ? 'computer_use' : logicalModel === 'laguna-s-2.1' ? 'tools' : 'text',
+      });
+      executedToolCalls.push(...(latest.executedToolCalls || []));
+      stages.push({ logicalModel, finalModel: latest.logicalModel, provider: latest.provider, reply: latest.reply, tokens: latest.tokens || 0, inputTokens: latest.inputTokens || 0, outputTokens: latest.outputTokens || 0, cost: latest.cost || 0, routingTelemetry: latest.routingTelemetry });
+    } catch (stageError) {
+      if (index > 0 && stages.length > 0 && latest) {
+        break;
+      }
+      throw stageError;
+    }
   }
 
   const attempts = stages.flatMap((stage) => stage.routingTelemetry.providerAttempts || []);

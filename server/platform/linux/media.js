@@ -44,8 +44,12 @@ export function createLinuxMedia(run = runDefault) {
     }
     if (players.length === 1) return { status: 'selected', player: await details(players[0]) };
     const all = await Promise.all(players.map(details));
-    const playing = all.filter((item) => item.state === 'playing');
+    const nonProxy = all.filter((item) => item.application !== 'playerctld');
+    if (nonProxy.length === 1) return { status: 'selected', player: nonProxy[0] };
+    const playing = (nonProxy.length ? nonProxy : all).filter((item) => item.state === 'playing');
     if (playing.length === 1) return { status: 'selected', player: playing[0] };
+    const withMetadata = (nonProxy.length ? nonProxy : all).filter((item) => item.title);
+    if (withMetadata.length === 1) return { status: 'selected', player: withMetadata[0] };
     return { status: 'ambiguous', players: all };
   }
   async function status(name) {

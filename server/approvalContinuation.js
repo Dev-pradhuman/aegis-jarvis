@@ -6,18 +6,21 @@ import { invokeToolRequest } from './toolRuntime.js';
 import { resumeWorkflowForApproval } from './workflowEngine.js';
 
 function chatOutcome(draft, run, approval, result, succeeded) {
-  if (run?.origin !== 'chat') return;
   const tool = approval.pendingRequest?.toolId || approval.toolName;
+  const outputText = result?.data?.stdout || result?.stdout || result?.data?.output || result?.output || '';
   const detail = succeeded
-    ? tool === 'computer.type' || tool === 'computer.keypress' ? 'The desktop portal accepted the input for the verified target. Application content was not read back.'
+    ? tool === 'command.execute' ? (outputText ? `Command completed: ${outputText.trim()}` : 'Command execution completed successfully.')
+      : tool === 'computer.type' || tool === 'computer.keypress' ? 'The desktop portal accepted the input for the verified target. Application content was not read back.'
       : tool === 'windows.close' ? 'The selected window close action completed.'
       : tool === 'calendar.create' ? 'The calendar event was scheduled successfully.'
       : tool === 'gmail.send' ? 'The email was sent successfully.'
         : `${tool} completed.`
     : `The approved ${tool} action failed: ${result?.error || result?.code || 'unknown error'}.`;
   draft.conversations ??= [];
-  draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [run.request], runId: run.id },
-    { who: 'JARVIS', time: new Date().toISOString(), lines: [detail], runId: run.id });
+  draft.conversations.push(
+    { who: 'YOU', time: new Date().toISOString(), lines: [run?.request || `Execute ${tool}`], runId: run?.id || approval.runId },
+    { who: 'JARVIS', time: new Date().toISOString(), lines: [detail], runId: run?.id || approval.runId }
+  );
   draft.conversations = draft.conversations.slice(-100);
 }
 

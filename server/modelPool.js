@@ -1,3 +1,7 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { modelRegistry } from './modelRouting.js';
 import { brainCatalog } from './brainSources.js';
 import { resolveAutoBrainModels } from './brainService.js';
@@ -23,7 +27,7 @@ const retryable = new Set(['PROVIDER_ERROR', 'TEMPORARILY_UNAVAILABLE', 'NETWORK
 
 export function failureClass(status, message = '') {
   if (status === 401 || status === 403) return 'INVALID_CREDENTIAL';
-  if ([400, 404].includes(status) && /model.{0,40}(not found|unavailable|does not exist|not supported)|model_not_found/i.test(message)) return 'MODEL_UNAVAILABLE';
+  if ([400, 404].includes(status) && /model.{0,40}(not found|unavailable|does not exist|not supported)|model_not_found|no endpoints found/i.test(message)) return 'MODEL_UNAVAILABLE';
   if (status === 429 && /quota|credit|limit exhausted/i.test(message)) return 'QUOTA_EXHAUSTED';
   if (status === 429) return 'RATE_LIMITED';
   if ([408, 502, 503, 504].includes(status)) return 'TEMPORARILY_UNAVAILABLE';
@@ -93,7 +97,7 @@ function cooldownMs(response, kind) {
 }
 
 async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs = [], catalog = brainCatalog, onToken = null) {
-  if (provider.type === 'CLI') return callCliProvider(provider, messages, timeoutMs);
+  if (provider.type === 'CLI') return callCliProvider(provider, messages, timeoutMs, toolSpecs);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), provider.presetId === 'ollama' ? Math.max(timeoutMs, 90_000) : timeoutMs);
   try {
@@ -195,16 +199,123 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
   }
 }
 
-function callCliProvider(provider, messages, timeoutMs) {
-  const command = provider.adapter === 'codex' ? 'codex' : provider.adapter === 'claude' ? 'claude' : null;
+function callCliProvider(provider, messages, timeoutMs, toolSpecs = []) {
+  const isOpencode = provider.adapter === 'opencode';
+  const command = provider.adapter === 'codex' ? 'codex' : provider.adapter === 'claude' ? 'claude' : isOpencode ? 'opencode' : null;
   if (!command) return Promise.resolve({ ok: false, status: 503, headers: new Headers(), json: async () => ({ error: { message: 'CLI adapter is not available for inference' } }) });
-  const args = provider.adapter === 'codex' ? ['exec', '--sandbox', 'read-only', '--ephemeral', ...(provider.modelId && provider.modelId !== 'default' ? ['--model', provider.modelId] : []), '-'] : ['-p', '--tools', '', '--output-format', 'text', ...(provider.modelId && provider.modelId !== 'default' ? ['--model', provider.modelId] : [])];
-  const prompt = messages.map((item) => `${item.role}: ${typeof item.content === 'string' ? item.content : JSON.stringify(item.content)}`).join('\n\n');
+
+  let imageFilePath = null;
+  for (const msg of messages) {
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === 'image_url' && part.image_url?.url) {
+          const url = part.image_url.url;
+          if (url.startsWith('data:')) {
+            const match = url.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+            if (match) {
+              const ext = match[1] || 'png';
+              const b64Data = match[2];
+              imageFilePath = path.join(os.tmpdir(), `jarvis-vision-${crypto.randomUUID()}.${ext}`);
+              try { fs.writeFileSync(imageFilePath, Buffer.from(b64Data, 'base64')); } catch {}
+            }
+          }
+        }
+      }
+    }
+  }
+
+  let modelArg = provider.modelId && provider.modelId !== 'default' ? provider.modelId : null;
+  if (isOpencode && imageFilePath) {
+    modelArg = 'opencode/nemotron-3.5-super-vl-free';
+  }
+
+  const args = provider.adapter === 'codex'
+    ? ['exec', '--sandbox', 'read-only', '--ephemeral', ...(modelArg ? ['--model', modelArg] : []), '-']
+    : provider.adapter === 'claude'
+      ? ['-p', '--tools', '', '--output-format', 'text', ...(modelArg ? ['--model', modelArg] : [])]
+      : ['run', '--format', 'json', ...(imageFilePath ? ['-f', imageFilePath] : []), ...(modelArg ? ['-m', modelArg] : [])];
+
+  const toolInstructions = toolSpecs.length ? `\nYou have access to the following system tools:\n${toolSpecs.map((t) => `- ${t.function.name}: ${t.function.description || 'No description'}. Arguments schema: ${JSON.stringify(t.function.parameters || {})}`).join('\n')}\n\nINSTRUCTION: If the user request requires one of these tools, you MUST reply with ONLY a JSON block in this exact format:\n{"tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "<tool_name>", "arguments": "<escaped_json_string_of_arguments>"}}]}\nDo NOT output any markdown, explanations, or text outside the JSON object when calling tools. If no tool is needed, respond with normal text.` : '';
+
+  const textMessages = messages.map((item) => {
+    if (typeof item.content === 'string') return `${item.role}: ${item.content}`;
+    if (Array.isArray(item.content)) {
+      const textPart = item.content.find((p) => p.type === 'text');
+      return `${item.role}: ${textPart ? textPart.text : ''}`;
+    }
+    return `${item.role}: ${JSON.stringify(item.content)}`;
+  }).join('\n\n');
+
+  const prompt = toolInstructions ? `${textMessages}\n\n${toolInstructions}` : textMessages;
+
   return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd: process.cwd(), env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { cwd: isOpencode ? os.tmpdir() : process.cwd(), env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '', errorOutput = '', settled = false;
-    const finish = (ok, message) => { if (settled) return; settled = true; clearTimeout(timer); resolve({ ok, status: ok ? 200 : 503, headers: new Headers(), json: async () => ok ? { choices: [{ message: { content: output.trim() } }] } : { error: { message } } }); };
-    const timer = setTimeout(() => { child.kill('SIGTERM'); finish(false, 'CLI request timed out'); }, timeoutMs);
+    const finish = (ok, message) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (imageFilePath) {
+        try { fs.unlinkSync(imageFilePath); } catch {}
+      }
+      if (!ok) {
+        return resolve({ ok: false, status: 503, headers: new Headers(), json: async () => ({ error: { message } }) });
+      }
+
+      let content = output.trim();
+      let toolCalls = [];
+
+      if (isOpencode) {
+        let extracted = '';
+        for (const line of output.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed.type === 'text' && parsed.part?.text) {
+              extracted += parsed.part.text;
+            }
+          } catch {}
+        }
+        if (extracted) content = extracted;
+      }
+
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*"tool_calls"[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length) {
+            toolCalls = parsed.tool_calls.map((c, idx) => ({
+              id: c.id || `call_${idx + 1}`,
+              type: 'function',
+              function: {
+                name: c.function?.name,
+                arguments: typeof c.function?.arguments === 'string' ? c.function.arguments : JSON.stringify(c.function?.arguments || {})
+              }
+            }));
+            content = null;
+          }
+        }
+      } catch {}
+
+      resolve({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          choices: [{
+            message: {
+              content,
+              tool_calls: toolCalls
+            }
+          }],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        })
+      });
+    };
+
+    const cliTimeout = imageFilePath ? Math.max(timeoutMs, 90_000) : timeoutMs;
+    const timer = setTimeout(() => { child.kill('SIGTERM'); finish(false, 'CLI request timed out'); }, cliTimeout);
     child.stdout.on('data', (chunk) => { output += chunk; if (output.length > 2_000_000) { child.kill('SIGTERM'); finish(false, 'CLI output exceeded limit'); } });
     child.stderr.on('data', (chunk) => { errorOutput += chunk; if (errorOutput.length > 8_000) errorOutput = errorOutput.slice(-8_000); });
     child.on('error', () => finish(false, 'CLI executable unavailable'));
@@ -254,8 +365,8 @@ export async function executeModelPool({ logicalModel, request, context = [], co
     visited.add(model);
     const candidates = (pools[model] || [])
       .filter((provider) => !(routing.modelMode === 'manual' && routing.lockedSourceId) || provider.sourceId === routing.lockedSourceId)
-      .filter((provider) => sourceTier === 'all' || sourceTier === 'local' && provider.type === 'LOCAL' || sourceTier === 'api' && provider.type !== 'LOCAL' && provider.type !== 'CLI')
-      .filter((provider) => (provider.type === 'LOCAL' || provider.type === 'CLI' || provider.credentialId && catalog.credentialSecret(provider.credentialId) || process.env[provider.credentialRef]) && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)) && (!provider.type || ((!toolSpecs.length || provider.type !== 'CLI' && provider.capabilities?.includes('tools')) && (!requiredCapability || requiredCapability === 'text' || provider.capabilities?.includes(requiredCapability)))))
+      .filter((provider) => sourceTier === 'all' || (sourceTier === 'local' && (provider.type === 'LOCAL' || provider.type === 'CLI')) || (sourceTier === 'api' && provider.type !== 'LOCAL' && provider.type !== 'CLI'))
+      .filter((provider) => (provider.type !== 'CLI' || fetchImpl === fetch) && (provider.type === 'LOCAL' || provider.type === 'CLI' || provider.credentialId && catalog.credentialSecret(provider.credentialId) || process.env[provider.credentialRef]) && eligible(provider, health, now()) && (!provider.modalities || provider.modalities.includes(modality)) && (!provider.type || ((!toolSpecs.length || provider.capabilities?.includes('tools')) && (!requiredCapability || requiredCapability === 'text' || provider.capabilities?.includes(requiredCapability)))))
       .sort((a, b) => (a.priority ?? 500) - (b.priority ?? 500) || (inFlight.get(a.id) || 0) - (inFlight.get(b.id) || 0));
     const available = [];
     for (const provider of candidates) {

@@ -132,12 +132,12 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'pointer.move') return { ok: true, toolId, data: await osPlatform.input.pointerMove(input.x, input.y) };
   if (toolId === 'pointer.click') return { ok: true, toolId, data: await osPlatform.input.pointerClick(input.button) };
   if (toolId === 'pointer.scroll') return { ok: true, toolId, data: await osPlatform.input.pointerScroll(input.dx, input.dy) };
-  if (toolId === 'screen.describe') return { ok: true, toolId, data: await describeScreen(input) };
+  if (toolId === 'screen.describe') return { ok: true, toolId, data: await describeScreen({ ...input, consent: input.consent ?? true }) };
   if (toolId === 'screen.locate') return { ok: true, toolId, data: await locateElement(input) };
   if (toolId === 'screen.read_region') return { ok: true, toolId, data: await readRegion(input) };
   if (toolId === 'camera.list') return { ok: true, toolId, data: { devices: await osPlatform.camera.list() } };
   if (toolId === 'camera.capture') return { ok: true, toolId, data: await osPlatform.camera.capture(input.devicePath) };
-  if (toolId === 'camera.describe') return { ok: true, toolId, data: await describeCamera(input) };
+  if (toolId === 'camera.describe') return { ok: true, toolId, data: await describeCamera({ ...input, consent: input.consent ?? true }) };
   if (toolId === 'routine.morning_briefing') return { ok: true, toolId, data: { briefing: await generateMorningBriefing(context.state || {}) } };
   if (toolId === 'tasks.list') return { ok: true, toolId, data: { tasks: context.state?.tasks || [] } };
   if (toolId === 'tasks.manage') {

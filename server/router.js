@@ -112,7 +112,7 @@ export function routeRequest(text) {
   if (dismissMatch) {
     return { route: 'TOOL_CALL', capability: 'reminders.complete', args: {}, confidence: 0.99 };
   }
-  if (/^(?:show|list|what are)\s+(?:my\s+)?(?:reminders|alarms|timers)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
+  if (/^(?:show|list|what are|get)\s+(?:all\s+)?(?:my\s+)?(?:active\s+|current\s+|pending\s+)?(?:reminders|alarms|timers)\??$/i.test(value) || /\b(?:what are my active reminders|active reminders|my reminders)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
   const calendarCreateMatch = value.match(/^(?:jarvis[, ]+)?(?:schedule|create|add)(?:\s+(?:a|an))?\s+(?:calendar\s+event|meeting|event|appointment)\s+(?:called\s+|titled\s+|for\s+|named\s+)?(.+?)\s+(?:at|on|for)\s+(.+?)[.!]?$/i) ||
     value.match(/^(?:jarvis[, ]+)?(?:add\s+to\s+(?:my\s+)?calendar)\s+(.+?)\s+(?:at|on|for)\s+(.+?)[.!]?$/i);
   if (calendarCreateMatch) {
@@ -164,7 +164,7 @@ export function routeRequest(text) {
   if (/^(?:what(?:'s| is) (?:the )?(?:system )?volume|show (?:system )?volume|volume status)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
   const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?\s*[.!]?$/i);
   if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
-  if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };
+  if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value) || /\b(?:what(?:'s| is) playing|what song is playing|media status|current song|playing right now|now playing)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };
   if (/^(?:which|what|list|show).{0,35}\bmodels?\b.{0,30}(?:available|configured|connected)?\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'models.list', args: {}, confidence: 0.99 };
   if (/\b(?:mcp servers?|connected mcp|mcp tools?)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'mcp.servers', args: {}, confidence: 0.99 };
   if (/\b(?:project status|what changed in (?:the )?project|what is happening in (?:the )?project|status of (?:the )?project)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'projects.status', args: {}, confidence: 0.98 };
@@ -190,7 +190,8 @@ export function routeRequest(text) {
   }
   const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
   if (windowAction) return { route: 'TOOL_CALL', capability: `windows.${windowAction[1].toLowerCase()}`, args: { target: { name: windowAction[2].trim() } }, confidence: 0.99 };
-  if (/^(?:what(?:'s| is) (?:the )?active window|which window is active)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
+  if (/\b(?:list|show|what are)\s+(?:all\s+)?(?:my\s+)?(?:open\s+)?(?:desktop\s+)?windows\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.list', args: {}, confidence: 0.99 };
+  if (/^(?:what(?:'s| is) (?:the )?active window|which window is active|what window am i (?:currently )?focused on)\??$/i.test(value) || /^(?:get|show|check) (?:the )?(?:active|focused|current) window\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
 
   const wa = parseWhatsAppRequest(value);
   if (wa) {
@@ -266,7 +267,13 @@ export function routeRequest(text) {
   if (calendarQuery && /^(?:show|list|what(?:'s| is| do i have)?(?: on)?|check|get|fetch|read|do i have any)\b/i.test(value)) {
     return { route: 'TOOL_CALL', capability: 'calendar.upcoming', args: { limit: Math.min(50, Math.max(1, Number(calendarQuery[1] || 10))) }, confidence: 0.99 };
   }
-  if (/^(show|list|what are)\s+(my\s+)?tasks\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'tasks.list', args: {}, confidence: 0.99 };
+  if (/^(show|list|what are)\s+(my\s+)?tasks\b/i.test(value) || /\b(?:what are my tasks|what tasks are|show tasks|list tasks|my to-do list|tasks on my|to-do items)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'tasks.list', args: {}, confidence: 0.99 };
+
+  const commandMatch = value.match(/^(?:jarvis[, ]+)?(?:execute|run)\s+(?:command|terminal|bash|shell)?\s*:\s*(.+)$/i) ||
+    value.match(/^(?:jarvis[, ]+)?(?:execute|run)\s+(?:command|terminal)\s+(.+)$/i);
+  if (commandMatch) {
+    return { route: 'TOOL_CALL', capability: 'command.execute', args: { command: commandMatch[1].trim() }, confidence: 0.99 };
+  }
   if (/\b(provider|model|router)\b.*\b(using|active|current)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'runtime.telemetry', args: {}, confidence: 0.98 };
   if (/^(what('?s| is) in|read)\s+(the\s+)?readme/i.test(value)) return { route: 'TOOL_CALL', capability: 'files.read', args: { path: 'README.md' }, confidence: 0.99 };
   if (/\b(health|diagnostics|system status)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'diagnostics', args: {}, confidence: 0.98 };

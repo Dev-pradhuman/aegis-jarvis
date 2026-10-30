@@ -1,6 +1,8 @@
 import { executeModelDelegation } from './modelDelegation.js';
 import { runWebAi } from './webAiProvider.js';
 import { classifyExecutionTier } from './executionTier.js';
+import { configuredPools } from './modelPool.js';
+import { brainCatalog } from './brainSources.js';
 
 function webResult(outcome, decision) {
   return {
@@ -24,8 +26,10 @@ export async function executeBrainWorkflow({ request, route, context = [], conti
       attempts.push({ tier: 'LOCAL_MODEL', code: 'LOCAL_MODELS_DISABLED' });
       return null;
     }
-    // A small text model cannot replace missing current sources, vision, or strong reasoning.
-    if (decision.requiresVision || decision.requiresWeb || decision.requiresStrongReasoning) {
+    // A small text model cannot replace missing current sources, vision, or strong reasoning,
+    // unless a local/CLI provider with image capabilities is configured for perception.
+    const hasLocalVision = decision.requiresVision && configuredPools(brainCatalog)['perception']?.some((p) => (p.type === 'LOCAL' || p.type === 'CLI') && (p.modalities?.includes('image') || p.capabilities?.includes('image')));
+    if ((decision.requiresVision && !hasLocalVision) || decision.requiresWeb || decision.requiresStrongReasoning) {
       attempts.push({ tier: 'LOCAL_MODEL', code: 'MODEL_CAPABILITY_UNSUPPORTED' });
       return null;
     }

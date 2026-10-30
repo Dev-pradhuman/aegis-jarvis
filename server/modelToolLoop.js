@@ -9,9 +9,18 @@ export async function executeModelToolLoop(options, dependencies = {}) {
   const model = dependencies.model || executeModelPool;
   const invoke = dependencies.invoke || invokeToolRequest;
   const available = selectRelevantTools(options.request, modelCallableTools(options.state), options.context).tools;
-  const byName = new Map(available.map((tool) => [modelName(tool.id), tool]));
+  const byName = new Map(available.flatMap((tool) => [[modelName(tool.id), tool], [tool.id, tool]]));
   const toolSpecs = available.map((tool) => ({ type: 'function', function: { name: modelName(tool.id), description: tool.description, parameters: tool.inputSchema } }));
-  const transcript = [...(options.context || []), { role: 'user', content: options.request }];
+  const initialContent = options.attachments?.length
+    ? [
+        { type: 'text', text: options.request },
+        ...options.attachments.map((att) => ({
+          type: 'image_url',
+          image_url: { url: att.dataUrl || `data:${att.mimeType || 'image/png'};base64,${att.base64}` }
+        }))
+      ]
+    : options.request;
+  const transcript = [...(options.context || []), { role: 'user', content: initialContent }];
   const calls = [];
   let usage = { tokens: 0, inputTokens: 0, outputTokens: 0, cost: 0 };
   const started = Date.now();

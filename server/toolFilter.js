@@ -48,6 +48,18 @@ export function estimateSchemaTokens(tools = []) {
   return Math.ceil(JSON.stringify(tools.map(({ id, name, description, inputSchema }) => ({ id, name, description, inputSchema }))).length / 4);
 }
 
+function domainKeywords(query) {
+  const q = String(query || '').toLowerCase();
+  const domains = [];
+  if (/\b(volume|audio|sound|mute|unmute|speaker|headphone)\b/i.test(q)) domains.push('audio.');
+  if (/\b(media|song|music|track|player|playback)\b/i.test(q)) domains.push('media.');
+  if (/\b(window|windows|workspace|desktop|focus|minimize|maximize)\b/i.test(q)) domains.push('windows.');
+  if (/\b(reminder|reminders|timer|timers|alarm|alarms|snooze)\b/i.test(q)) domains.push('reminders.');
+  if (/\b(task|tasks|todo|to-do)\b/i.test(q)) domains.push('tasks.');
+  if (/\b(browser|web|url|website|browse|navigate)\b/i.test(q)) domains.push('browser.');
+  return domains;
+}
+
 export function selectRelevantTools(query, tools, history = [], options = {}) {
   const started = performance.now();
   const enabled = options.enabled ?? String(process.env.TOOL_FILTER_ENABLED || 'true').toLowerCase() !== 'false';
@@ -78,6 +90,10 @@ export function selectRelevantTools(query, tools, history = [], options = {}) {
     const ranked = index.vectors.map((entry) => ({ ...entry, score: cosine(vector, entry.vector) })).sort((left, right) => right.score - left.score);
     const keep = new Set(ranked.slice(0, topK).map((entry) => entry.id));
     for (const id of CORE_TOOLS) keep.add(id);
+    const domains = domainKeywords(query);
+    for (const tool of source) {
+      if (domains.some((prefix) => tool.id.startsWith(prefix))) keep.add(tool.id);
+    }
     const selected = source.filter((tool) => keep.has(tool.id));
     return finish(selected.length ? selected : source, selected.length ? 'ranked' : 'soft_fallback');
   } catch {

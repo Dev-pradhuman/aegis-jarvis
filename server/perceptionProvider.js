@@ -139,7 +139,7 @@ export class CloudPerceptionProvider {
         logicalModel: 'perception',
         requiredModality: 'image',
         allowFallback: true,
-        sourceTier: 'api', 
+        sourceTier: 'all', 
         messagesOverride: [
           { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBuffer.toString('base64')}` } }] }
         ],
@@ -181,10 +181,13 @@ export async function perceive(prompt, imageBuffer, options = {}) {
   try {
     return await localProvider.generate(prompt, imageBuffer, fetchImpl);
   } catch (err) {
-    const hasCloudKeys = Boolean(process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
-    if (hasCloudKeys && (err.message?.includes('unreachable') || err.message?.includes('ECONNREFUSED') || err.code === 'ECONNREFUSED' || err.message?.includes('not installed'))) {
-      const cloudProvider = new CloudPerceptionProvider(options);
-      return await cloudProvider.generate(prompt, imageBuffer, fetchImpl);
+    if (err.message?.includes('unreachable') || err.message?.includes('ECONNREFUSED') || err.code === 'ECONNREFUSED' || err.message?.includes('not installed') || err.message?.includes('Insufficient memory')) {
+      try {
+        const cloudProvider = new CloudPerceptionProvider(options);
+        return await cloudProvider.generate(prompt, imageBuffer, fetchImpl);
+      } catch (fallbackErr) {
+        throw err;
+      }
     }
     throw err;
   }

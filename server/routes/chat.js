@@ -374,6 +374,12 @@ export default async function chatRoutes(req, res, url, state, ctx) {
               : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`
                 : `I could not find an installed application named ${route.args.name}.`;
           }
+          else if (route.capability === 'windows.list') {
+            const result = await invokeChatTool('windows.list', route.args);
+            data = result.data || result;
+            const windows = Array.isArray(data.windows) ? data.windows : [];
+            reply = windows.length ? `Open desktop windows (${windows.length}):\n${windows.map((w) => `- ${w.title || w.appId || 'Window'} (${w.windowId})`).join('\n')}` : 'No open windows detected.';
+          }
           else if (route.capability.startsWith('windows.')) {
             const result = await invokeChatTool(route.capability, route.args);
             if (result.approvalRequired) {
@@ -398,7 +404,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           else if (route.capability === 'reminders.snooze') { data = (await invokeChatTool('reminders.snooze', route.args)).data; reply = `Reminder "${data.reminder.title}" snoozed until ${new Date(data.reminder.dueAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`; }
           else if (route.capability === 'reminders.complete' || route.capability === 'reminders.cancel') { data = (await invokeChatTool(route.capability, route.args)).data; reply = `Reminder "${data.reminder.title}" has been dismissed.`; }
           else if (route.capability === 'reminders.list') { data = (await invokeChatTool('reminders.list')).data; const active = data.reminders.filter((item) => ['scheduled', 'due'].includes(item.status)); reply = active.length ? `${active.length} active reminders:\n${active.map((item) => `${item.title} — ${item.status === 'due' ? 'due now' : new Date(item.dueAt).toLocaleString('en-IN')}`).join('\n')}` : 'You have no active reminders.'; }
-          else if (route.capability === 'tasks.list') { data = (await invokeChatTool('tasks.list')).data; reply = data.tasks.length ? `You have ${data.tasks.length} tasks.` : 'You have no tasks.'; }
+          else if (route.capability === 'tasks.list') { data = (await invokeChatTool('tasks.list')).data; const tasks = Array.isArray(data.tasks) ? data.tasks : []; reply = tasks.length ? `You have ${tasks.length} task${tasks.length === 1 ? '' : 's'}:\n${tasks.map((t) => `- [${t.status === 'completed' ? 'x' : ' '}] ${t.title}`).join('\n')}` : 'You have no tasks.'; }
           else if (route.capability === 'gmail.latest') {
             const tool = await invokeChatTool('gmail.latest', { limit: route.args.limit });
             const emails = (Array.isArray(tool.data?.messages) ? tool.data.messages : []).sort((a, b) => Date.parse(b.messageTimestamp || 0) - Date.parse(a.messageTimestamp || 0)).slice(0, route.args.limit);
@@ -456,7 +462,22 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           else if (route.capability === 'projects.status') { const result = await invokeChatTool('projects.status'); data = result.data; const selected = route.args.name ? data.projects.filter((project) => project.name.toLowerCase() === route.args.name.toLowerCase() || project.name.toLowerCase().includes(route.args.name.toLowerCase())) : data.projects; reply = selected.length ? selected.map((project) => `${project.name}: ${project.status}${project.branch ? ` on ${project.branch}` : ''}${project.changedFiles === null ? '' : `, ${project.changedFiles} changed files`}`).join('\n') : `No connected project matches ${route.args.name}.`; }
           else if (route.capability === 'research.plan') { const result = await invokeChatTool('research.plan', route.args); data = result.data; reply = data.status === 'sources_collected' ? `Collected ${data.sources.length} attributable sources for ${data.topic}. Source verification and synthesis remain next steps.` : data.message; }
           else if (route.capability === 'diagnostics') { data = (await invokeChatTool('diagnostics')).data; reply = `JARVIS service is ${data.service}; persistence is ${data.persistence}.`; }
-          else if (route.capability === 'memory.search') { const result = await invokeChatTool('memory.search', { query: route.args.q }); data = { memories: result.data.results }; reply = data.memories.length ? `I found ${data.memories.length} relevant memory records.` : 'I did not find relevant stored memory.'; }
+          else if (route.capability === 'memory.search') {
+            const result = await invokeChatTool('memory.search', { query: route.args.q });
+            data = { memories: result.data.results };
+            reply = data.memories.length
+              ? `I found ${data.memories.length} relevant memory record${data.memories.length === 1 ? '' : 's'}:\n${data.memories.slice(0, 3).map((m) => `- ${m.text}`).join('\n')}`
+              : 'I did not find relevant stored memory.';
+          }
+          else if (route.capability === 'command.execute') {
+            const result = await invokeChatTool('command.execute', route.args);
+            if (result.approvalRequired) {
+              await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
+              return json(res, 202, { reply: `Command "${route.args.command}" requires your approval.`, runId: run.id, approvalRequired: true, approval: result.approval });
+            }
+            data = result.data || result;
+            reply = data?.stdout?.trim() || data?.output?.trim() || 'Command completed successfully.';
+          }
           else if (route.capability === 'media.generate') { const media = (await invokeChatTool('media.generate', { kind: route.args.kind, prompt: route.args.prompt })).data; data = { media }; reply = media.status === 'completed' ? `Generated your ${media.kind} with ${media.model}.` : `Started ${media.kind} generation with ${media.model}. Job ${media.id} is processing.`; run.model = media.model; run.provider = 'gemini'; }
           else if (route.capability === 'screen.describe') {
             const tool = await invokeChatTool('screen.describe', { ...route.args, source: input.source, consent: input.consent ?? true });
@@ -468,7 +489,8 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             data = tool.data;
             reply = data.description || 'No description available for camera.';
           }
-          else { const result = await invokeChatTool('files.read', route.args); data = result.data; reply = `README.md is ${data.bytes} bytes and is available in the project workspace.`; }
+          else if (route.capability === 'files.read') { const result = await invokeChatTool('files.read', route.args); data = result.data; reply = `README.md is ${data.bytes} bytes and is available in the project workspace.`; }
+          else { const result = await invokeChatTool(route.capability, route.args); data = result.data || result; reply = `${route.capability} completed successfully.`; }
           } catch (error) {
             errorRun(run, error);
             await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); return draft; });
@@ -550,7 +572,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
                     }
                   };
                 }
-                return modelRoute.requiresTools && options.continuationState?.delegationStage === 0 ? executeModelToolLoop(options) : executeModelPool(options);
+                return (modelRoute.requiresTools && (options.continuationState?.delegationStage ?? 0) === 0) ? executeModelToolLoop(options) : executeModelPool(options);
               } });
             clearTimeout(ackTimer);
             providerResult = brain.result;
