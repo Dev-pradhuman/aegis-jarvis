@@ -31,7 +31,9 @@ build/
 .DS_Store
 !.env.example
 
-# Ruflo local secrets and runtime data
+# Ruflo local skills and runtime data
+.agents/skills/ruflo/
+agent/skills/ruflo/
 .env.*.local
 .claude-flow/data/
 .claude-flow/logs/

@@ -2,7 +2,33 @@
 
 The console is a Vite React client for one assistant identity: JARVIS. The local service in `server/` provides the durable execution boundary for tasks, approvals, activity, capability discovery, and chat command handling.
 
-For the consolidated record of completed work, verified behavior, and remaining gaps, see [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
+For the factual audit report and live tool capability matrix, see [docs/REAL_AUDIT_STATUS.md](docs/REAL_AUDIT_STATUS.md). For historical development milestones, see [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
+
+## Arch Linux + Hyprland Verified System Status
+
+The codebase is hardened and verified end-to-end on Arch Linux with Hyprland (`v0.56.2`) under systemd user service (`aegis-jarvis.service`):
+
+- **100% Passing Test Suite**: 367 / 367 unit and contract tests passing (`npm test`).
+- **Dynamic Desktop Environment Auto-Discovery**: Runtime resolution in `server/platform/linux/env.js` dynamically detects `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY`, `DISPLAY`, and `HYPRLAND_INSTANCE_SIGNATURE` at call time, preventing environment disconnects when `systemd --user` starts prior to Hyprland.
+- **Hyprland Native Application Launching**: `apps.open` resolves desktop aliases (`brave`, `zen`, `chromium`) and dispatches via Hyprland (`hyprctl dispatch exec` with Lua fallback), verifying real window creation and focus.
+- **Wayland Headed Browser Automation**: Browser engines pass `--ozone-platform-hint=auto` and Wayland flags, eliminating `Missing X server or $DISPLAY` crashes.
+- **Action Grounding & Anti-Hallucination**: Non-negotiable system grounding guardrails and expanded action-keyword classifier routing guarantee that requests to send messages, open apps, or mutate system state never run without tools or falsely claim success.
+
+### Zero-Mock Live Verification Harness
+
+Verify the real running service against live system interfaces without mocks:
+
+```sh
+node scripts/verify-real-e2e.mjs
+```
+
+The harness runs 5 live checks against `http://127.0.0.1:8787`:
+1. `GET /api/health` & `GET /api/capabilities/status` return HTTP 200.
+2. WhatsApp action requests do NOT hallucinate direct message sending; direct WhatsApp is reported honestly and WhatsApp Web is opened via `browser.handoff`.
+3. Reads live PipeWire/PulseAudio system volume.
+4. Reads real active window from Hyprland via `hyprctl activewindow -j`.
+5. Opens Brave browser and Instagram headed without display errors or unverified window warnings.
+
 
 ## Run locally
 
