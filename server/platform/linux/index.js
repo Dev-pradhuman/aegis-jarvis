@@ -6,8 +6,10 @@ import { createLinuxScreen } from './screen.js';
 import { createLinuxInput } from './input.js';
 import { createLinuxWindows } from './windows.js';
 import { listCameras, captureCamera } from './camera.js';
+import { ensureLinuxDesktopEnv } from './env.js';
 
 export function createLinuxPlatform(options = {}) {
+  ensureLinuxDesktopEnv(options.env);
   const displayServer = options.env?.XDG_SESSION_TYPE || process.env.XDG_SESSION_TYPE || (process.env.WAYLAND_DISPLAY ? 'wayland' : process.env.DISPLAY ? 'x11' : 'unknown');
   const desktopEnvironment = options.env?.XDG_CURRENT_DESKTOP || process.env.XDG_CURRENT_DESKTOP || 'unknown';
   return {

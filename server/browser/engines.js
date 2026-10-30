@@ -2,56 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
+import { ensureLinuxDesktopEnv } from '../platform/linux/env.js';
 
 const defaultProfile = fileURLToPath(new URL('../data/browser-profile/', import.meta.url));
 
 export function ensureDisplayEnvironment(env = process.env) {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 1000;
-  const runtimeDir = env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
-  if (!env.XDG_RUNTIME_DIR && fs.existsSync(runtimeDir)) {
-    env.XDG_RUNTIME_DIR = runtimeDir;
-  }
-
-  // 1. Detect WAYLAND_DISPLAY if not set
-  if (!env.WAYLAND_DISPLAY && fs.existsSync(runtimeDir)) {
-    try {
-      const files = fs.readdirSync(runtimeDir);
-      const waylandSocket = files.find((f) => /^wayland-\d+$/.test(f));
-      if (waylandSocket) {
-        env.WAYLAND_DISPLAY = waylandSocket;
-      }
-    } catch {}
-  }
-
-  // 2. Detect DISPLAY if not set
-  if (!env.DISPLAY) {
-    const x11Dir = '/tmp/.X11-unix';
-    if (fs.existsSync(x11Dir)) {
-      try {
-        const xFiles = fs.readdirSync(x11Dir);
-        const xSocket = xFiles.find((f) => /^X\d+$/.test(f));
-        if (xSocket) {
-          const displayNum = xSocket.slice(1);
-          env.DISPLAY = `:${displayNum}`;
-        }
-      } catch {}
-    }
-  }
-
-  // 3. Detect HYPRLAND_INSTANCE_SIGNATURE if not set
-  if (!env.HYPRLAND_INSTANCE_SIGNATURE && fs.existsSync(runtimeDir)) {
-    try {
-      const hyprDir = path.join(runtimeDir, 'hypr');
-      if (fs.existsSync(hyprDir)) {
-        const entries = fs.readdirSync(hyprDir);
-        const sigs = entries.filter((e) => !e.startsWith('.'));
-        if (sigs.length > 0) {
-          env.HYPRLAND_INSTANCE_SIGNATURE = sigs[0];
-        }
-      }
-    } catch {}
-  }
-
+  ensureLinuxDesktopEnv(env);
   return {
     WAYLAND_DISPLAY: env.WAYLAND_DISPLAY || null,
     DISPLAY: env.DISPLAY || null,
@@ -159,7 +115,7 @@ export class PatchrightEngine {
     ];
     if (headed) {
       args.push('--ozone-platform-hint=auto');
-      if (process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) {
+      if (process.env.WAYLAND_DISPLAY) {
         args.push('--ozone-platform=wayland');
       }
     }

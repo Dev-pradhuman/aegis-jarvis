@@ -35,25 +35,32 @@ export function resolveKnownSiteOrDomain(input) {
 
 export function parseWhatsAppRequest(value) {
   const clean = String(value || '')
-    .replace(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?/i, '')
+    .replace(/^(?:(?:hey|hi|ok|hello)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:please\s+)?/i, '')
     .replace(/[.!?]+$/, '')
     .trim();
 
-  // Format 1: send (a) (whatsapp) (message|text) to <recipient> [on whatsapp]
-  let m = clean.match(/^send\s+(?:a\s+)?(?:whatsapp\s+message|whatsapp|message|text)\s+to\s+([^,:]+?)(?:\s+(?:on|via|through)\s+whatsapp)?(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
+  // Format 1: send (a) (whatsapp) (message|text|dm) to <recipient> [on whatsapp] [saying/that/: <message>]
+  let m = clean.match(/^send\s+(?:a\s+)?(?:whatsapp\s+message|whatsapp|message|text|dm)\s+to\s+([^,:]+?)(?:\s+(?:on|via|through)\s+whatsapp)?(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
           clean.match(/^send\s+(?:a\s+)?(?:whatsapp\s+message|whatsapp)\s+to\s+([^,:]+?)$/i) ||
-          clean.match(/^send\s+(?:a\s+)?(?:message|text)\s+to\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp$/i);
+          clean.match(/^send\s+(?:a\s+)?(?:message|text|dm)\s+to\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp$/i) ||
+          clean.match(/^send\s+([^,:]+?)\s+(?:a\s+)?(?:whatsapp\s+message|whatsapp|message|text|dm)(?:\s+(?:on|via|through)\s+whatsapp)?(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i);
   if (m) return { recipient: m[1].trim(), message: m[2]?.trim() || '' };
 
-  // Format 2: (message|text) <recipient> on whatsapp (:|saying|that)? (message)?
-  m = clean.match(/^(?:message|text)\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
-      clean.match(/^(?:message|text)\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp$/i);
+  // Format 2: (message|text|dm) <recipient> on whatsapp (:|saying|that)? (message)?
+  m = clean.match(/^(?:message|text|dm)\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
+      clean.match(/^(?:message|text|dm)\s+([^,:]+?)\s+(?:on|via|through)\s+whatsapp$/i);
   if (m) return { recipient: m[1].trim(), message: m[2]?.trim() || '' };
 
   // Format 3: whatsapp <recipient> (:|saying|that)? (message)?
   m = clean.match(/^whatsapp\s+([^,:]+?)(?:\s*[:]\s*|\s+(?:saying|that|with\s+(?:the\s+)?message)\s+)(.+)$/i) ||
       clean.match(/^whatsapp\s+([^,:]+?)$/i);
   if (m) return { recipient: m[1].trim(), message: m[2]?.trim() || '' };
+
+  // Fallback for general whatsapp requests
+  if (/\bwhatsapp\b/i.test(clean) && /\b(message|text|dm|send)\b/i.test(clean)) {
+    const recipMatch = clean.match(/\b(?:to|message|text|dm)\s+([a-zA-Z0-9_-]+)/i);
+    return { recipient: recipMatch ? recipMatch[1].trim() : '', message: '' };
+  }
 
   return null;
 }
@@ -186,14 +193,14 @@ export function routeRequest(text) {
   if (/^(?:what(?:'s| is) (?:the )?active window|which window is active)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
 
   const wa = parseWhatsAppRequest(value);
-  if (wa && wa.recipient) {
+  if (wa) {
     return {
       route: 'TOOL_CALL',
       capability: 'browser.handoff',
       args: {
         url: 'https://web.whatsapp.com',
-        recipient: wa.recipient,
-        message: wa.message,
+        recipient: wa.recipient || null,
+        message: wa.message || null,
         isWhatsAppMessage: true,
       },
       confidence: 0.99,

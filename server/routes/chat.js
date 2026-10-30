@@ -25,7 +25,7 @@ import { adapterStatus, embed, extractDocument, mcpError, mcpResponse, vectorSea
 import { calendarRequest, createSession, validSession } from '../liveAdapters.js';
 import { beginRun, errorRun, finishRun } from '../orchestrator.js';
 import { transitionRun } from '../runEngine.js';
-import { routeRequest } from '../router.js';
+import { routeRequest, parseWhatsAppRequest } from '../router.js';
 import { publicConfig, saveConfig } from '../config.js';
 import { synthesizeSpeech, transcribeAudio, ttsStatus } from '../tts.js';
 import { downloadVideoJob, generateMedia, readGeneratedMedia, refreshVideoJob } from '../mediaGeneration.js';
@@ -333,8 +333,8 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           else if (route.capability === 'browser.handoff') {
             await browserManager.handoff(route.args.url);
             if (route.args.isWhatsAppMessage) {
-              const who = route.args.recipient ? ` ${route.args.recipient}` : '';
-              reply = `Direct WhatsApp sending is not automated without approval. I have opened WhatsApp Web for you so you can message${who} directly.`;
+              const who = route.args.recipient ? ` to ${route.args.recipient}` : '';
+              reply = `Direct WhatsApp API sending is not connected. I have opened WhatsApp Web for you so you can send your message${who} directly.`;
             } else if (route.args.isSignIn) {
               reply = `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`;
             } else {
@@ -479,6 +479,27 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           await updateState((draft) => { const stored = draft.runs.find((item) => item.id === run.id); Object.assign(stored, run); if (data?.media?.kind === 'video') { draft.mediaJobs ??= []; draft.mediaJobs.unshift(data.media); draft.mediaJobs = draft.mediaJobs.slice(0, 100); } draft.runtime ??= { usage: {}, latency: {} }; draft.runtime.usage ??= { requests: 0, tokens: 0, cost: 0 }; draft.runtime.usage.requests += 1; draft.runtime.latency ??= { samples: 0 }; draft.runtime.latency.routerMs = routeStarted ? Math.round(performance.now() - routeStarted) : 0; draft.runtime.latency.toolMs = Math.round(performance.now() - toolStarted); draft.runtime.latency.totalMs = Math.round(performance.now() - routeStarted); draft.runtime.latency.samples = Number(draft.runtime.latency.samples || 0) + 1; draft.conversations ??= []; if (input.source !== 'voice' || input.retainTranscript) { draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply], media: data?.media || null }); } draft.conversations = draft.conversations.slice(-100); return draft; });
           return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, runId: run.id, route, action: data?.action ? data : null, media: data?.media || null });
         }
+
+        const waIntent = parseWhatsAppRequest(text) || (/\bwhatsapp\b/i.test(text) && /\b(message|text|dm|send)\b/i.test(text));
+        if (waIntent) {
+          const waDetails = typeof waIntent === 'object' ? waIntent : parseWhatsAppRequest(text);
+          const who = waDetails?.recipient ? ` to ${waDetails.recipient}` : '';
+          try {
+            await browserManager.handoff('https://web.whatsapp.com');
+          } catch {}
+          const reply = `Direct WhatsApp API sending is not connected. I have opened WhatsApp Web for you so you can send your message${who} directly.`;
+          const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null });
+          run.origin = 'chat';
+          transitionRun(run, 'running');
+          finishRun(run, { action: 'browser.handoff', url: 'https://web.whatsapp.com', recipient: waDetails?.recipient || null }, { total: 0 });
+          await updateState((draft) => {
+            draft.conversations ??= [];
+            draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply] });
+            return draft;
+          });
+          return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, runId: run.id, action: { action: 'browser.handoff', url: 'https://web.whatsapp.com' } });
+        }
+
         const run = await beginRun(state, { request: text, type: 'chat', conversationId: input.conversationId || null });
         transitionRun(run, 'running');
         const taskIntent = /^(create|add|remember)\s+(a\s+)?task\b/i.test(text);

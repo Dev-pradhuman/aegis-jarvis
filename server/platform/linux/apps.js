@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
-import { ensureHyprlandEnv } from './windows.js';
+import { ensureLinuxDesktopEnv, ensureHyprlandEnv } from './env.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -137,10 +137,10 @@ export function createLinuxApps(options = {}) {
             : null);
 
       const isHyprland = () => {
-        const de = env.XDG_CURRENT_DESKTOP || (options.env ? '' : process.env.XDG_CURRENT_DESKTOP) || '';
+        ensureLinuxDesktopEnv(env);
+        const de = env.XDG_CURRENT_DESKTOP || process.env.XDG_CURRENT_DESKTOP || '';
         if (/\bKDE\b|\bPlasma\b/i.test(de)) return false;
-        ensureHyprlandEnv(env);
-        const sig = env.HYPRLAND_INSTANCE_SIGNATURE || (options.env ? '' : process.env.HYPRLAND_INSTANCE_SIGNATURE);
+        const sig = env.HYPRLAND_INSTANCE_SIGNATURE || process.env.HYPRLAND_INSTANCE_SIGNATURE;
         return Boolean(sig || /hyprland/i.test(de));
       };
 
@@ -153,7 +153,7 @@ export function createLinuxApps(options = {}) {
           await run('hyprctl', ['dispatch', 'exec', cmd], { timeout: 10_000, windowsHide: true });
         } catch (dispatchErr) {
           try {
-            const luaCmd = `hl.dispatch(hl.dsp.exec_cmd(${JSON.stringify(cmd)}))`;
+            const luaCmd = `hl.dispatch(hl.dsp.exec_raw(${JSON.stringify(cmd)}))`;
             await run('hyprctl', ['repl', luaCmd], { timeout: 10_000, windowsHide: true });
           } catch {
             throw dispatchErr;

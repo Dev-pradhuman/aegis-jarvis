@@ -245,7 +245,9 @@ export class BrowserManager {
 
   handoff(targetUrl = null) { return this.serial(async () => {
     const url = targetUrl || this.pending?.url || this.currentUrl;
-    if (!this.engine) {
+    if (!this.engine || !this.engine.isHealthy()) {
+      if (this.engine) await this.engine.close().catch(() => {});
+      this.engine = null;
       await this.start('firefox', true);
     } else if (!this.engine.headed) {
       await this.engine.relaunchHeaded();

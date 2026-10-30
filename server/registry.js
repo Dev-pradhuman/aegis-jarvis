@@ -1,11 +1,18 @@
+import { ensureLinuxDesktopEnv } from './platform/linux/env.js';
+
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const outputSchema = { type: 'object', required: ['ok', 'toolId', 'data'], properties: { ok: { type: 'boolean' }, toolId: { type: 'string' } }, additionalProperties: true };
 const windowTarget = { type: 'object', properties: { windowId: { type: 'string' }, appId: { type: 'string' }, processId: { type: 'integer' }, name: { type: 'string' } }, additionalProperties: false };
-export const localWindowsAvailable = (env = process.env) => (env.platform || process.platform) === 'linux' && (
-  (/KDE|Plasma/i.test(env.XDG_CURRENT_DESKTOP || '') && ['wayland', 'x11'].includes(env.XDG_SESSION_TYPE || '')) ||
-  /hyprland/i.test(env.XDG_CURRENT_DESKTOP || '') ||
-  Boolean(env.HYPRLAND_INSTANCE_SIGNATURE)
-);
+export const localWindowsAvailable = (env = process.env) => {
+  if ((env.platform || process.platform) === 'linux') {
+    ensureLinuxDesktopEnv(env);
+  }
+  return (env.platform || process.platform) === 'linux' && (
+    (/KDE|Plasma/i.test(env.XDG_CURRENT_DESKTOP || '') && ['wayland', 'x11'].includes(env.XDG_SESSION_TYPE || '')) ||
+    /hyprland/i.test(env.XDG_CURRENT_DESKTOP || '') ||
+    Boolean(env.HYPRLAND_INSTANCE_SIGNATURE)
+  );
+};
 export const desktopMutationEnabled = (env = process.env) => localWindowsAvailable(env) && env.JARVIS_DESKTOP_INPUT === '1' && Boolean(env.JARVIS_AUTH_TOKEN);
 
 const tools = [

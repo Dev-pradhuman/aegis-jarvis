@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { ensureLinuxDesktopEnv } from './env.js';
 
 const defaultRun = promisify(execFile);
 const helper = fileURLToPath(new URL('./portal_screenshot.py', import.meta.url));
@@ -12,6 +13,7 @@ const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 export function createLinuxScreen({ run = defaultRun, directory = path.join(tmpdir(), 'aegis-jarvis-screenshots') } = {}) {
   async function capture({ target = 'desktop' } = {}) {
+    ensureLinuxDesktopEnv();
     const isWayland = run === defaultRun && Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE || process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland');
 
     if (isWayland) {

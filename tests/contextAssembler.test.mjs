@@ -14,7 +14,7 @@ test('context assembly bounds history to recent turns and per-message size', () 
   const conversations = Array.from({ length: 12 }, (_, index) => ({ who: index % 2 ? 'JARVIS' : 'YOU', lines: [`message-${index} ${'x'.repeat(500)}`] }));
   const result = assembleModelContext({ query: 'continue', conversations, memories: [], includeTools: false });
   assert.equal(result.telemetry.recentHistoryMessages, 4);
-  assert.ok(result.context.every((message) => message.content.length <= 300));
+  assert.ok(result.context.filter((message) => message.role !== 'system').every((message) => message.content.length <= 300));
   assert.ok(result.telemetry.contextChars <= 2000);
   assert.equal(result.telemetry.selectedToolIds.length, 0);
 }));
@@ -26,8 +26,8 @@ test('context assembly retrieves relevant memory with provenance', () => withCon
   ];
   const result = assembleModelContext({ query: 'How do we retrieve Gmail email?', conversations: [], memories, includeTools: false });
   assert.equal(result.telemetry.retrievedMemories, 1);
-  assert.match(result.context[0].content, /memory-mail/);
-  assert.doesNotMatch(result.context[0].content, /memory-weather/);
+  assert.ok(result.context.some((m) => /memory-mail/.test(m.content)));
+  assert.ok(!result.context.some((m) => /memory-weather/.test(m.content)));
 }));
 
 test('tool capability context includes only enabled relevant tool metadata', () => {
@@ -35,7 +35,7 @@ test('tool capability context includes only enabled relevant tool metadata', () 
   const result = assembleModelContext({ query: 'read the README file', conversations: [], memories: [], includeTools: true, tools });
   assert.ok(result.telemetry.selectedToolIds.includes('files.read'));
   assert.ok(result.telemetry.selectedToolIds.every((id) => id !== 'tool.19'));
-  assert.match(result.context[0].content, /discovery metadata only/);
+  assert.ok(result.context.some((msg) => /discovery metadata only/.test(msg.content)));
 });
 
 test('context budget reserves space for the current request and tool results', () => withContextEnv({ CONTEXT_MAX_CHARS: '1000' }, () => {

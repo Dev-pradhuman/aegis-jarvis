@@ -3,62 +3,15 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { ensureLinuxDesktopEnv, ensureHyprlandEnv } from './env.js';
+
+export { ensureLinuxDesktopEnv, ensureHyprlandEnv };
 
 const exec = promisify(execFile);
 const bridge = fileURLToPath(new URL('./kwin_window_bridge.py', import.meta.url));
 
 export function windowError(code, message) {
   return Object.assign(new Error(message), { code });
-}
-
-export function ensureHyprlandEnv(env = process.env) {
-  if (process.platform !== 'linux') return false;
-
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 1000;
-  const runtimeDir = env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
-  if (!env.XDG_RUNTIME_DIR && fs.existsSync(runtimeDir)) {
-    env.XDG_RUNTIME_DIR = runtimeDir;
-  }
-
-  // 1. Detect WAYLAND_DISPLAY if missing
-  if (!env.WAYLAND_DISPLAY && fs.existsSync(runtimeDir)) {
-    try {
-      const files = fs.readdirSync(runtimeDir);
-      const waylandSocket = files.find((f) => /^wayland-\d+$/.test(f));
-      if (waylandSocket) {
-        env.WAYLAND_DISPLAY = waylandSocket;
-      }
-    } catch {}
-  }
-
-  // 2. Detect HYPRLAND_INSTANCE_SIGNATURE if missing
-  if (!env.HYPRLAND_INSTANCE_SIGNATURE) {
-    const candidateDirs = [
-      path.join(runtimeDir, 'hypr'),
-      '/tmp/hypr',
-    ];
-    for (const hyprDir of candidateDirs) {
-      if (fs.existsSync(hyprDir)) {
-        try {
-          const entries = fs.readdirSync(hyprDir);
-          const sigs = entries.filter((e) => !e.startsWith('.'));
-          if (sigs.length > 0) {
-            env.HYPRLAND_INSTANCE_SIGNATURE = sigs[0];
-            break;
-          }
-        } catch {}
-      }
-    }
-  }
-
-  if (env.HYPRLAND_INSTANCE_SIGNATURE) {
-    if (!env.XDG_CURRENT_DESKTOP || env.XDG_CURRENT_DESKTOP === 'unknown') {
-      env.XDG_CURRENT_DESKTOP = 'Hyprland';
-    }
-    return true;
-  }
-
-  return Boolean(env.HYPRLAND_INSTANCE_SIGNATURE || /hyprland/i.test(env.XDG_CURRENT_DESKTOP || ''));
 }
 
 const normalized = (value) => String(value || '').toLowerCase().replace(/\.desktop$/, '').replace(/[^a-z0-9]/g, '');
@@ -88,15 +41,16 @@ export function createLinuxWindows(options = {}) {
   const run = options.run || exec;
 
   const getIsKde = () => {
-    const de = options.desktopEnvironment !== undefined ? options.desktopEnvironment : (process.env.XDG_CURRENT_DESKTOP || '');
-    const ds = options.displayServer !== undefined ? options.displayServer : (process.env.XDG_SESSION_TYPE || '');
+    ensureLinuxDesktopEnv();
+    const de = (options.desktopEnvironment && options.desktopEnvironment !== 'unknown') ? options.desktopEnvironment : (process.env.XDG_CURRENT_DESKTOP || '');
+    const ds = (options.displayServer && options.displayServer !== 'unknown') ? options.displayServer : (process.env.XDG_SESSION_TYPE || '');
     return /\bKDE\b|\bPlasma\b/i.test(de) && ['wayland', 'x11'].includes(ds);
   };
 
   const getIsHyprland = () => {
     if (getIsKde()) return false;
-    ensureHyprlandEnv();
-    const de = options.desktopEnvironment !== undefined ? options.desktopEnvironment : (process.env.XDG_CURRENT_DESKTOP || '');
+    ensureLinuxDesktopEnv();
+    const de = (options.desktopEnvironment && options.desktopEnvironment !== 'unknown') ? options.desktopEnvironment : (process.env.XDG_CURRENT_DESKTOP || '');
     return Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE || /hyprland/i.test(de));
   };
 
@@ -143,7 +97,14 @@ export function createLinuxWindows(options = {}) {
     },
     async focus(target) {
       const window = await this.find(target);
-      await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.focus({ window = "address:${window.windowId}" }))`], { timeout: 4000 });
+      ensureLinuxDesktopEnv();
+      try {
+        await run('hyprctl', ['repl', `hl.dispatch(hl.dsp.focus({ window = "address:${window.windowId}" }))`], { timeout: 4000 });
+      } catch {
+        try {
+          await run('hyprctl', ['dispatch', 'focuswindow', `address:${window.windowId}`], { timeout: 4000 });
+        } catch {}
+      }
       return window;
     },
     async minimize(target) {
@@ -234,6 +195,7 @@ export function createLinuxWindows(options = {}) {
 
   return {
     get supported() {
+      ensureLinuxDesktopEnv();
       return Boolean(getIsHyprland() || getIsKde());
     },
     get provider() {

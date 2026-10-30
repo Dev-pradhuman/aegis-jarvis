@@ -9,6 +9,7 @@ import { osPlatform } from './platform/index.js';
 import { computerCapabilities } from './platform/capabilities.js';
 import { resolveApp } from './platform/linux/apps.js';
 import { windowError } from './platform/linux/windows.js';
+import { ensureLinuxDesktopEnv } from './platform/linux/env.js';
 import { browserManager } from './browser/index.js';
 import { listProjectStatus } from './projectIntelligence.js';
 import { callMcpTool, discoverMcpServers, mcpActionHash } from './mcpDiscovery.js';
@@ -246,6 +247,7 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'clipboard.write') return { ok: true, toolId, data: await osPlatform.clipboard.write(input.text) };
   if (toolId === 'computer.capabilities') return { ok: true, toolId, data: await computerCapabilities() };
   if (toolId.startsWith('windows.')) {
+    ensureLinuxDesktopEnv();
     const windows = context.platform?.windows || osPlatform.windows;
     if (!windows?.supported) throw windowError('WINDOW_OPERATION_UNSUPPORTED', 'Window control is unavailable on this desktop');
     if (toolId === 'windows.list') return { ok: true, toolId, data: { windows: await windows.list() } };
@@ -313,6 +315,7 @@ async function runTool(toolId, input = {}, context = {}) {
     if (!name || name.length > 120) throw new Error('Application name must contain 1 to 120 characters');
     const targetUrl = typeof input.url === 'string' && input.url.trim() ? input.url.trim() : (Array.isArray(input.args) && input.args[0] ? String(input.args[0]) : null);
     const extraArgs = targetUrl ? [targetUrl] : (Array.isArray(input.args) ? input.args : []);
+    ensureLinuxDesktopEnv();
     const windows = context.platform?.windows || osPlatform.windows;
     if (windows?.supported) {
       const apps = context.platform?.apps || osPlatform.apps;
