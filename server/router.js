@@ -226,6 +226,7 @@ export function routeRequest(text) {
         capability: 'apps.open',
         args: {
           name: browserName,
+          url: targetUrl,
           args: [targetUrl],
         },
         confidence: 0.99,

@@ -44,6 +44,33 @@ test('Linux discovery handles XDG precedence, hidden entries, and ambiguous matc
   assert.deepEqual(calls[0].slice(0, 2), ['gio', ['launch', path.join(system, 'kcalc.desktop')]]);
 });
 
+test('AC2: resolveApp resolves "brave browser" and dispatches via hyprctl exec on Hyprland', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'jarvis-brave-'));
+  const system = path.join(root, 'system');
+  const appDir = path.join(system, 'applications');
+  await mkdir(appDir, { recursive: true });
+  await writeFile(path.join(appDir, 'brave-browser.desktop'), '[Desktop Entry]\nType=Application\nName=Brave\nExec=brave %U\n');
+  const env = {
+    XDG_DATA_DIRS: system,
+    XDG_CURRENT_DESKTOP: 'Hyprland',
+    HYPRLAND_INSTANCE_SIGNATURE: 'mock_sig_123',
+    WAYLAND_DISPLAY: 'wayland-1',
+  };
+  const apps = await discoverLinuxApps({ env, home: root });
+  const resolved = resolveApp('brave browser', apps);
+  assert.equal(resolved.status, 'resolved');
+  assert.equal(resolved.app.name, 'Brave');
+  assert.equal(resolved.app.id, 'brave-browser');
+
+  const calls = [];
+  const provider = createLinuxApps({ env, home: root, execFile: async (...args) => { calls.push(args); } });
+  const launched = await provider.open('brave browser', 'https://www.youtube.com');
+  assert.equal(launched.status, 'launched');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'hyprctl');
+  assert.deepEqual(calls[0][1], ['dispatch', 'exec', 'brave https://www.youtube.com']);
+});
+
 test('platform selection keeps a Windows provider available', () => {
   const windows = createPlatform({ platform: 'win32', env: {} });
   assert.equal(windows.os, 'win32');

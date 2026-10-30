@@ -367,7 +367,8 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             const result = await invokeChatTool('apps.open', route.args);
             data = result.data;
             if (data.window) { state.runtime ??= {}; state.runtime.lastDesktopTarget = { windowId: data.window.windowId, appId: data.window.appId, ...(data.window.processId ? { processId: data.window.processId } : {}) }; }
-            reply = (data?.app && route.args.args?.length) ? `Opened ${route.args.args[0]} in ${data.app.name}.`
+            const urlArg = route.args.url || (Array.isArray(route.args.args) ? route.args.args[0] : null);
+            reply = (data?.app && urlArg) ? `Opened ${urlArg} in ${data.app.name}.`
               : data.window ? `${data.app.name} is ${data.status === 'focused' ? 'focused' : 'open'} in window ${data.window.windowId}.`
               : data.status === 'launched' ? `Requested ${data.app.name} from the desktop launcher. Window opening could not be verified.`
               : data.status === 'ambiguous' ? `I found multiple matches: ${data.candidates.map((app) => `${app.name} (${app.id})`).join(', ')}. Please specify one.`

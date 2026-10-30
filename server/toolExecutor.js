@@ -38,12 +38,35 @@ const blockedRoots = new Set(['node_modules', 'dist', '.git', 'server/data']);
 export function appWindowMatches(app, window) {
   const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const appId = normalize(window.appId);
-  const candidates = [app.id, app.startupWMClass, app.name, String(app.id || '').split('_').at(-1)].map(normalize).filter((value) => value.length >= 2);
-  return candidates.some((candidate) =>
+  const candidates = [app.id, app.startupWMClass, app.name, String(app.id || '').split('_').at(-1), String(app.id || '').split('-').at(0)].filter(Boolean).map(normalize).filter((value) => value.length >= 2);
+  
+  const matchesAppId = candidates.some((candidate) =>
     appId === candidate ||
     (candidate.length >= 4 && appId.startsWith(candidate) && /[-_.]/.test(String(window.appId || '').slice(candidate.length))) ||
-    (!appId && normalize(window.title).startsWith(candidate))
+    (candidate.length >= 4 && appId.startsWith(candidate))
   );
+  if (matchesAppId) return true;
+
+  const rawAppId = String(window.appId || '').toLowerCase();
+  const rawCandidates = [app.name, app.id, app.startupWMClass].filter(Boolean).map((c) => String(c).toLowerCase());
+  if (rawCandidates.some((c) => rawAppId.startsWith(`${c}-`) || rawAppId.endsWith(`-${c}`) || rawAppId.includes(`-${c}-`))) {
+    return true;
+  }
+
+  if (!appId) {
+    return candidates.some((candidate) => normalize(window.title).startsWith(candidate));
+  }
+
+  const isBrowserWindow = /^(firefox|zen|chromium|chrome|brave|epiphany|edge)/i.test(window.appId || '');
+  const isBrowserApp = /^(firefox|zen|chromium|chrome|brave|epiphany|edge)/i.test(app.id || app.name || '');
+  if (isBrowserApp && isBrowserWindow) {
+    const title = normalize(window.title);
+    if (candidates.some((candidate) => candidate.length >= 4 && (appId.includes(candidate) || title.includes(candidate)))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function safePath(input = '.') {
@@ -288,7 +311,8 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId === 'apps.open') {
     const name = String(input.name || '').trim();
     if (!name || name.length > 120) throw new Error('Application name must contain 1 to 120 characters');
-    const extraArgs = Array.isArray(input.args) ? input.args : [];
+    const targetUrl = typeof input.url === 'string' && input.url.trim() ? input.url.trim() : (Array.isArray(input.args) && input.args[0] ? String(input.args[0]) : null);
+    const extraArgs = targetUrl ? [targetUrl] : (Array.isArray(input.args) ? input.args : []);
     const windows = context.platform?.windows || osPlatform.windows;
     if (windows?.supported) {
       const apps = context.platform?.apps || osPlatform.apps;
@@ -307,12 +331,12 @@ async function runTool(toolId, input = {}, context = {}) {
         return all.filter((window) => appWindowMatches(app, window));
       };
       let matches = await findMatches();
-      if (matches.length >= 1 && extraArgs.length === 0) {
+      if (matches.length >= 1 && !targetUrl && extraArgs.length === 0) {
         const targetWindow = matches.find((m) => m.active) || matches[0];
         return { ok: true, toolId, data: { status: 'focused', app, window: await windows.focus({ windowId: targetWindow.windowId }), verified: true } };
       }
       let launched;
-      try { launched = await apps.open(name, extraArgs); }
+      try { launched = await apps.open(name, targetUrl || extraArgs); }
       catch (error) { throw windowError('APP_LAUNCH_FAILED', `${app.name} could not be launched: ${error.message}`); }
       if (launched.status !== 'launched') return { ok: false, toolId, data: launched };
       for (let attempt = 0; attempt < 16; attempt++) {
@@ -325,7 +349,7 @@ async function runTool(toolId, input = {}, context = {}) {
       }
       throw windowError('WINDOW_NOT_FOUND', `${app.name} launched but no matching window appeared`);
     }
-    const result = await osPlatform.apps.open(name, extraArgs);
+    const result = await osPlatform.apps.open(name, targetUrl || extraArgs);
     if (result.status !== 'launched') {
       const site = resolveKnownSiteOrDomain(name);
       if (site) {

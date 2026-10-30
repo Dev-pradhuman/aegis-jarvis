@@ -108,24 +108,28 @@ test('AC3: routeRequest matches "open <site> on/in <browser>" and launches speci
   assert.equal(r1.route, 'TOOL_CALL');
   assert.equal(r1.capability, 'apps.open');
   assert.equal(r1.args.name, 'brave');
+  assert.equal(r1.args.url, 'https://www.youtube.com');
   assert.deepEqual(r1.args.args, ['https://www.youtube.com']);
 
   const r2 = routeRequest('open github.com in firefox');
   assert.equal(r2.route, 'TOOL_CALL');
   assert.equal(r2.capability, 'apps.open');
   assert.equal(r2.args.name, 'firefox');
+  assert.equal(r2.args.url, 'https://github.com');
   assert.deepEqual(r2.args.args, ['https://github.com']);
 
   const r3 = routeRequest('open instagram on brave');
   assert.equal(r3.route, 'TOOL_CALL');
   assert.equal(r3.capability, 'apps.open');
   assert.equal(r3.args.name, 'brave');
+  assert.equal(r3.args.url, 'https://www.instagram.com');
   assert.deepEqual(r3.args.args, ['https://www.instagram.com']);
 
   const r4 = routeRequest('open https://news.ycombinator.com using chromium');
   assert.equal(r4.route, 'TOOL_CALL');
   assert.equal(r4.capability, 'apps.open');
   assert.equal(r4.args.name, 'chromium');
+  assert.equal(r4.args.url, 'https://news.ycombinator.com');
   assert.deepEqual(r4.args.args, ['https://news.ycombinator.com']);
 });
 

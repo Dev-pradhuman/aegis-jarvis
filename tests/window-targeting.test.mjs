@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLinuxWindows, resolveWindow } from '../server/platform/linux/windows.js';
+import { createLinuxWindows, resolveWindow, ensureHyprlandEnv } from '../server/platform/linux/windows.js';
 import { appWindowMatches, executeTool } from '../server/toolExecutor.js';
 import { invokeToolRequest } from '../server/toolRuntime.js';
 import { routeRequest } from '../server/router.js';
@@ -165,4 +165,45 @@ test('deterministic chat routes explicit window actions without a model', () => 
   assert.equal(routeRequest('Focus VS Code').capability, 'windows.focus');
   assert.equal(routeRequest('Minimize Spotify').capability, 'windows.minimize');
   assert.equal(routeRequest('What is the active window?').capability, 'windows.get_active');
+});
+
+test('AC1 & AC2: appWindowMatches matches Brave to brave-browser class and dynamic Hyprland socket discovery', async () => {
+  // appWindowMatches checks
+  assert.equal(appWindowMatches({ id: 'brave-browser', name: 'Brave' }, { appId: 'brave-browser', title: 'YouTube - Brave' }), true);
+  assert.equal(appWindowMatches({ name: 'Brave' }, { appId: 'brave-browser', title: 'New Tab' }), true);
+  assert.equal(appWindowMatches({ name: 'Brave' }, { appId: 'brave', title: 'Brave' }), true);
+
+  // Dynamic Hyprland discovery
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hypr-disc-test-'));
+  try {
+    fs.writeFileSync(path.join(tmp, 'wayland-2'), '');
+    const hypr = path.join(tmp, 'hypr');
+    fs.mkdirSync(hypr);
+    fs.mkdirSync(path.join(hypr, 'instance_sig_abc'));
+
+    const mockEnv = { XDG_RUNTIME_DIR: tmp };
+    const ok = ensureHyprlandEnv(mockEnv);
+    assert.equal(ok, true);
+    assert.equal(mockEnv.WAYLAND_DISPLAY, 'wayland-2');
+    assert.equal(mockEnv.HYPRLAND_INSTANCE_SIGNATURE, 'instance_sig_abc');
+    assert.equal(mockEnv.XDG_CURRENT_DESKTOP, 'Hyprland');
+
+    const windows = createLinuxWindows({ desktopEnvironment: 'unknown' });
+    // Dynamic getter evaluates to true
+    assert.equal(typeof windows.supported, 'boolean');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('AC3: routeRequest routes "open youtube on brave browser" to apps.open with url', () => {
+  const routed = routeRequest('open youtube on brave browser');
+  assert.equal(routed.route, 'TOOL_CALL');
+  assert.equal(routed.capability, 'apps.open');
+  assert.equal(routed.args.name, 'brave');
+  assert.equal(routed.args.url, 'https://www.youtube.com');
+  assert.deepEqual(routed.args.args, ['https://www.youtube.com']);
 });

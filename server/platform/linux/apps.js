@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
+import { ensureHyprlandEnv } from './windows.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -78,6 +79,8 @@ const aliases = {
   chrome: 'chromium',
   'google chrome': 'chromium',
   chromium: 'chromium',
+  'zen browser': 'zen',
+  zen: 'zen',
 };
 
 function distance(a, b) {
@@ -93,10 +96,10 @@ function distance(a, b) {
 export function resolveApp(query, apps) {
   const raw = normalize(query);
   const stripped = raw.replace(/\s+(?:browser|app|application)$/i, '').trim();
-  const hasDirectMatch = apps.some((app) => normalize(app.name) === raw || normalize(app.id) === raw);
-  const target = (hasDirectMatch && !aliases[raw])
+  const directMatches = apps.filter((app) => normalize(app.name) === raw || normalize(app.id) === raw);
+  const target = (directMatches.length > 1)
     ? raw
-    : (aliases[raw] || aliases[stripped] || (stripped && stripped.length > 1 ? stripped : raw));
+    : (aliases[raw] || aliases[stripped] || (directMatches.length === 1 ? raw : (stripped && stripped.length > 1 ? stripped : raw)));
 
   if (!target) return { status: 'not_found', candidates: [] };
   const scored = apps.map((app) => {
@@ -126,9 +129,42 @@ export function createLinuxApps(options = {}) {
       const resolution = resolveApp(query, await discover());
       if (resolution.status !== 'resolved') return resolution;
       await access(resolution.app.file, constants.R_OK);
+
+      const targetUrl = typeof extraArgs === 'string'
+        ? (extraArgs.trim() || null)
+        : (Array.isArray(extraArgs) && typeof extraArgs[0] === 'string' && /^https?:\/\//i.test(extraArgs[0])
+            ? extraArgs[0].trim()
+            : null);
+
+      const isHyprland = () => {
+        const de = env.XDG_CURRENT_DESKTOP || (options.env ? '' : process.env.XDG_CURRENT_DESKTOP) || '';
+        if (/\bKDE\b|\bPlasma\b/i.test(de)) return false;
+        ensureHyprlandEnv(env);
+        const sig = env.HYPRLAND_INSTANCE_SIGNATURE || (options.env ? '' : process.env.HYPRLAND_INSTANCE_SIGNATURE);
+        return Boolean(sig || /hyprland/i.test(de));
+      };
+
+      if (isHyprland()) {
+        let cmd = (resolution.app.exec || '').replace(/%[a-zA-Z]/g, '').trim();
+        if (targetUrl) {
+          cmd = `${cmd} ${targetUrl}`.trim();
+        }
+        try {
+          await run('hyprctl', ['dispatch', 'exec', cmd], { timeout: 10_000, windowsHide: true });
+        } catch (dispatchErr) {
+          try {
+            const luaCmd = `hl.dispatch(hl.dsp.exec_cmd(${JSON.stringify(cmd)}))`;
+            await run('hyprctl', ['repl', luaCmd], { timeout: 10_000, windowsHide: true });
+          } catch {
+            throw dispatchErr;
+          }
+        }
+        return { status: 'launched', app: resolution.app, match: resolution.match, verified: false, verification: 'Hyprland dispatcher accepted the launch request; window state is pending.' };
+      }
+
       const launchArgs = Array.isArray(extraArgs) && extraArgs.length > 0
         ? ['launch', resolution.app.file, ...extraArgs]
-        : ['launch', resolution.app.file];
+        : (typeof extraArgs === 'string' && extraArgs ? ['launch', resolution.app.file, extraArgs] : ['launch', resolution.app.file]);
       await run('gio', launchArgs, { timeout: 10_000, windowsHide: true });
       return { status: 'launched', app: resolution.app, match: resolution.match, verified: false, verification: 'Desktop launcher accepted the request; window state is unavailable.' };
     },
