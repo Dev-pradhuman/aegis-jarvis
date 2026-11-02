@@ -20,7 +20,9 @@ export function focusBrowserWindow() {
   try {
     ensureDisplayEnvironment();
     if (process.env.HYPRLAND_INSTANCE_SIGNATURE) {
-      execFile('hyprctl', ['dispatch', 'focuswindow', 'class:(?i)chromium|chrome|firefox'], () => {});
+      execFile('hyprctl', ['dispatch', 'focuswindow', 'class:(?i)chromium|chrome|firefox|zen|brave'], () => {});
+      const luaFocus = 'hl.dispatch(hl.dsp.focus({ window = "class:(?i)chromium|chrome|firefox|zen|brave" }))';
+      execFile('hyprctl', ['repl', luaFocus], () => {});
     }
   } catch {}
 }

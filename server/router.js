@@ -35,7 +35,7 @@ export function resolveKnownSiteOrDomain(input) {
 
 export function parseWhatsAppRequest(value) {
   const clean = String(value || '')
-    .replace(/^(?:(?:hey|hi|ok|hello)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:please\s+)?/i, '')
+    .replace(/^(?:(?:hey|hi|ok|okay|hello)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?/i, '')
     .replace(/[.!?]+$/, '')
     .trim();
 
@@ -208,12 +208,28 @@ export function routeRequest(text) {
     };
   }
 
-  const siteOnBrowserMatch = value.match(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)\s+(?:on|in|using|with)\s+(?:the\s+)?(.+?)(?:\s+(?:browser|app))?[.!?]?$/i);
+  const conversationalSuffixRegex = /\s+(?:for\s+me|please|pls|right\s+now|now|real\s+quick)\s*[.!?]*$/i;
+
+  const siteOnBrowserMatch = value.match(/^(?:(?:hey|hi|ok|okay)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)\s+(?:on|in|using|with)\s+(?:the\s+)?(.+?)(?:\s+(?:browser|app))?[.!?]?$/i);
   if (siteOnBrowserMatch) {
-    const rawSite = siteOnBrowserMatch[1].replace(/[.!?]+$/, '').trim();
-    const rawBrowser = siteOnBrowserMatch[2].replace(/[.!?]+$/, '').trim().toLowerCase();
+    const rawSite = siteOnBrowserMatch[1].replace(/[.!?]+$/, '').replace(conversationalSuffixRegex, '').trim();
+    const rawBrowser = siteOnBrowserMatch[2].replace(/[.!?]+$/, '').replace(conversationalSuffixRegex, '').trim().toLowerCase();
     const site = resolveKnownSiteOrDomain(rawSite);
     const targetUrl = site ? site.url : (/^https?:\/\//i.test(rawSite) ? rawSite : (/\.[a-z]{2,}/i.test(rawSite) ? `https://${rawSite.replace(/^www\./i, '')}` : null));
+
+    if (/(?:my\s+)?default(?:\s+browser)?/i.test(rawBrowser)) {
+      if (targetUrl) {
+        return {
+          route: 'TOOL_CALL',
+          capability: 'browser.open',
+          args: {
+            url: targetUrl,
+            label: site ? site.label : targetUrl,
+          },
+          confidence: 1,
+        };
+      }
+    }
 
     const browserAliases = {
       brave: 'brave',
@@ -242,19 +258,17 @@ export function routeRequest(text) {
     }
   }
 
-  const webOrAppMatch = value.match(/^(?:(?:hey|hi|ok)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application|website|web\s+page|site|page))?[.!?]?$/i);
+  const webOrAppMatch = value.match(/^(?:(?:hey|hi|ok|okay)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)(?:\s+(?:app|application|website|web\s+page|site|page))?[.!?]?$/i);
   if (webOrAppMatch) {
-    const rawTarget = webOrAppMatch[1].replace(/[.!?]+$/, '').trim();
+    const rawTarget = webOrAppMatch[1].replace(/[.!?]+$/, '').replace(conversationalSuffixRegex, '').trim();
     const site = resolveKnownSiteOrDomain(rawTarget);
     if (site) {
-      if (site.label === 'YouTube') {
-        return { route: 'TOOL_CALL', capability: 'browser.open', args: { url: site.url, label: site.label }, confidence: 1 };
-      }
+      const isWhatsApp = site === KNOWN_SITES.whatsapp || site.url === 'https://web.whatsapp.com';
       return {
         route: 'TOOL_CALL',
-        capability: 'browser.handoff',
+        capability: isWhatsApp ? 'browser.handoff' : 'browser.open',
         args: { url: site.url, label: site.label },
-        confidence: 0.99
+        confidence: 1,
       };
     }
     if (rawTarget.length <= 120 && !/\b(https?:\/\/|[a-z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu)\b|\band\b)/i.test(rawTarget)) {

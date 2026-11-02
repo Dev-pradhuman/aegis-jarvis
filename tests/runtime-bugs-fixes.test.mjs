@@ -8,7 +8,7 @@ import { ensureDisplayEnvironment, PatchrightEngine } from '../server/browser/en
 import { assembleModelContext } from '../server/contextAssembler.js';
 import { classifyForModel } from '../server/modelRouting.js';
 import { routeRequest, parseWhatsAppRequest } from '../server/router.js';
-import { resolveApp } from '../server/platform/linux/apps.js';
+import { resolveApp, createLinuxApps, openDesktopUrl } from '../server/platform/linux/apps.js';
 
 test('AC1: ensureDisplayEnvironment auto-detects Wayland and X11 sockets from XDG_RUNTIME_DIR and /tmp/.X11-unix', async () => {
   // Test with mock environment and temporary socket structure
@@ -193,4 +193,72 @@ test('AC2 & AC3: Chat route formats honest WhatsApp reply and bypasses voice con
   assert.ok(!isLowRiskAction('shell.execute'));
   assert.ok(!isLowRiskAction('calendar.create'));
   assert.ok(!isLowRiskAction('gmail.send'));
+});
+
+test('AC1-AC3: Conversational browser and app opening routes deterministically for the 5 live queries', async () => {
+  // Query 1: "can you open brave browser for me"
+  const q1 = routeRequest('can you open brave browser for me');
+  assert.equal(q1.route, 'TOOL_CALL');
+  assert.equal(q1.capability, 'apps.open');
+  assert.equal(q1.args.name, 'brave browser');
+
+  // Query 2: "can u open brave"
+  const q2 = routeRequest('can u open brave');
+  assert.equal(q2.route, 'TOOL_CALL');
+  assert.equal(q2.capability, 'apps.open');
+  assert.equal(q2.args.name, 'brave');
+
+  // Query 3: "can you open youtube on my default browser?"
+  const q3 = routeRequest('can you open youtube on my default browser?');
+  assert.equal(q3.route, 'TOOL_CALL');
+  assert.equal(q3.capability, 'browser.open');
+  assert.equal(q3.args.url, 'https://www.youtube.com');
+
+  // Query 4: "can you open youtube"
+  const q4 = routeRequest('can you open youtube');
+  assert.equal(q4.route, 'TOOL_CALL');
+  assert.equal(q4.capability, 'browser.open');
+  assert.equal(q4.args.url, 'https://www.youtube.com');
+
+  // Query 5: "open instagram.com"
+  const q5 = routeRequest('open instagram.com');
+  assert.equal(q5.route, 'TOOL_CALL');
+  assert.equal(q5.capability, 'browser.open');
+  assert.equal(q5.args.url, 'https://www.instagram.com');
+
+  // Verify resolveApp strips conversational suffixes like "for me"
+  const mockApps = [
+    { id: 'brave-browser', name: 'Brave', genericName: 'Web Browser', startupWMClass: 'Brave-browser' },
+    { id: 'zen', name: 'Zen Browser', genericName: 'Web Browser', startupWMClass: 'zen' },
+  ];
+  const braveMatch = resolveApp('brave browser for me', mockApps);
+  assert.equal(braveMatch.status, 'resolved');
+  assert.equal(braveMatch.app.id, 'brave-browser');
+
+  // Verify binary fallback launches binary when no .desktop file exists
+  const dummyProvider = createLinuxApps({
+    env: { XDG_DATA_DIRS: '/nonexistent' },
+    home: '/nonexistent',
+    execFile: async (cmd, args) => {
+      if (cmd === 'which' && args[0] === 'brave') {
+        return { stdout: '/usr/bin/brave\n' };
+      }
+      return { stdout: '' };
+    }
+  });
+  const resBin = await dummyProvider.open('brave');
+  assert.equal(resBin.status, 'launched');
+  assert.equal(resBin.match, 'binary');
+
+  // Verify openDesktopUrl invokes xdg-open
+  const urlCalls = [];
+  const resUrl = await openDesktopUrl('https://www.youtube.com', {
+    run: async (cmd, args) => {
+      urlCalls.push({ cmd, args });
+      return { stdout: '' };
+    }
+  });
+  assert.equal(resUrl.status, 'opened');
+  assert.equal(resUrl.url, 'https://www.youtube.com');
+  assert.ok(urlCalls.length > 0);
 });

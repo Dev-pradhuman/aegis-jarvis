@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureLinuxDesktopEnv, ensureHyprlandEnv } from './env.js';
+import { focusBrowserWindow } from '../../browser/engines.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -35,7 +36,12 @@ export function parseDesktopEntry(content, file, desktop = '') {
 function dataDirectories(env, home) {
   const homeData = env.XDG_DATA_HOME || path.join(home, '.local', 'share');
   const system = (env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':').filter(Boolean);
-  return [...new Set([homeData, ...system].map((item) => path.join(item, 'applications')))];
+  const extra = [
+    '/var/lib/flatpak/exports/share/applications',
+    path.join(home, '.local', 'share', 'flatpak', 'exports', 'share', 'applications'),
+    '/var/lib/snapd/desktop/applications',
+  ];
+  return [...new Set([homeData, ...system].map((item) => path.join(item, 'applications')).concat(extra))];
 }
 
 async function desktopFiles(directory) {
@@ -69,12 +75,15 @@ export async function discoverLinuxApps({ env = process.env, home = os.homedir()
 }
 
 const normalize = (value) => String(value || '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const conversationalSuffixRegex = /\s+(?:for\s+me|please|pls|right\s+now|now|real\s+quick)\s*[.!?]*$/i;
+
 const aliases = {
   'vs code': 'visual studio code',
   vscode: 'visual studio code',
   code: 'visual studio code',
   'brave browser': 'brave',
   brave: 'brave',
+  'brave web browser': 'brave',
   'brave-browser': 'brave',
   chrome: 'chromium',
   'google chrome': 'chromium',
@@ -94,7 +103,7 @@ function distance(a, b) {
 }
 
 export function resolveApp(query, apps) {
-  const raw = normalize(query);
+  const raw = normalize(query).replace(conversationalSuffixRegex, '').trim();
   const stripped = raw.replace(/\s+(?:browser|app|application)$/i, '').trim();
   const directMatches = apps.filter((app) => normalize(app.name) === raw || normalize(app.id) === raw);
   const target = (directMatches.length > 1)
@@ -109,13 +118,53 @@ export function resolveApp(query, apps) {
     const genericExact = normalize(app.genericName) === target;
     const classExact = normalize(app.startupWMClass) === target;
     const genericWord = app.genericName && normalize(app.genericName).split(' ').includes(target);
+
+    const nameNorm = normalize(app.name);
+    const idNorm = normalize(app.id);
+    const nameWords = nameNorm.split(' ');
+    const wordBoundaryMatch = target.length >= 3 && (nameWords.includes(target) || nameNorm.startsWith(target + ' ') || idNorm.includes(target));
+
     const fuzzy = target.length >= 5 ? Math.min(...names.map((name) => distance(target, name))) : Infinity;
-    return { app, score: idExact ? 110 : nameExact ? 100 : genericExact ? 95 : classExact ? 90 : genericWord ? 85 : fuzzy <= 2 ? 70 - fuzzy : 0 };
+    return {
+      app,
+      score: idExact ? 110
+        : nameExact ? 100
+        : genericExact ? 95
+        : wordBoundaryMatch ? 92
+        : classExact ? 90
+        : genericWord ? 85
+        : fuzzy <= 2 ? 70 - fuzzy : 0,
+    };
   }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.app.name.localeCompare(b.app.name));
   if (!scored.length) return { status: 'not_found', candidates: [] };
   const best = scored[0].score;
   const tied = scored.filter((item) => item.score === best).map((item) => item.app);
   return tied.length === 1 ? { status: 'resolved', app: tied[0], match: best >= 85 ? 'exact' : 'fuzzy' } : { status: 'ambiguous', candidates: tied };
+}
+
+export async function openDesktopUrl(url, { run = execFileAsync } = {}) {
+  const trimmedUrl = String(url || '').trim();
+  if (!trimmedUrl) return { status: 'failed', error: 'URL required' };
+
+  const isHyprland = Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE || /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP || ''));
+  if (isHyprland) {
+    const cmd = `xdg-open ${JSON.stringify(trimmedUrl)}`;
+    try {
+      await run('hyprctl', ['dispatch', 'exec', cmd], { timeout: 10_000, windowsHide: true });
+    } catch {
+      try {
+        const luaCmd = `hl.dispatch(hl.dsp.exec_raw(${JSON.stringify(cmd)}))`;
+        await run('hyprctl', ['repl', luaCmd], { timeout: 10_000, windowsHide: true });
+      } catch {
+        await run('xdg-open', [trimmedUrl], { timeout: 10_000, windowsHide: true }).catch(() => {});
+      }
+    }
+  } else {
+    await run('xdg-open', [trimmedUrl], { timeout: 10_000, windowsHide: true }).catch(() => {});
+  }
+
+  focusBrowserWindow();
+  return { status: 'opened', url: trimmedUrl, verified: true };
 }
 
 export function createLinuxApps(options = {}) {
@@ -125,11 +174,9 @@ export function createLinuxApps(options = {}) {
   const discover = () => discoverLinuxApps({ env, home });
   return {
     list: discover,
+    openUrl: (url, extra = {}) => openDesktopUrl(url, { run, ...extra }),
     async open(query, extraArgs = []) {
       const resolution = resolveApp(query, await discover());
-      if (resolution.status !== 'resolved') return resolution;
-      await access(resolution.app.file, constants.R_OK);
-
       const targetUrl = typeof extraArgs === 'string'
         ? (extraArgs.trim() || null)
         : (Array.isArray(extraArgs) && typeof extraArgs[0] === 'string' && /^https?:\/\//i.test(extraArgs[0])
@@ -143,6 +190,73 @@ export function createLinuxApps(options = {}) {
         const sig = env.HYPRLAND_INSTANCE_SIGNATURE || process.env.HYPRLAND_INSTANCE_SIGNATURE;
         return Boolean(sig || /hyprland/i.test(de));
       };
+
+      if (resolution.status !== 'resolved') {
+        if (resolution.status === 'not_found') {
+          const rawClean = normalize(query).replace(conversationalSuffixRegex, '').trim();
+          const stripped = rawClean.replace(/\s+(?:browser|app|application)$/i, '').trim();
+          const candidateBins = [
+            rawClean,
+            stripped,
+          ];
+          const browserMap = {
+            brave: ['brave', 'brave-browser'],
+            zen: ['zen-browser', 'zen'],
+            chrome: ['google-chrome-stable', 'google-chrome', 'chromium'],
+            firefox: ['firefox'],
+            chromium: ['chromium'],
+          };
+          if (browserMap[stripped]) {
+            candidateBins.unshift(...browserMap[stripped]);
+          } else if (browserMap[rawClean]) {
+            candidateBins.unshift(...browserMap[rawClean]);
+          }
+
+          let foundBin = null;
+          for (const bin of candidateBins) {
+            if (!bin || bin.includes('/') || bin.includes(' ')) continue;
+            try {
+              const { stdout } = await run('which', [bin], { timeout: 3000 });
+              if (stdout && stdout.trim()) {
+                foundBin = bin;
+                break;
+              }
+            } catch {}
+          }
+
+          if (foundBin) {
+            let cmd = foundBin;
+            if (targetUrl) {
+              cmd = `${cmd} ${targetUrl}`.trim();
+            }
+            if (isHyprland()) {
+              try {
+                await run('hyprctl', ['dispatch', 'exec', cmd], { timeout: 10_000, windowsHide: true });
+              } catch (dispatchErr) {
+                try {
+                  const luaCmd = `hl.dispatch(hl.dsp.exec_raw(${JSON.stringify(cmd)}))`;
+                  await run('hyprctl', ['repl', luaCmd], { timeout: 10_000, windowsHide: true });
+                } catch {
+                  await run(foundBin, targetUrl ? [targetUrl] : [], { timeout: 10_000, windowsHide: true }).catch(() => {});
+                }
+              }
+            } else {
+              await run(foundBin, targetUrl ? [targetUrl] : [], { timeout: 10_000, windowsHide: true }).catch(() => {});
+            }
+            return {
+              status: 'launched',
+              app: { id: foundBin, name: foundBin, exec: foundBin },
+              match: 'binary',
+              verified: false,
+              verification: `Launched binary ${foundBin} from PATH.`,
+            };
+          }
+        }
+
+        return resolution;
+      }
+
+      await access(resolution.app.file, constants.R_OK);
 
       if (isHyprland()) {
         let cmd = (resolution.app.exec || '').replace(/%[a-zA-Z]/g, '').trim();

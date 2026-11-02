@@ -45,6 +45,8 @@ import { unattendedTool, unattendedTools } from '../toolPolicy.js';
 import { brainCatalog } from '../brainSources.js';
 import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrainSource } from '../brainService.js';
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
+import { openDesktopUrl } from '../platform/linux/apps.js';
+import { osPlatform } from '../platform/index.js';
 
 export default async function chatRoutes(req, res, url, state, ctx) {
   const { json, safeWrite, safeEnd, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
@@ -327,7 +329,17 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             data = { action: 'open_url', url: route.args.url, label: route.args.label };
             reply = `Opening ${route.args.label || route.args.url}.`;
             try {
-              if (route.args.url) await browserManager.handoff(route.args.url);
+              if (route.args.url) {
+                await openDesktopUrl(route.args.url);
+                const windows = osPlatform.windows;
+                if (windows?.supported) {
+                  const all = await windows.list();
+                  const browserWindow = all.find((w) => /zen|firefox|chromium|chrome|brave/i.test(w.appId || w.title || ''));
+                  if (browserWindow) {
+                    await windows.focus({ windowId: browserWindow.windowId }).catch(() => null);
+                  }
+                }
+              }
             } catch {}
           }
           else if (route.capability === 'browser.handoff') {

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { composioActionHash, composioToolRisk, executeComposioTool } from './composioAdapter.js';
 import { osPlatform } from './platform/index.js';
 import { computerCapabilities } from './platform/capabilities.js';
-import { resolveApp } from './platform/linux/apps.js';
+import { openDesktopUrl, resolveApp } from './platform/linux/apps.js';
 import { windowError } from './platform/linux/windows.js';
 import { ensureLinuxDesktopEnv } from './platform/linux/env.js';
 import { browserManager } from './browser/index.js';
@@ -292,8 +292,25 @@ async function runTool(toolId, input = {}, context = {}) {
   if (toolId.startsWith('browser.')) {
     if (toolId === 'browser.status') return { ok: true, toolId, data: browserManager.getStatus() };
     if (toolId === 'browser.evaluate') requireExactApproval(toolId, input, context.approval, context.runId);
+    if (toolId === 'browser.open') {
+      const url = String(input.url || '').trim();
+      if (!url) throw new Error('A valid URL is required for browser.open');
+      const data = await openDesktopUrl(url);
+      const windows = context.platform?.windows || osPlatform.windows;
+      let window = null;
+      if (windows?.supported) {
+        try {
+          const all = await windows.list();
+          const browserWindow = all.find((w) => /zen|firefox|chromium|chrome|brave/i.test(w.appId || w.title || ''));
+          if (browserWindow) {
+            window = await windows.focus({ windowId: browserWindow.windowId }).catch(() => null);
+          }
+        } catch {}
+      }
+      return { ok: true, toolId, data: { status: 'opened', url, window, platform: osPlatform.os } };
+    }
     const actions = {
-      'browser.open': () => browserManager.navigate(input.url),
+      'browser.open': () => openDesktopUrl(input.url),
       'browser.navigate': () => browserManager.navigate(input.url, { mode: input.mode }),
       'browser.click': () => browserManager.click(input.selector, { mode: input.mode }),
       'browser.type': () => browserManager.type(input.selector, input.text),
@@ -319,13 +336,24 @@ async function runTool(toolId, input = {}, context = {}) {
     const windows = context.platform?.windows || osPlatform.windows;
     if (windows?.supported) {
       const apps = context.platform?.apps || osPlatform.apps;
-      const resolution = resolveApp(name, await apps.list());
+      let resolution = resolveApp(name, await apps.list());
       if (resolution.status !== 'resolved') {
         const site = resolveKnownSiteOrDomain(name);
         if (site) {
-          const browserData = await browserManager.handoff(site.url);
+          const opener = context.openDesktopUrl || openDesktopUrl;
+          const browserData = await opener(site.url);
           return { ok: true, toolId, data: { ...browserData, status: 'opened_in_browser', url: site.url, verified: true } };
         }
+        if (resolution.status === 'not_found') {
+          try {
+            const binaryLaunch = await apps.open(name, targetUrl || extraArgs);
+            if (binaryLaunch.status === 'launched') {
+              resolution = { status: 'resolved', app: binaryLaunch.app, match: binaryLaunch.match };
+            }
+          } catch {}
+        }
+      }
+      if (resolution.status !== 'resolved') {
         return { ok: false, toolId, data: resolution };
       }
       const app = resolution.app;

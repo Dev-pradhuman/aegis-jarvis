@@ -9,24 +9,24 @@ import { browserManager } from '../server/browser/index.js';
 test('AC1: Natural language website and browser opening routes deterministically with polite prefixes', () => {
   // Test polite prefixes with known sites
   const queries = [
-    { text: 'can you open instagram', url: 'https://www.instagram.com', cap: 'browser.handoff' },
-    { text: 'open instagram', url: 'https://www.instagram.com', cap: 'browser.handoff' },
-    { text: 'jarvis, could you please open instagram?', url: 'https://www.instagram.com', cap: 'browser.handoff' },
-    { text: 'go to github.com', url: 'https://github.com', cap: 'browser.handoff' },
-    { text: 'can you go to github.com', url: 'https://github.com', cap: 'browser.handoff' },
+    { text: 'can you open instagram', url: 'https://www.instagram.com', cap: 'browser.open' },
+    { text: 'open instagram', url: 'https://www.instagram.com', cap: 'browser.open' },
+    { text: 'jarvis, could you please open instagram?', url: 'https://www.instagram.com', cap: 'browser.open' },
+    { text: 'go to github.com', url: 'https://github.com', cap: 'browser.open' },
+    { text: 'can you go to github.com', url: 'https://github.com', cap: 'browser.open' },
     { text: 'launch whatsapp', url: 'https://web.whatsapp.com', cap: 'browser.handoff' },
-    { text: 'please open chatgpt', url: 'https://chatgpt.com', cap: 'browser.handoff' },
-    { text: 'open claude', url: 'https://claude.ai', cap: 'browser.handoff' },
-    { text: 'open gemini', url: 'https://gemini.google.com', cap: 'browser.handoff' },
-    { text: 'go to reddit.com', url: 'https://www.reddit.com', cap: 'browser.handoff' },
-    { text: 'open netflix', url: 'https://www.netflix.com', cap: 'browser.handoff' },
-    { text: 'open linkedin', url: 'https://www.linkedin.com', cap: 'browser.handoff' },
-    { text: 'open x', url: 'https://x.com', cap: 'browser.handoff' },
-    { text: 'open twitter', url: 'https://x.com', cap: 'browser.handoff' },
+    { text: 'please open chatgpt', url: 'https://chatgpt.com', cap: 'browser.open' },
+    { text: 'open claude', url: 'https://claude.ai', cap: 'browser.open' },
+    { text: 'open gemini', url: 'https://gemini.google.com', cap: 'browser.open' },
+    { text: 'go to reddit.com', url: 'https://www.reddit.com', cap: 'browser.open' },
+    { text: 'open netflix', url: 'https://www.netflix.com', cap: 'browser.open' },
+    { text: 'open linkedin', url: 'https://www.linkedin.com', cap: 'browser.open' },
+    { text: 'open x', url: 'https://x.com', cap: 'browser.open' },
+    { text: 'open twitter', url: 'https://x.com', cap: 'browser.open' },
     { text: 'open youtube', url: 'https://www.youtube.com', cap: 'browser.open' },
     { text: 'can you open youtube.com', url: 'https://www.youtube.com', cap: 'browser.open' },
-    { text: 'visit https://huggingface.co/models', url: 'https://huggingface.co/models', cap: 'browser.handoff' },
-    { text: 'go to news.ycombinator.com', url: 'https://news.ycombinator.com', cap: 'browser.handoff' },
+    { text: 'visit https://huggingface.co/models', url: 'https://huggingface.co/models', cap: 'browser.open' },
+    { text: 'go to news.ycombinator.com', url: 'https://news.ycombinator.com', cap: 'browser.open' },
   ];
 
   for (const q of queries) {
@@ -102,53 +102,49 @@ test('AC2: toolFilter.js retains browser navigation tools in CORE_TOOLS and sele
   assert.ok(filteredIds.has('apps.open'), 'Filtered tools must retain apps.open');
 });
 
-test('AC2: apps.open falls back to visible browser handoff when target is a known website or domain', async () => {
-  let handoffCalledWith = null;
-  const originalHandoff = browserManager.handoff;
-
-  browserManager.handoff = async (url) => {
-    handoffCalledWith = url;
-    return { status: 'mock_handoff_success' };
+test('AC2: apps.open falls back to default browser when target is a known website or domain', async () => {
+  let openedUrl = null;
+  const mockPlatform = {
+    windows: {
+      supported: true,
+      list: async () => []
+    },
+    apps: {
+      list: async () => [
+        { name: 'Calculator', id: 'org.gnome.Calculator' },
+        { name: 'Terminal', id: 'org.gnome.Terminal' }
+      ]
+    }
+  };
+  const mockContext = {
+    platform: mockPlatform,
+    openDesktopUrl: async (url) => {
+      openedUrl = url;
+      return { status: 'opened', url };
+    }
   };
 
-  try {
-    // 1. Unknown app that is a known site name ("instagram")
-    const mockPlatform = {
-      windows: {
-        supported: true,
-        list: async () => []
-      },
-      apps: {
-        list: async () => [
-          { name: 'Calculator', id: 'org.gnome.Calculator' },
-          { name: 'Terminal', id: 'org.gnome.Terminal' }
-        ]
-      }
-    };
+  // 1. Unknown app that is a known site name ("instagram")
+  const resInstagram = await executeTool('apps.open', { name: 'instagram' }, mockContext);
+  assert.equal(resInstagram.ok, true);
+  assert.equal(resInstagram.toolId, 'apps.open');
+  assert.equal(resInstagram.data.status, 'opened_in_browser');
+  assert.equal(resInstagram.data.url, 'https://www.instagram.com');
+  assert.equal(resInstagram.data.verified, true);
+  assert.equal(openedUrl, 'https://www.instagram.com');
 
-    const resInstagram = await executeTool('apps.open', { name: 'instagram' }, { platform: mockPlatform });
-    assert.equal(resInstagram.ok, true);
-    assert.equal(resInstagram.toolId, 'apps.open');
-    assert.equal(resInstagram.data.status, 'opened_in_browser');
-    assert.equal(resInstagram.data.url, 'https://www.instagram.com');
-    assert.equal(resInstagram.data.verified, true);
-    assert.equal(handoffCalledWith, 'https://www.instagram.com');
+  // 2. Domain name passed to apps.open ("github.com")
+  openedUrl = null;
+  const resGithub = await executeTool('apps.open', { name: 'github.com' }, mockContext);
+  assert.equal(resGithub.ok, true);
+  assert.equal(resGithub.data.status, 'opened_in_browser');
+  assert.equal(resGithub.data.url, 'https://github.com');
+  assert.equal(openedUrl, 'https://github.com');
 
-    // 2. Domain name passed to apps.open ("github.com")
-    handoffCalledWith = null;
-    const resGithub = await executeTool('apps.open', { name: 'github.com' }, { platform: mockPlatform });
-    assert.equal(resGithub.ok, true);
-    assert.equal(resGithub.data.status, 'opened_in_browser');
-    assert.equal(resGithub.data.url, 'https://github.com');
-    assert.equal(handoffCalledWith, 'https://github.com');
-
-    // 3. Unknown app that is NOT a website ("some_completely_fake_desktop_app")
-    handoffCalledWith = null;
-    const resUnknown = await executeTool('apps.open', { name: 'some_completely_fake_desktop_app' }, { platform: mockPlatform });
-    assert.equal(resUnknown.ok, false);
-    assert.equal(resUnknown.data.status, 'not_found');
-    assert.equal(handoffCalledWith, null);
-  } finally {
-    browserManager.handoff = originalHandoff;
-  }
+  // 3. Unknown app that is NOT a website ("some_completely_fake_desktop_app")
+  openedUrl = null;
+  const resUnknown = await executeTool('apps.open', { name: 'some_completely_fake_desktop_app' }, mockContext);
+  assert.equal(resUnknown.ok, false);
+  assert.equal(resUnknown.data.status, 'not_found');
+  assert.equal(openedUrl, null);
 });
