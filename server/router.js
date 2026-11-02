@@ -193,21 +193,6 @@ export function routeRequest(text) {
   if (/\b(?:list|show|what are)\s+(?:all\s+)?(?:my\s+)?(?:open\s+)?(?:desktop\s+)?windows\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.list', args: {}, confidence: 0.99 };
   if (/^(?:what(?:'s| is) (?:the )?active window|which window is active|what window am i (?:currently )?focused on)\??$/i.test(value) || /^(?:get|show|check) (?:the )?(?:active|focused|current) window\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
 
-  const wa = parseWhatsAppRequest(value);
-  if (wa) {
-    return {
-      route: 'TOOL_CALL',
-      capability: 'browser.handoff',
-      args: {
-        url: 'https://web.whatsapp.com',
-        recipient: wa.recipient || null,
-        message: wa.message || null,
-        isWhatsAppMessage: true,
-      },
-      confidence: 0.99,
-    };
-  }
-
   const conversationalSuffixRegex = /\s+(?:for\s+me|please|pls|right\s+now|now|real\s+quick)\s*[.!?]*$/i;
 
   const siteOnBrowserMatch = value.match(/^(?:(?:hey|hi|ok|okay)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?(?:open|launch|start|go\s+to|navigate\s+to|browse\s+to|visit)\s+(?:the\s+)?(.+?)\s+(?:on|in|using|with)\s+(?:the\s+)?(.+?)(?:\s+(?:browser|app))?[.!?]?$/i);

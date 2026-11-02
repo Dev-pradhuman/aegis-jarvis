@@ -38,12 +38,48 @@ function safeFormScript() {
   })).filter((field) => field.value && !['password', 'hidden', 'file'].includes(field.type) && !/(pass|token|secret|otp|card|cvv|auth|security)/i.test(`${field.id || ''} ${field.name || ''} ${field.autocomplete || ''}`) && (field.id || field.name));
 }
 
+function generateSelector(element) {
+  if (element.id && !/^\d/.test(element.id)) return `#${element.id}`;
+  const testId = element.getAttribute('data-testid');
+  if (testId) return `[data-testid="${testId}"]`;
+  const ariaLabel = element.getAttribute('aria-label');
+  if (ariaLabel) return `[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`;
+  const dataTab = element.getAttribute('data-tab');
+  if (dataTab) {
+    const isCE = element.getAttribute('contenteditable') === 'true' || element.isContentEditable;
+    return `${isCE ? 'div[contenteditable="true"]' : element.tagName.toLowerCase()}[data-tab="${dataTab}"]`;
+  }
+  const placeholder = element.getAttribute('placeholder');
+  if (placeholder) return `[placeholder="${placeholder.replace(/"/g, '\\"')}"]`;
+  const role = element.getAttribute('role');
+  if (role) {
+    if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      return `div[role="${role}"][contenteditable="true"]`;
+    }
+    return `${element.tagName.toLowerCase()}[role="${role}"]`;
+  }
+  if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+    return `${element.tagName.toLowerCase()}[contenteditable="true"]`;
+  }
+  return element.tagName.toLowerCase();
+}
+
 function accessibilityScript() {
-  return Array.from(document.querySelectorAll('a,button,input,select,textarea,[role]')).slice(0, 180).map((element) => ({
-    role: element.getAttribute('role') || element.tagName.toLowerCase(),
-    name: element.getAttribute('aria-label') || element.innerText?.trim().slice(0, 180) || element.getAttribute('placeholder') || '',
-    href: element.tagName === 'A' ? element.href : undefined,
-  }));
+  const query = 'a,button,input,select,textarea,[role],[contenteditable="true"],[data-testid],[data-tab]';
+  return Array.from(document.querySelectorAll(query)).slice(0, 200).map((element) => {
+    const isCE = element.getAttribute('contenteditable') === 'true' || element.isContentEditable;
+    const role = element.getAttribute('role') || (isCE ? 'textbox' : element.tagName.toLowerCase());
+    const name = element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.innerText?.trim().slice(0, 180) || '';
+    const selector = generateSelector(element);
+    return {
+      role,
+      name,
+      selector,
+      href: element.tagName === 'A' ? element.href : undefined,
+      contentEditable: isCE || undefined,
+      dataTestId: element.getAttribute('data-testid') || undefined,
+    };
+  });
 }
 
 function challengeScript() {
@@ -80,9 +116,51 @@ export class LightpandaEngine {
   url() { return this.page?.url() || null; }
   async navigate(url) { await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 }); return { url: this.url(), title: await this.page.title() }; }
   async click(selector) { await this.page.click(selector, { timeout: 12000 }); return { url: this.url(), selector }; }
-  async type(selector, text) { await this.page.locator(selector).fill(text, { timeout: 12000 }); return { url: this.url(), selector, length: text.length }; }
+  async type(selector, text) {
+    if (this.page.locator) {
+      const loc = this.page.locator(selector);
+      const isRich = await loc.evaluate((el) => el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('role') === 'textbox').catch(() => false);
+      if (isRich) {
+        await loc.click({ timeout: 12000 }).catch(() => {});
+        await this.page.keyboard.type(text, { delay: 15 });
+      } else {
+        await loc.fill(text, { timeout: 12000 });
+      }
+    } else {
+      await this.page.type(selector, text, { delay: 15 });
+    }
+    return { url: this.url(), selector, length: text.length };
+  }
+  async press(key, selector) {
+    if (selector && this.page.focus) {
+      await this.page.focus(selector).catch(async () => {
+        await this.page.click(selector).catch(() => {});
+      });
+    }
+    await this.page.keyboard.press(key);
+    return { url: this.url(), key, selector: selector || null };
+  }
   async evaluate(code) { return this.page.evaluate(code); }
-  async read() { return this.page.evaluate(() => ({ title: document.title, text: (document.body?.innerText || '').slice(0, 30000), links: Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((a) => ({ text: a.innerText?.trim().slice(0, 120) || '', href: a.href })) })); }
+  async read() {
+    return this.page.evaluate(() => ({
+      title: document.title,
+      text: (document.body?.innerText || '').slice(0, 30000),
+      links: Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((a) => ({
+        text: a.innerText?.trim().slice(0, 120) || '',
+        href: a.href,
+      })),
+      inputs: Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"],[role="textbox"]')).slice(0, 50).map((el) => {
+        const isCE = el.getAttribute('contenteditable') === 'true' || el.isContentEditable;
+        const selector = el.id ? `#${el.id}` : el.getAttribute('aria-label') ? `[aria-label="${el.getAttribute('aria-label')}"]` : el.getAttribute('placeholder') ? `[placeholder="${el.getAttribute('placeholder')}"]` : el.getAttribute('data-tab') ? `${isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase()}[data-tab="${el.getAttribute('data-tab')}"]` : isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase();
+        return {
+          role: el.getAttribute('role') || (isCE ? 'textbox' : el.tagName.toLowerCase()),
+          placeholder: el.getAttribute('placeholder') || '',
+          ariaLabel: el.getAttribute('aria-label') || '',
+          selector,
+        };
+      }),
+    }));
+  }
   async content() { return (await this.page.content()).slice(0, 200000); }
   async accessibility() { return this.page.evaluate(accessibilityScript); }
   async waitFor(selector, timeout = 12000) { await this.page.waitForSelector(selector, { timeout }); return { selector, found: true }; }
@@ -152,8 +230,35 @@ export class PatchrightEngine {
   }
 
   async type(selector, text) {
-    await this.page.locator(selector).fill(text, { timeout: 12000 });
+    const loc = this.page.locator(selector);
+    const isRich = await loc.evaluate((el) => {
+      const isCE = el.isContentEditable || el.getAttribute('contenteditable') === 'true';
+      const isRoleTextbox = el.getAttribute('role') === 'textbox';
+      return isCE || isRoleTextbox;
+    }).catch(() => false);
+
+    if (isRich) {
+      await loc.click({ timeout: 12000 }).catch(() => {});
+      if (typeof loc.pressSequentially === 'function') {
+        await loc.pressSequentially(text, { delay: 15 });
+      } else {
+        await this.page.keyboard.type(text, { delay: 15 });
+      }
+    } else {
+      await loc.fill(text, { timeout: 12000 });
+    }
     return { url: this.url(), selector, length: text.length };
+  }
+
+  async press(key, selector) {
+    if (selector) {
+      const loc = this.page.locator(selector);
+      await loc.focus({ timeout: 12000 }).catch(async () => {
+        await loc.click({ timeout: 12000 }).catch(() => {});
+      });
+    }
+    await this.page.keyboard.press(key);
+    return { url: this.url(), key, selector: selector || null };
   }
 
   async evaluate(code) {
@@ -168,6 +273,16 @@ export class PatchrightEngine {
         text: a.innerText?.trim().slice(0, 120) || '',
         href: a.href,
       })),
+      inputs: Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"],[role="textbox"]')).slice(0, 50).map((el) => {
+        const isCE = el.getAttribute('contenteditable') === 'true' || el.isContentEditable;
+        const selector = el.id ? `#${el.id}` : el.getAttribute('aria-label') ? `[aria-label="${el.getAttribute('aria-label')}"]` : el.getAttribute('placeholder') ? `[placeholder="${el.getAttribute('placeholder')}"]` : el.getAttribute('data-tab') ? `${isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase()}[data-tab="${el.getAttribute('data-tab')}"]` : isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase();
+        return {
+          role: el.getAttribute('role') || (isCE ? 'textbox' : el.tagName.toLowerCase()),
+          placeholder: el.getAttribute('placeholder') || '',
+          ariaLabel: el.getAttribute('aria-label') || '',
+          selector,
+        };
+      }),
     }));
   }
 

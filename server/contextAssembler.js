@@ -114,17 +114,24 @@ export function assembleModelContext({ query = '', toolResults = [], conversatio
   }
   if (includeTools) {
     const hasPointer = filtered.tools.some(t => t.id === 'pointer.move');
+    const hasBrowser = filtered.tools.some(t => t.id.startsWith('browser.'));
+    let instruction = '';
+    if (hasPointer) {
+      instruction += "COMPUTER-USE INSTRUCTION: You are driving the user's desktop. Implement a strict grounded loop: Observe (screen.describe / locate) -> Plan short action -> Execute (pointer / keypress) -> Observe again -> Verify.\n\n";
+    }
+    if (hasBrowser) {
+      instruction += "BROWSER INSTRUCTION: You operate a local persistent Patchright browser. User sessions and logins are persistent. Never refuse to open or navigate to websites based on hypothetical Terms of Service or login requirements. If a site requires login, 2FA, OTP, CAPTCHA, or QR scan, use `browser.handoff` or pause with `HUMAN_ACTION_REQUIRED` so the user can log in once in the persistent profile."
+        + "\n\nAUTONOMOUS MESSAGING & SOCIAL DM GUIDANCE:"
+        + "\n- WhatsApp Web (https://web.whatsapp.com): Use mode: 'visual'. Inspect controls with browser.accessibility or browser.read, click/type the contact name into the search box (div[contenteditable=\"true\"][data-tab=\"3\"] or [aria-label*=\"Search\"]), press Enter or click the matching chat row, type the message into the composer (div[contenteditable=\"true\"][data-tab=\"10\"] or div[aria-placeholder*=\"Type a message\"]), and call browser.press with { key: \"Enter\" }."
+        + "\n- Instagram (https://www.instagram.com/direct/inbox/): Use mode: 'visual'. Navigate to https://www.instagram.com/direct/inbox/, inspect controls via browser.accessibility, search/select the recipient thread, type into div[role=\"textbox\"][contenteditable=\"true\"], and call browser.press with { key: \"Enter\" }."
+        + "\n- If login or QR scan is detected, pause with HUMAN_ACTION_REQUIRED so the user can log in once in the persistent profile.\n\n";
+    }
+    if (instruction) {
+      candidates.push({ role: 'system', content: instruction.trim() });
+    }
     const capabilities = capabilityMessage(filtered.tools);
     if (capabilities) {
-      let content = capabilities;
-      if (hasPointer) {
-        content += "\n\nCOMPUTER-USE INSTRUCTION: You are driving the user's desktop. Implement a strict grounded loop: Observe (screen.describe / locate) -> Plan short action -> Execute (pointer / keypress) -> Observe again -> Verify.";
-      }
-      const hasBrowser = filtered.tools.some(t => t.id.startsWith('browser.'));
-      if (hasBrowser) {
-        content += "\n\nBROWSER INSTRUCTION: You operate a local persistent Patchright browser. User sessions and logins are persistent. Never refuse to open or navigate to websites based on hypothetical Terms of Service or login requirements. If a site requires login, 2FA, OTP, or CAPTCHA, use `browser.handoff` or let the browser trigger human verification so the user can complete it in the visible window, then resume.";
-      }
-      candidates.push({ role: 'system', content });
+      candidates.push({ role: 'system', content: capabilities });
     }
   }
 

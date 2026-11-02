@@ -93,14 +93,14 @@ test('AC2: parseWhatsAppRequest extracts recipient and message cleanly', () => {
   assert.deepEqual(r6, { recipient: 'David', message: '' });
 });
 
-test('AC2: routeRequest deterministically routes WhatsApp messages to browser.handoff', () => {
+test('AC2 & AC3: routeRequest routes WhatsApp message requests to MODEL tool loop', () => {
   const route = routeRequest('message John on whatsapp saying hey');
-  assert.equal(route.route, 'TOOL_CALL');
-  assert.equal(route.capability, 'browser.handoff');
-  assert.equal(route.args.url, 'https://web.whatsapp.com');
-  assert.equal(route.args.recipient, 'John');
-  assert.equal(route.args.message, 'hey');
-  assert.equal(route.args.isWhatsAppMessage, true);
+  assert.equal(route.route, 'MODEL');
+
+  const classification = classifyForModel('message John on whatsapp saying hey');
+  assert.equal(classification.taskType, 'computer_use');
+  assert.equal(classification.requiresTools, true);
+  assert.equal(classification.primaryModel, 'minimax-m3');
 });
 
 test('AC3: routeRequest matches "open <site> on/in <browser>" and launches specified browser with URL argument', () => {

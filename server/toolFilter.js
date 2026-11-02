@@ -9,6 +9,7 @@ const CORE_TOOLS = new Set([
   'diagnostics',
   'browser.navigate',
   'browser.open',
+  'browser.press',
   'browser.handoff',
   'apps.open'
 ]);
@@ -56,7 +57,7 @@ function domainKeywords(query) {
   if (/\b(window|windows|workspace|desktop|focus|minimize|maximize)\b/i.test(q)) domains.push('windows.');
   if (/\b(reminder|reminders|timer|timers|alarm|alarms|snooze)\b/i.test(q)) domains.push('reminders.');
   if (/\b(task|tasks|todo|to-do)\b/i.test(q)) domains.push('tasks.');
-  if (/\b(browser|web|url|website|browse|navigate)\b/i.test(q)) domains.push('browser.');
+  if (/\b(browser|web|url|website|browse|navigate|whatsapp|instagram|dm|inbox)\b/i.test(q)) domains.push('browser.');
   return domains;
 }
 

@@ -27,6 +27,7 @@ function approvalSummary(toolId, args, tool) {
   if (toolId === 'command.execute') return `Run exact command: ${args.command}`;
   if (toolId === 'messages.send') return `Send to ${args.recipient || args.destination || 'unspecified recipient'}: ${args.text || args.message}`;
   if (toolId === 'mcp.call') return `Call ${args.server}.${args.tool}`;
+  if (toolId === 'browser.press') return `Press ${args.key} in browser${args.selector ? ` on ${args.selector}` : ''}`;
   if (toolId === 'calendar.create') {
     const summary = args.summary || args.title || 'New Event';
     const time = args.startTime || args.start || 'unspecified time';

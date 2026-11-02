@@ -20,8 +20,12 @@ test('Voice Acknowledgement', async (t) => {
   await t.test('fires when source=voice and tools are required', async () => {
     globalThis.fetch = async (url, options) => {
       // Simulate a slow LLM call
-      if (url.includes('/api/chat') === false) {
-         await new Promise(r => setTimeout(r, 20));
+      if (!url.toString().includes('8802')) {
+        await new Promise(r => setTimeout(r, 20));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: 'Simulated LLM response' } }],
+          usage: { total_tokens: 10 }
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       return originalFetch(url, options);
     };
@@ -36,15 +40,19 @@ test('Voice Acknowledgement', async (t) => {
       body: JSON.stringify({ message: 'use tools to find the time', source: 'voice' })
     });
     
-    const text = await response.text(); console.log(text);
+    const text = await response.text();
     globalThis.fetch = originalFetch;
     assert.ok(text.includes('Let me look into that...'), 'Should contain voice acknowledgement');
   });
 
   await t.test('does not fire when source is not voice', async () => {
     globalThis.fetch = async (url, options) => {
-      if (url.includes('/api/chat') === false) {
-         await new Promise(r => setTimeout(r, 20));
+      if (!url.toString().includes('8802')) {
+        await new Promise(r => setTimeout(r, 20));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: 'Simulated LLM response' } }],
+          usage: { total_tokens: 10 }
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       return originalFetch(url, options);
     };

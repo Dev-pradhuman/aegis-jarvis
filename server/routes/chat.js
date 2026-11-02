@@ -514,26 +514,6 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, runId: run.id, route, action: data?.action ? data : null, media: data?.media || null });
         }
 
-        const waIntent = parseWhatsAppRequest(text) || (/\bwhatsapp\b/i.test(text) && /\b(message|text|dm|send)\b/i.test(text));
-        if (waIntent) {
-          const waDetails = typeof waIntent === 'object' ? waIntent : parseWhatsAppRequest(text);
-          const who = waDetails?.recipient ? ` to ${waDetails.recipient}` : '';
-          try {
-            await browserManager.handoff('https://web.whatsapp.com');
-          } catch {}
-          const reply = `Direct WhatsApp API sending is not connected. I have opened WhatsApp Web for you so you can send your message${who} directly.`;
-          const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null });
-          run.origin = 'chat';
-          transitionRun(run, 'running');
-          finishRun(run, { action: 'browser.handoff', url: 'https://web.whatsapp.com', recipient: waDetails?.recipient || null }, { total: 0 });
-          await updateState((draft) => {
-            draft.conversations ??= [];
-            draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply] });
-            return draft;
-          });
-          return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, runId: run.id, action: { action: 'browser.handoff', url: 'https://web.whatsapp.com' } });
-        }
-
         const run = await beginRun(state, { request: text, type: 'chat', conversationId: input.conversationId || null });
         transitionRun(run, 'running');
         const taskIntent = /^(create|add|remember)\s+(a\s+)?task\b/i.test(text);

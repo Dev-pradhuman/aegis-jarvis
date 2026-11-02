@@ -24,8 +24,10 @@ export async function executeModelToolLoop(options, dependencies = {}) {
   const calls = [];
   let usage = { tokens: 0, inputTokens: 0, outputTokens: 0, cost: 0 };
   const started = Date.now();
-  for (let step = 0; step < 4; step += 1) {
-    if (Date.now() - started > 60_000) throw Object.assign(new Error('Model tool loop timed out'), { code: 'TOOL_TIMEOUT' });
+  const maxSteps = options.maxSteps || 10;
+  const timeoutMs = options.timeoutMs || 120_000;
+  for (let step = 0; step < maxSteps; step += 1) {
+    if (Date.now() - started > timeoutMs) throw Object.assign(new Error('Model tool loop timed out'), { code: 'TOOL_TIMEOUT' });
     const result = await model({ ...options, context: [], messagesOverride: transcript, toolSpecs });
     for (const key of Object.keys(usage)) usage[key] += Number(result[key] || 0);
     if (!result.toolCalls?.length) return { ...result, ...usage, executedToolCalls: calls };
@@ -49,5 +51,5 @@ export async function executeModelToolLoop(options, dependencies = {}) {
       transcript.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(output) });
     }
   }
-  throw Object.assign(new Error('Model tool loop exceeded four steps'), { code: 'TOOL_LIMIT_EXCEEDED' });
+  throw Object.assign(new Error(`Model tool loop exceeded ${maxSteps} steps`), { code: 'TOOL_LIMIT_EXCEEDED' });
 }

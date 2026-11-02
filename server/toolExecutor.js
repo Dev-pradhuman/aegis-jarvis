@@ -97,7 +97,7 @@ async function inspectDirectory(root, relative = '.', depth = 0) {
 export const implementedToolIds = [
   'projects.status', 'models.list', 'research.plan', 'mcp.servers', 'mcp.call',
   'messages.send', 'browser.open', 'browser.navigate', 'browser.click', 'browser.type',
-  'browser.read', 'browser.content', 'browser.accessibility', 'browser.screenshot',
+  'browser.press', 'browser.read', 'browser.content', 'browser.accessibility', 'browser.screenshot',
   'browser.wait', 'browser.evaluate', 'browser.status', 'browser.handoff',
   'browser.resume', 'browser.close', 'apps.list', 'apps.open', 'project.inspect',
   'files.read', 'command.execute', 'composio.execute', 'tasks.list', 'tasks.manage',
@@ -291,7 +291,7 @@ async function runTool(toolId, input = {}, context = {}) {
   }
   if (toolId.startsWith('browser.')) {
     if (toolId === 'browser.status') return { ok: true, toolId, data: browserManager.getStatus() };
-    if (toolId === 'browser.evaluate') requireExactApproval(toolId, input, context.approval, context.runId);
+    if (toolId === 'browser.press' || toolId === 'browser.evaluate') requireExactApproval(toolId, input, context.approval, context.runId);
     if (toolId === 'browser.open') {
       const url = String(input.url || '').trim();
       if (!url) throw new Error('A valid URL is required for browser.open');
@@ -313,7 +313,8 @@ async function runTool(toolId, input = {}, context = {}) {
       'browser.open': () => openDesktopUrl(input.url),
       'browser.navigate': () => browserManager.navigate(input.url, { mode: input.mode }),
       'browser.click': () => browserManager.click(input.selector, { mode: input.mode }),
-      'browser.type': () => browserManager.type(input.selector, input.text),
+      'browser.type': () => browserManager.type(input.selector, input.text, { mode: input.mode }),
+      'browser.press': () => browserManager.press(input.key, input.selector, { mode: input.mode }),
       'browser.read': () => browserManager.read(),
       'browser.content': () => browserManager.getPageContent(),
       'browser.accessibility': () => browserManager.getAccessibilityTree(),

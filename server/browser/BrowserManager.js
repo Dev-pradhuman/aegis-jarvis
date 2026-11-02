@@ -5,7 +5,7 @@ export class BrowserError extends Error {
 }
 
 const VISUAL_ACTIONS = new Set(['screenshot']);
-const VALID_ACTIONS = new Set(['navigate', 'click', 'type', 'evaluate', 'read', 'content', 'accessibility', 'screenshot', 'waitFor']);
+const VALID_ACTIONS = new Set(['navigate', 'click', 'type', 'press', 'evaluate', 'read', 'content', 'accessibility', 'screenshot', 'waitFor']);
 
 function classify(error) {
   if (error instanceof BrowserError) return error.code;
@@ -175,6 +175,7 @@ export class BrowserManager {
     if (!VALID_ACTIONS.has(action)) throw new BrowserError('BROWSER_UNAVAILABLE', `Unsupported browser action: ${action}`);
     if (this.state === 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'Complete the verification in Firefox, then resume.');
     if (['click', 'type', 'waitFor'].includes(action) && (typeof args.selector !== 'string' || !args.selector.trim() || args.selector.length > 500)) throw new BrowserError('TARGET_NOT_FOUND', 'A CSS selector of 1 to 500 characters is required.');
+    if (action === 'press' && (typeof args.key !== 'string' || !args.key.trim() || args.key.length > 40)) throw new BrowserError('BROWSER_ACTION_FAILED', 'A valid key name of 1 to 40 characters is required.');
     if (action === 'type' && String(args.text ?? '').length > 10000) throw new BrowserError('BROWSER_ACTION_FAILED', 'Browser text exceeds the 10,000 character limit.');
     if (action === 'evaluate' && (typeof args.code !== 'string' || !args.code.trim() || args.code.length > 20000)) throw new BrowserError('BROWSER_ACTION_FAILED', 'JavaScript source must contain 1 to 20,000 characters.');
     if (action === 'navigate') {
@@ -197,6 +198,7 @@ export class BrowserManager {
       if (action === 'navigate') return this.engine.navigate(args.url);
       if (action === 'click') return this.engine.click(args.selector);
       if (action === 'type') return this.engine.type(args.selector, String(args.text ?? ''));
+      if (action === 'press') return this.engine.press(args.key, args.selector);
       if (action === 'evaluate') return this.engine.evaluate(args.code);
       if (action === 'waitFor') return this.engine.waitFor(args.selector, args.timeout);
       return this.engine[action]();
@@ -223,6 +225,7 @@ export class BrowserManager {
   navigate(url, options = {}) { return this.execute('navigate', { url, ...options }); }
   click(selector, options = {}) { return this.execute('click', { selector, ...options }); }
   type(selector, text, options = {}) { return this.execute('type', { selector, text, ...options }); }
+  press(key, selector, options = {}) { return this.execute('press', { key, selector, ...options }); }
   read() { return this.execute('read'); }
   getPageContent() { return this.execute('content'); }
   getAccessibilityTree() { return this.execute('accessibility'); }
