@@ -176,15 +176,16 @@ export default function TopBar() {
         <div className="tb-uptime-val mono">{formatUptime(telemetry.uptimeSeconds)}</div>
         <div className="tb-uptime-sub">DAYS &nbsp; HRS &nbsp; MINS &nbsp; SECS</div>
       </div>
-      <div className="tb-seg tb-execution-mode">
+      <div className="tb-seg tb-execution-mode topbar-right">
         <div className="eyebrow">Execution Mode</div>
         <button
           type="button"
           className={`execution-mode-btn ${activeMode === 'local' ? 'local' : 'cloud'}`}
           onClick={handleToggleMode}
           title="Toggle between Cloud API cascade and Local Ollama inference"
+          data-testid="execution-mode-toggle"
         >
-          {activeMode === 'local' ? '💻 Local (spark-x2.5 + moondream)' : '☁️ Cloud API'}
+          {activeMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
         </button>
       </div>
       <div className="tb-seg tb-core">

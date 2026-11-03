@@ -67,8 +67,13 @@ export function parseWhatsAppRequest(value) {
 
 export function cleanConversationalPrompt(text) {
   let value = String(text || '').trim();
-  // Strip conversational prefixes
-  value = value.replace(/^(?:(?:hey|yo|hi|ok|okay|hello)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?/i, '');
+  // Strip conversational prefixes and interjections
+  value = value.replace(/^(?:(?:hey|yo|hi|ok|okay|hello)\s+)?(?:jarvis[, ]+)?/i, '');
+  // Strip conversational preamble clauses (e.g. "my speakers are way too loud,", "it's too loud,", "it's too quiet,")
+  value = value.replace(/^(?:(?:my\s+)?(?:speakers?|audio|sound)\s+(?:are|is)\s+(?:way\s+)?too\s+(?:loud|quiet|high|low)[, ]*)/i, '');
+  value = value.replace(/^(?:(?:it(?:'s|\s+is))\s+(?:way\s+)?too\s+(?:loud|quiet|high|low)[, ]*)/i, '');
+  // Strip secondary modal politeness prefixes (e.g. "can you", "could you please")
+  value = value.replace(/^(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?/i, '');
   // Strip trailing punctuation
   value = value.replace(/[.!?]+$/, '').trim();
   // Strip conversational suffixes / fillers
@@ -187,9 +192,14 @@ export function routeRequest(text) {
   if (setVolume && Number(setVolume[1]) <= 100) return { route: 'TOOL_CALL', capability: 'audio.set_volume', args: { volume: Number(setVolume[1]) }, confidence: 0.99 };
   if (/^(?:mute|mute audio|mute volume)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };
   if (/^(?:unmute|unmute audio|unmute volume)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.unmute', args: {}, confidence: 0.99 };
-  const adjustVolume = value.match(/^(?:turn\s+(?:the\s+)?(?:system\s+)?)?volume\s+(up|down)(?:\s+by\s+(\d{1,2}))?\s*(?:percent|%)?$/i) ||
-    value.match(/^turn\s+(?:the\s+)?(?:system\s+)?volume\s+(up|down)(?:\s+by\s+(\d{1,2}))?\s*(?:percent|%)?$/i);
-  if (adjustVolume) return { route: 'TOOL_CALL', capability: `audio.volume_${adjustVolume[1].toLowerCase()}`, args: adjustVolume[2] ? { step: Math.min(25, Number(adjustVolume[2])) } : {}, confidence: 0.99 };
+  const adjustVolume = value.match(/(?:turn\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(?:turn\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(lower|drop|decrease|raise|increase|bump)\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume)(?:\s+(?:by\s+)?(\d{1,3}))?\s*(?:%|percent)?/i) ||
+    raw.match(/(?:turn\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(?:turn\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(lower|drop|decrease|raise|increase|bump)\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume)(?:\s+(?:by\s+)?(\d{1,3}))?\s*(?:%|percent)?/i);
+  if (adjustVolume) {
+    const rawDir = (adjustVolume[1] || adjustVolume[2] || adjustVolume[3] || '').toLowerCase();
+    const isDown = /down|lower|drop|decrease/.test(rawDir);
+    const step = adjustVolume[4] ? Math.min(100, Number(adjustVolume[4])) : 5;
+    return { route: 'TOOL_CALL', capability: isDown ? 'audio.volume_down' : 'audio.volume_up', args: { step }, confidence: 0.99 };
+  }
   if (/^(?:what(?:'s| is) (?:the |my )?(?:system )?volume|show (?:system )?volume|volume status|whats my (?:system )?volume)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
   const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?$/i);
   if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };

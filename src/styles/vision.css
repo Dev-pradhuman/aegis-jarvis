@@ -221,18 +221,3 @@
   border-color: rgba(255, 255, 255, 0.2);
   color: #cbd5e1;
 }
-
-.vision-btn-gear {
-  background: rgba(13, 20, 36, 0.8);
-  border: 1px solid var(--border-orange-soft);
-  color: var(--text-muted);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.vision-btn-gear:hover {
-  color: #fff;
-  border-color: var(--orange, #f97316);
-}

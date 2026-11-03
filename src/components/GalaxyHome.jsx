@@ -85,6 +85,40 @@ export default function GalaxyHome() {
   const [incomingCall, setIncomingCall] = useState(null);
   const [immersive, setImmersive] = useState(false);
   const [hudVisible, setHudVisible] = useState(false);
+  const [executionMode, setExecutionMode] = useState(() => telemetry?.modelRouting?.executionMode || 'cloud');
+
+  useEffect(() => {
+    if (telemetry?.modelRouting?.executionMode) {
+      setExecutionMode(telemetry.modelRouting.executionMode);
+    }
+  }, [telemetry?.modelRouting?.executionMode]);
+
+  useEffect(() => {
+    fetch('/api/models/routing')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.executionMode) setExecutionMode(data.executionMode);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleToggleMode = async () => {
+    const nextMode = executionMode === 'local' ? 'cloud' : 'local';
+    setExecutionMode(nextMode);
+    try {
+      const res = await fetch('/api/models/execution-mode', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: nextMode }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.executionMode) setExecutionMode(data.executionMode);
+      }
+    } catch (err) {
+      console.error('Failed to toggle execution mode:', err);
+    }
+  };
   useEffect(() => { let active = true; fetch('/api/brain').then((response) => response.ok ? response.json() : null).then((result) => { if (active && result?.setupRequired) manager.open('brain'); }).catch(() => {}); return () => { active = false; }; }, []);
   useEffect(() => pollWithBackoff(async (signal) => {
     const response = await fetch('/api/system/metrics', { signal });
@@ -131,7 +165,7 @@ export default function GalaxyHome() {
     <Scene phase={visual.phase} sceneRef={sceneRef} />
     <div className="galaxy-vignette" />
     <Navigation expanded={expanded} onToggle={() => setExpanded((value) => !value)} open={open} phase={visual.phase} active={manager.windows.filter((item) => !item.minimized).at(-1)?.id || 'home'} />
-    <div className="galaxy-topline"><div className="system-identity"><span className="identity-tick" /> SYSTEM ACCESS <span> / INTELLIGENCE</span></div><div className="topline-actions"><span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />{visual.serviceStatus}<button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera"><RotateCcw size={14} /></button><button onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep} title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'} aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}>{visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
+    <div className="galaxy-topline"><div className="system-identity"><span className="identity-tick" /> SYSTEM ACCESS <span> / INTELLIGENCE</span></div><div className="topline-actions topbar-right"><button type="button" data-testid="execution-mode-toggle" className={`execution-mode-btn ${executionMode === 'local' ? 'local' : 'cloud'}`} onClick={handleToggleMode} title="Toggle between Cloud API cascade and Local Ollama inference" aria-label="Toggle execution mode">{executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}</button><span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />{visual.serviceStatus}<button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera"><RotateCcw size={14} /></button><button onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep} title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'} aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}>{visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
     <button className="galaxy-fullscreen-toggle" onClick={() => void toggleImmersive()} aria-label={immersive ? 'Exit immersive Galaxy' : 'Enter immersive Galaxy'} title={immersive ? 'Exit immersive Galaxy (Esc)' : 'Enter immersive Galaxy (F)'}>{immersive ? <Shrink size={15} /> : <Expand size={15} />}</button>
     <section className="galaxy-left-card" aria-label="JARVIS activity"><div className="micro-label">SYSTEM ACTIVITY <span>{visual.backendOnline ? 'LIVE' : visual.serviceStatus}</span></div><div className="activity-primary"><strong>{visual.backendOnline && telemetry.online ? telemetry.usage?.requests ?? '—' : '—'}</strong><span>REQUESTS</span></div><div className="activity-sub">{!visual.backendOnline ? 'SERVICE UNAVAILABLE' : visual.activeRun ? `RUNNING · ${visual.activeRun.title || visual.activeRun.id}` : telemetry.modelRouting?.last?.actualModel || telemetry.provider?.model || 'MODEL UNAVAILABLE'}</div><div className="activity-line"><span>CORE STATE</span><b>{visual.phase.toUpperCase()}</b></div></section>
     <Telemetry metrics={visual.backendOnline ? metrics : null} telemetry={telemetry} status={visual.serviceStatus} open={open} />

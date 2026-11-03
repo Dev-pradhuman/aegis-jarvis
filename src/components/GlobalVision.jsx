@@ -142,37 +142,24 @@ export default function GlobalVision() {
 
   return (
     <>
-      <div className="vision-overlay-container" data-testid="vision-overlay">
-        <div className="vision-indicators">
-          {status.looking && (
-            <div className="vision-badge looking" data-testid="vision-looking-badge">
-              <span className="vision-pulse-dot"></span>
-              <span>LOOKING</span>
-            </div>
-          )}
-          {status.watching && (
-            <div className="vision-badge watching" data-testid="vision-watching-badge">
-              <span className="vision-pulse-dot"></span>
-              <span>WATCHING</span>
-            </div>
-          )}
-          {status.cloudLeft && (
-            <div className="vision-badge cloud" data-testid="vision-cloud-badge" style={{ backgroundColor: 'var(--red, #ef4444)', color: 'white' }}>
-              <span className="vision-pulse-dot"></span>
-              <span>CLOUD</span>
-            </div>
-          )}
-          <button
-            className="vision-btn-gear"
-            onClick={() => setShowSettings(true)}
-            title="Vision Settings"
-            data-testid="vision-settings-btn"
-          >
-            👁 VISION
-          </button>
-        </div>
+      {(status.looking || status.watching || status.lastCapture) && (
+        <div className="vision-overlay-container" data-testid="vision-overlay">
+          <div className="vision-indicators">
+            {status.looking && (
+              <div className="vision-badge looking" data-testid="vision-looking-badge">
+                <span className="vision-pulse-dot"></span>
+                <span>LOOKING</span>
+              </div>
+            )}
+            {status.watching && (
+              <div className="vision-badge watching" data-testid="vision-watching-badge">
+                <span className="vision-pulse-dot"></span>
+                <span>WATCHING</span>
+              </div>
+            )}
+          </div>
 
-        {status.lastCapture && (
+          {status.lastCapture && (
           <div className="vision-thumbnail-card" data-testid="vision-thumbnail-card">
             <button
               className="vision-thumbnail-close"
@@ -195,6 +182,7 @@ export default function GlobalVision() {
           </div>
         )}
       </div>
+      )}
 
       {showSettings && (
         <div className="vision-modal-backdrop" data-testid="vision-settings-modal">

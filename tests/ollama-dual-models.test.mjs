@@ -140,4 +140,35 @@ test('AC4: Conversational prefix and suffix stripping in router.js', () => {
   const proj = routeRequest('what files have changed in my git repo');
   assert.equal(proj.route, 'TOOL_CALL');
   assert.equal(proj.capability, 'projects.status');
+
+  // 8. "yo jarvis my speakers are way too loud, can you turn the volume down by 5 percent?" -> audio.volume_down (step: 5)
+  const volComplex = routeRequest('yo jarvis my speakers are way too loud, can you turn the volume down by 5 percent?');
+  assert.equal(volComplex.route, 'TOOL_CALL');
+  assert.equal(volComplex.capability, 'audio.volume_down');
+  assert.equal(volComplex.args.step, 5);
+});
+
+test('AC1 & AC2: Top-right execution mode switch and clean bottom-right corner', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Verify bottom-right floating CLOUD and VISION buttons removed from GlobalVision.jsx
+  const globalVisionSrc = fs.readFileSync(path.resolve('src/components/GlobalVision.jsx'), 'utf8');
+  assert.ok(!globalVisionSrc.includes('vision-btn-gear'), 'vision-btn-gear must be removed');
+  assert.ok(!globalVisionSrc.includes('data-testid="vision-settings-btn"'), 'vision-settings-btn must be removed');
+  assert.ok(!globalVisionSrc.includes('data-testid="vision-cloud-badge"'), 'vision-cloud-badge must be removed');
+
+  const visionCss = fs.readFileSync(path.resolve('src/styles/vision.css'), 'utf8');
+  assert.ok(!visionCss.includes('.vision-btn-gear'), '.vision-btn-gear must be removed from CSS');
+
+  // Verify GalaxyHome.jsx renders the Cloud/Local toggle visibly in .topbar-right
+  const galaxyHomeSrc = fs.readFileSync(path.resolve('src/components/GalaxyHome.jsx'), 'utf8');
+  assert.ok(galaxyHomeSrc.includes('topbar-right'), 'GalaxyHome must contain topbar-right');
+  assert.ok(galaxyHomeSrc.includes('execution-mode-btn'), 'GalaxyHome must render execution-mode-btn');
+  assert.ok(galaxyHomeSrc.includes("executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'"), 'GalaxyHome must render mode toggle label');
+
+  // Verify TopBar.jsx renders the Cloud/Local toggle in .topbar-right
+  const topBarSrc = fs.readFileSync(path.resolve('src/components/TopBar.jsx'), 'utf8');
+  assert.ok(topBarSrc.includes('topbar-right'), 'TopBar must contain topbar-right');
+  assert.ok(topBarSrc.includes('execution-mode-btn'), 'TopBar must render execution-mode-btn');
 });
