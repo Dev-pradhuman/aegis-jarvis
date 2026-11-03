@@ -17,19 +17,27 @@ function webResult(outcome, decision) {
   };
 }
 
+export function canUseLocalStage(decision = {}, { state = {}, catalog = brainCatalog } = {}) {
+  const isLocalMode = state?.modelRouting?.executionMode === 'local';
+  if (isLocalMode) return true;
+  if (process.env.JARVIS_TEST !== '1' && (process.env.DISABLE_LOCAL_MODELS === 'true' || state?.modelRouting?.disableLocalModels)) {
+    return false;
+  }
+  const hasLocalVision = decision.requiresVision && configuredPools(catalog)['perception']?.some((p) => (p.type === 'LOCAL' || p.type === 'CLI') && (p.modalities?.includes('image') || p.capabilities?.includes('image')));
+  if (decision.requiresVision && !hasLocalVision) return false;
+  if (decision.requiresWeb) return false;
+  if (decision.requiresStrongReasoning) return false;
+  return true;
+}
+
 export async function executeBrainWorkflow({ request, route, context = [], continuationState = null, state, attachments = [], allowFallback = true, execute, web = runWebAi }) {
   const decision = classifyExecutionTier(request, { attachments, settings: state?.modelRouting || {} });
   const attempts = [];
   const model = (sourceTier) => executeModelDelegation({ route, request, context, continuationState, state, attachments, allowFallback, sourceTier, execute });
+  const isLocalMode = state?.modelRouting?.executionMode === 'local';
+
   const runLocal = async () => {
-    if (process.env.JARVIS_TEST !== '1' && (process.env.DISABLE_LOCAL_MODELS === 'true' || state?.modelRouting?.disableLocalModels)) {
-      attempts.push({ tier: 'LOCAL_MODEL', code: 'LOCAL_MODELS_DISABLED' });
-      return null;
-    }
-    // A small text model cannot replace missing current sources, vision, or strong reasoning,
-    // unless a local/CLI provider with image capabilities is configured for perception.
-    const hasLocalVision = decision.requiresVision && configuredPools(brainCatalog)['perception']?.some((p) => (p.type === 'LOCAL' || p.type === 'CLI') && (p.modalities?.includes('image') || p.capabilities?.includes('image')));
-    if ((decision.requiresVision && !hasLocalVision) || decision.requiresWeb || decision.requiresStrongReasoning) {
+    if (!canUseLocalStage(decision, { state, catalog: brainCatalog })) {
       attempts.push({ tier: 'LOCAL_MODEL', code: 'MODEL_CAPABILITY_UNSUPPORTED' });
       return null;
     }
@@ -54,8 +62,17 @@ export async function executeBrainWorkflow({ request, route, context = [], conti
   };
   const runApi = async () => { try { const result = await model('api'); result.routingTelemetry.executionTier = 'ZERO_COST_API'; return result; } catch (error) { attempts.push({ tier: 'ZERO_COST_API', code: error.code }); return null; } };
 
+  if (isLocalMode) {
+    const result = await runLocal();
+    if (result) { result.routingTelemetry.tierAttempts = attempts; return { result, decision }; }
+    const error = new Error('Local Ollama models are unavailable');
+    error.code = 'LOCAL_MODEL_UNAVAILABLE';
+    error.attempts = attempts;
+    throw error;
+  }
+
   if (decision.preferredExecutionTier === 'MANUAL_SOURCE') return { result: await model('all'), decision };
-  const isCascade = state?.modelRouting?.routingWorkflow === 'cascade';
+  const isCascade = state?.modelRouting?.executionMode === 'cloud' || state?.modelRouting?.routingWorkflow === 'cascade';
   const sequence = isCascade
     ? [runApi, runLocal, runWeb]
     : decision.preferredExecutionTier === 'LOCAL_MODEL'

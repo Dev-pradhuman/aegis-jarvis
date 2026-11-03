@@ -65,9 +65,32 @@ export function parseWhatsAppRequest(value) {
   return null;
 }
 
+export function cleanConversationalPrompt(text) {
+  let value = String(text || '').trim();
+  // Strip conversational prefixes
+  value = value.replace(/^(?:(?:hey|yo|hi|ok|okay|hello)\s+)?(?:jarvis[, ]+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?(?:(?:please|pls)\s+)?/i, '');
+  // Strip trailing punctuation
+  value = value.replace(/[.!?]+$/, '').trim();
+  // Strip conversational suffixes / fillers
+  value = value.replace(/\s+(?:for\s+me|please|pls|right\s+now|now|real\s+quick|today)\s*$/i, '').trim();
+  value = value.replace(/[.!?]+$/, '').trim();
+  return value;
+}
+
 export function routeRequest(text) {
-  const value = String(text).trim();
-  const timerMatch = value.match(/^(?:jarvis[, ]+)?(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|timer\s+(?:for\s+)?|start\s+(?:a\s+)?(?:timer\s+for\s+)?)(\d{1,4})\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?:\s+(?:for|to|called)\s+(.{1,100}))?[.!]?$/i);
+  const raw = String(text).trim();
+  const value = cleanConversationalPrompt(raw);
+
+  // Natural screen activity and vision prompts
+  if (/^(?:what\s+am\s+i\s+(?:doing|working\s+on)|what(?:'s| is)\s+(?:on\s+)?(?:my\s+)?screen|look\s+at\s+(?:my\s+)?screen|check\s+(?:my\s+)?screen|inspect\s+(?:my\s+)?screen|describe\s+(?:my\s+)?screen)$/i.test(value)) {
+    return { route: 'TOOL_CALL', capability: 'screen.describe', args: { target: 'desktop' }, confidence: 0.99 };
+  }
+  if (/^(?:take\s+a\s+look\s+at|what(?:'s| is)\s+on|describe|inspect|look\s+at)\s+(?:the\s+|my\s+)?(?:current\s+|active\s+)?window$/i.test(value)) {
+    return { route: 'TOOL_CALL', capability: 'screen.describe', args: { target: 'window' }, confidence: 0.99 };
+  }
+
+  const timerMatch = value.match(/^(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|timer\s+(?:for\s+)?|start\s+(?:a\s+)?(?:timer\s+for\s+)?)(\d{1,4})\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?:\s+(?:for|to|called)\s+(.{1,100}))?$/i) ||
+    raw.match(/^(?:jarvis[, ]+)?(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|timer\s+(?:for\s+)?|start\s+(?:a\s+)?(?:timer\s+for\s+)?)(\d{1,4})\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?:\s+(?:for|to|called)\s+(.{1,100}))?[.!]?$/i);
   if (timerMatch) {
     const count = Number(timerMatch[1]);
     const unitStr = timerMatch[2].toLowerCase();
@@ -78,7 +101,8 @@ export function routeRequest(text) {
       return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title, dueAt: new Date(Date.now() + count * unit).toISOString(), category: 'timer' }, confidence: 0.99 };
     }
   }
-  const alarmMatch = value.match(/^(?:jarvis[, ]+)?(?:wake\s+me\s+up\s+at|set\s+(?:an?\s+)?alarm\s+(?:for|at))\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)[.!]?$/i);
+  const alarmMatch = value.match(/^(?:wake\s+me\s+up\s+at|set\s+(?:an?\s+)?alarm\s+(?:for|at))\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i) ||
+    raw.match(/^(?:jarvis[, ]+)?(?:wake\s+me\s+up\s+at|set\s+(?:an?\s+)?alarm\s+(?:for|at))\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)[.!]?$/i);
   if (alarmMatch) {
     const hour = Number(alarmMatch[1]), minute = Number(alarmMatch[2] || 0);
     if (hour >= 1 && hour <= 12 && minute <= 59) {
@@ -88,13 +112,15 @@ export function routeRequest(text) {
       return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: `Alarm (${hour}:${String(minute).padStart(2, '0')} ${alarmMatch[3].toUpperCase()})`, dueAt: due.toISOString(), category: 'alarm' }, confidence: 0.99 };
     }
   }
-  const relativeReminder = value.match(/^(?:jarvis[, ]+)?remind me in (\d{1,4}) (minutes?|hours?|days?)\s+(?:to|about)\s+(.{1,300})$/i);
+  const relativeReminder = value.match(/^remind me in (\d{1,4}) (minutes?|hours?|days?)\s+(?:to|about)\s+(.{1,300})$/i) ||
+    raw.match(/^(?:jarvis[, ]+)?remind me in (\d{1,4}) (minutes?|hours?|days?)\s+(?:to|about)\s+(.{1,300})$/i);
   if (relativeReminder) {
     const count = Number(relativeReminder[1]);
     const unit = relativeReminder[2].toLowerCase().startsWith('minute') ? 60_000 : relativeReminder[2].toLowerCase().startsWith('hour') ? 3_600_000 : 86_400_000;
     if (count > 0) return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: relativeReminder[3], dueAt: new Date(Date.now() + count * unit).toISOString(), category: 'reminder' }, confidence: 0.99 };
   }
-  const clockReminder = value.match(/^(?:jarvis[, ]+)?remind me at (\d{1,2})(?::(\d{2}))?\s*(am|pm)\s+(?:to|about)\s+(.{1,300})$/i);
+  const clockReminder = value.match(/^remind me at (\d{1,2})(?::(\d{2}))?\s*(am|pm)\s+(?:to|about)\s+(.{1,300})$/i) ||
+    raw.match(/^(?:jarvis[, ]+)?remind me at (\d{1,2})(?::(\d{2}))?\s*(am|pm)\s+(?:to|about)\s+(.{1,300})$/i);
   if (clockReminder) {
     const hour = Number(clockReminder[1]), minute = Number(clockReminder[2] || 0);
     if (hour >= 1 && hour <= 12 && minute <= 59) {
@@ -103,16 +129,18 @@ export function routeRequest(text) {
       return { route: 'TOOL_CALL', capability: 'reminders.create', args: { title: clockReminder[4], dueAt: due.toISOString(), category: 'reminder' }, confidence: 0.99 };
     }
   }
-  const snoozeMatch = value.match(/^(?:jarvis[, ]+)?snooze(?:\s+the)?\s+(?:reminder|alarm|timer)?(?:\s+(?:for\s+)?(\d{1,3})\s*(?:minutes?|mins?))?[.!]?$/i);
+  const snoozeMatch = value.match(/^snooze(?:\s+(?:the|that|this|my))?(?:\s+(?:reminder|alarm|timer))?(?:\s+(?:for\s+)?(\d{1,3})\s*(?:more\s+)?(?:minutes?|mins?))?$/i) ||
+    raw.match(/^(?:jarvis[, ]+)?snooze(?:\s+the)?(?:\s+(?:reminder|alarm|timer))?(?:\s+(?:for\s+)?(\d{1,3})\s*(?:minutes?|mins?))?[.!]?$/i);
   if (snoozeMatch) {
     const minutes = Number(snoozeMatch[1] || 10);
-    return { route: 'TOOL_CALL', capability: 'reminders.snooze', args: { snoozeMinutes: minutes }, confidence: 0.99 };
+    return { route: 'TOOL_CALL', capability: 'reminders.snooze', args: { snoozeMinutes: minutes, minutes }, confidence: 0.99 };
   }
-  const dismissMatch = value.match(/^(?:jarvis[, ]+)?(?:dismiss|stop|turn\s+off)(?:\s+(?:the\s+)?(?:ringing|current|due)?\s*(?:reminder|alarm|timer))[.!]?$/i);
+  const dismissMatch = value.match(/^(?:dismiss|stop|turn\s+off)(?:\s+(?:the|that|this|my)\s+)?(?:ringing|current|due)?\s*(?:reminder|alarm|timer)$/i) ||
+    raw.match(/^(?:jarvis[, ]+)?(?:dismiss|stop|turn\s+off)(?:\s+(?:the\s+)?(?:ringing|current|due)?\s*(?:reminder|alarm|timer))[.!]?$/i);
   if (dismissMatch) {
     return { route: 'TOOL_CALL', capability: 'reminders.complete', args: {}, confidence: 0.99 };
   }
-  if (/^(?:show|list|what are|get)\s+(?:all\s+)?(?:my\s+)?(?:active\s+|current\s+|pending\s+)?(?:reminders|alarms|timers)\??$/i.test(value) || /\b(?:what are my active reminders|active reminders|my reminders)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
+  if (/^(?:show|list|what are|get|check)\s+(?:all\s+)?(?:my\s+)?(?:active\s+|current\s+|pending\s+)?(?:reminders|alarms|timers)\??$/i.test(value) || /\b(?:what are my active reminders|active reminders|my reminders|what timers or reminders do i have running)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'reminders.list', args: {}, confidence: 0.99 };
   const calendarCreateMatch = value.match(/^(?:jarvis[, ]+)?(?:schedule|create|add)(?:\s+(?:a|an))?\s+(?:calendar\s+event|meeting|event|appointment)\s+(?:called\s+|titled\s+|for\s+|named\s+)?(.+?)\s+(?:at|on|for)\s+(.+?)[.!]?$/i) ||
     value.match(/^(?:jarvis[, ]+)?(?:add\s+to\s+(?:my\s+)?calendar)\s+(.+?)\s+(?:at|on|for)\s+(.+?)[.!]?$/i);
   if (calendarCreateMatch) {
@@ -155,19 +183,20 @@ export function routeRequest(text) {
   if (typeText && typeText[1].length <= 500) return { route: 'TOOL_CALL', capability: 'computer.type', args: { text: typeText[1] }, confidence: 1 };
   const pressKey = value.match(/^(?:jarvis[, ]+)?press\s+(?:(?:the\s+)?(?:key|keys)\s+)?([A-Za-z0-9+ ]{1,60})[.!]?$/i);
   if (pressKey) return { route: 'TOOL_CALL', capability: 'computer.keypress', args: { keys: pressKey[1].trim() }, confidence: 0.99 };
-  const setVolume = value.match(/^(?:set\s+(?:the\s+)?(?:system\s+)?volume\s+(?:to\s+)?|volume\s+)(\d{1,3})%?\s*[.!]?$/i);
+  const setVolume = value.match(/^(?:set\s+(?:the\s+)?(?:system\s+)?volume\s+(?:to\s+)?|volume\s+)(\d{1,3})%?$/i);
   if (setVolume && Number(setVolume[1]) <= 100) return { route: 'TOOL_CALL', capability: 'audio.set_volume', args: { volume: Number(setVolume[1]) }, confidence: 0.99 };
-  if (/^(?:mute|mute audio|mute volume)[.!]?$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };
-  if (/^(?:unmute|unmute audio|unmute volume)[.!]?$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.unmute', args: {}, confidence: 0.99 };
-  const adjustVolume = value.match(/^(?:turn\s+)?volume\s+(up|down)(?:\s+by\s+(\d{1,2}))?\s*[.!]?$/i);
+  if (/^(?:mute|mute audio|mute volume)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };
+  if (/^(?:unmute|unmute audio|unmute volume)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.unmute', args: {}, confidence: 0.99 };
+  const adjustVolume = value.match(/^(?:turn\s+(?:the\s+)?(?:system\s+)?)?volume\s+(up|down)(?:\s+by\s+(\d{1,2}))?\s*(?:percent|%)?$/i) ||
+    value.match(/^turn\s+(?:the\s+)?(?:system\s+)?volume\s+(up|down)(?:\s+by\s+(\d{1,2}))?\s*(?:percent|%)?$/i);
   if (adjustVolume) return { route: 'TOOL_CALL', capability: `audio.volume_${adjustVolume[1].toLowerCase()}`, args: adjustVolume[2] ? { step: Math.min(25, Number(adjustVolume[2])) } : {}, confidence: 0.99 };
-  if (/^(?:what(?:'s| is) (?:the )?(?:system )?volume|show (?:system )?volume|volume status)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
-  const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?\s*[.!]?$/i);
+  if (/^(?:what(?:'s| is) (?:the |my )?(?:system )?volume|show (?:system )?volume|volume status|whats my (?:system )?volume)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
+  const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?$/i);
   if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
   if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value) || /\b(?:what(?:'s| is) playing|what song is playing|media status|current song|playing right now|now playing)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };
   if (/^(?:which|what|list|show).{0,35}\bmodels?\b.{0,30}(?:available|configured|connected)?\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'models.list', args: {}, confidence: 0.99 };
   if (/\b(?:mcp servers?|connected mcp|mcp tools?)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'mcp.servers', args: {}, confidence: 0.99 };
-  if (/\b(?:project status|what changed in (?:the )?project|what is happening in (?:the )?project|status of (?:the )?project)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'projects.status', args: {}, confidence: 0.98 };
+  if (/\b(?:project status|what changed in (?:the )?project|what is happening in (?:the )?project|status of (?:the )?project|what files have changed in my git repo)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'projects.status', args: {}, confidence: 0.98 };
   const projectQuestion = value.match(/^(?:what(?:'s| is) happening in|what changed in|status of)\s+(.+?)\??$/i);
   if (projectQuestion) return { route: 'TOOL_CALL', capability: 'projects.status', args: { name: projectQuestion[1].replace(/\?$/, '').trim() }, confidence: 0.96 };
   const research = value.match(/^(?:please\s+)?research\s+(.+?)\??$/i);
@@ -188,9 +217,9 @@ export function routeRequest(text) {
   if (browserResume) {
     return { route: 'TOOL_CALL', capability: 'browser.resume', args: {}, confidence: 0.99 };
   }
-  const windowAction = value.match(/^(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
+  const windowAction = raw.match(/^(?:jarvis[, ]+)?(focus|minimize|maximize|restore|close)\s+(.{2,120})[.!]?$/i);
   if (windowAction) return { route: 'TOOL_CALL', capability: `windows.${windowAction[1].toLowerCase()}`, args: { target: { name: windowAction[2].trim() } }, confidence: 0.99 };
-  if (/\b(?:list|show|what are)\s+(?:all\s+)?(?:my\s+)?(?:open\s+)?(?:desktop\s+)?windows\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.list', args: {}, confidence: 0.99 };
+  if (/\b(?:list|show|what\s+are|check\s+what)\s+(?:all\s+)?(?:my\s+)?(?:open\s+)?(?:apps\s+and\s+windows|windows\s+and\s+apps|desktop\s+windows|windows)\b/i.test(value) || /\b(?:apps\s+and\s+windows\s+i\s+have\s+open|what\s+apps\s+and\s+windows)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.list', args: {}, confidence: 0.99 };
   if (/^(?:what(?:'s| is) (?:the )?active window|which window is active|what window am i (?:currently )?focused on)\??$/i.test(value) || /^(?:get|show|check) (?:the )?(?:active|focused|current) window\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'windows.get_active', args: {}, confidence: 0.99 };
 
   const conversationalSuffixRegex = /\s+(?:for\s+me|please|pls|right\s+now|now|real\s+quick)\s*[.!?]*$/i;

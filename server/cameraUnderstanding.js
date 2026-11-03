@@ -90,7 +90,7 @@ export async function describeCamera(input = {}, { fetchImpl = fetch } = {}) {
     });
 
     const { perceive } = await import('./perceptionProvider.js');
-    const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode });
+    const response = await perceive(prompt, buffer, { fetchImpl, testMode: input?.testMode, executionMode: input?.executionMode });
 
     let description = response.reply || '';
     if (isVoice) {

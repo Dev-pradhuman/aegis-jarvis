@@ -23,7 +23,7 @@ export function defaultMemoryProbe() {
 export class LocalOllamaMultimodalProvider {
   constructor(options = {}) {
     this.baseUrl = options.baseUrl || 'http://localhost:11434';
-    this.modelName = options.modelName || 'moondream';
+    this.modelName = options.modelName || process.env.OLLAMA_VISION_MODEL || 'moondream:latest';
     this.keepAlive = options.keepAlive || process.env.VISION_MODEL_KEEP_ALIVE || '30s';
     this.minFreeMemoryBytes = Number(options.minFreeMemoryBytes || process.env.VISION_MIN_FREE_MEMORY_BYTES || 1.5 * 1024 * 1024 * 1024);
     this.memoryProbe = options.memoryProbe || (process.env.JARVIS_TEST === '1'
@@ -160,7 +160,7 @@ export class CloudPerceptionProvider {
 let defaultLocalProvider = null;
 
 export async function perceive(prompt, imageBuffer, options = {}) {
-  const { fetchImpl = fetch, testMode = false } = options;
+  const { fetchImpl = fetch, testMode = false, executionMode } = options;
   const settings = getVisionSettings();
   
   if (testMode) {
@@ -168,10 +168,15 @@ export async function perceive(prompt, imageBuffer, options = {}) {
     return provider.generate(prompt, imageBuffer, fetchImpl);
   }
 
-  const useCloud = settings.cloudPerceptionEnabled || process.env.DISABLE_LOCAL_MODELS === 'true';
+  const isLocal = executionMode === 'local' || settings.executionMode === 'local';
+  const useCloud = !isLocal && (settings.cloudPerceptionEnabled || process.env.DISABLE_LOCAL_MODELS === 'true');
   if (useCloud) {
     const cloudProvider = new CloudPerceptionProvider(options);
-    return cloudProvider.generate(prompt, imageBuffer, fetchImpl);
+    try {
+      return await cloudProvider.generate(prompt, imageBuffer, fetchImpl);
+    } catch (cloudErr) {
+      // Fallback to local if cloud fails
+    }
   }
 
   let localProvider = (options.memoryProbe || options.minFreeMemoryBytes)
@@ -181,7 +186,7 @@ export async function perceive(prompt, imageBuffer, options = {}) {
   try {
     return await localProvider.generate(prompt, imageBuffer, fetchImpl);
   } catch (err) {
-    if (err.message?.includes('unreachable') || err.message?.includes('ECONNREFUSED') || err.code === 'ECONNREFUSED' || err.message?.includes('not installed') || err.message?.includes('Insufficient memory')) {
+    if (!useCloud && (err.message?.includes('unreachable') || err.message?.includes('ECONNREFUSED') || err.code === 'ECONNREFUSED' || err.message?.includes('not installed') || err.message?.includes('Insufficient memory'))) {
       try {
         const cloudProvider = new CloudPerceptionProvider(options);
         return await cloudProvider.generate(prompt, imageBuffer, fetchImpl);

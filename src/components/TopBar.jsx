@@ -76,9 +76,36 @@ export default function TopBar() {
   const provider = telemetry.provider || {};
   const usage = telemetry.usage || {};
   const routedModel = telemetry.modelRouting?.last?.actualModel || provider.model || null;
+  const currentMode = telemetry.modelRouting?.executionMode || 'cloud';
 
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [schedule, setSchedule] = useState(null);
+  const [localMode, setLocalMode] = useState(null);
+  const activeMode = localMode ?? currentMode;
+
+  useEffect(() => {
+    if (telemetry.modelRouting?.executionMode) {
+      setLocalMode(telemetry.modelRouting.executionMode);
+    }
+  }, [telemetry.modelRouting?.executionMode]);
+
+  const handleToggleMode = async () => {
+    const nextMode = activeMode === 'local' ? 'cloud' : 'local';
+    setLocalMode(nextMode);
+    try {
+      const res = await fetch('/api/models/execution-mode', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: nextMode })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLocalMode(data.executionMode || nextMode);
+      }
+    } catch (err) {
+      console.error('Failed to toggle execution mode:', err);
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -148,6 +175,17 @@ export default function TopBar() {
         <div className="eyebrow">Uptime</div>
         <div className="tb-uptime-val mono">{formatUptime(telemetry.uptimeSeconds)}</div>
         <div className="tb-uptime-sub">DAYS &nbsp; HRS &nbsp; MINS &nbsp; SECS</div>
+      </div>
+      <div className="tb-seg tb-execution-mode">
+        <div className="eyebrow">Execution Mode</div>
+        <button
+          type="button"
+          className={`execution-mode-btn ${activeMode === 'local' ? 'local' : 'cloud'}`}
+          onClick={handleToggleMode}
+          title="Toggle between Cloud API cascade and Local Ollama inference"
+        >
+          {activeMode === 'local' ? '💻 Local (spark-x2.5 + moondream)' : '☁️ Cloud API'}
+        </button>
       </div>
       <div className="tb-seg tb-core">
         <div className="eyebrow" style={{ textAlign: 'right' }}>

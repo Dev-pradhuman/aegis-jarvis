@@ -22,6 +22,19 @@ const DEFAULT_POOL_MODELS = {
 };
 const defaultPoolMap = () => Object.fromEntries(Object.entries(DEFAULT_POOL_MODELS).map(([logicalModel, args]) => [logicalModel, openRouterPool(...args)]));
 
+export const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'maternion/spark-x2.5-heretic:4b';
+export const DEFAULT_OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'moondream:latest';
+
+export const localOllamaPool = () => ({
+  'agent_brain': [{ id: 'ollama-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_MODEL, logicalModel: 'agent_brain', capabilities: ['text', 'tools', 'reasoning', 'code'], modalities: ['text'], priority: 0 }],
+  'deepseek-v4-flash': [{ id: 'ollama-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_MODEL, logicalModel: 'deepseek-v4-flash', capabilities: ['text', 'tools', 'reasoning', 'code'], modalities: ['text'], priority: 0 }],
+  'fallback': [{ id: 'ollama-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_MODEL, logicalModel: 'fallback', capabilities: ['text', 'tools', 'reasoning', 'code'], modalities: ['text'], priority: 0 }],
+  'laguna-s-2.1': [{ id: 'ollama-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_MODEL, logicalModel: 'laguna-s-2.1', capabilities: ['text', 'tools', 'reasoning', 'code'], modalities: ['text'], priority: 0 }],
+  'minimax-m3': [{ id: 'ollama-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_MODEL, logicalModel: 'minimax-m3', capabilities: ['text', 'tools', 'reasoning', 'code'], modalities: ['text'], priority: 0 }],
+  'perception': [{ id: 'ollama-vision-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_VISION_MODEL, logicalModel: 'perception', capabilities: ['text', 'image'], modalities: ['text', 'image'], priority: 0 }],
+  'mimo-v2.5': [{ id: 'ollama-vision-local', type: 'LOCAL', provider: 'ollama', presetId: 'ollama', baseUrl: 'http://127.0.0.1:11434', modelId: DEFAULT_OLLAMA_VISION_MODEL, logicalModel: 'mimo-v2.5', capabilities: ['text', 'image'], modalities: ['text', 'image'], priority: 0 }],
+});
+
 const inFlight = new Map();
 const retryable = new Set(['PROVIDER_ERROR', 'TEMPORARILY_UNAVAILABLE', 'NETWORK_ERROR', 'INVALID_RESPONSE']);
 
@@ -105,6 +118,35 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
     const anthropic = presetFor(provider.presetId)?.apiFormat === 'anthropic-messages';
     const ollama = provider.presetId === 'ollama';
     const system = messages.filter((item) => item.role === 'system').map((item) => item.content).filter((item) => typeof item === 'string').join('\n');
+    let ollamaMessages = messages;
+    let selectedModel = provider.modelId;
+    let hasImages = false;
+    if (ollama) {
+      ollamaMessages = messages.map((item) => {
+        if (typeof item.content === 'string') return item;
+        if (Array.isArray(item.content)) {
+          let text = '';
+          const images = [];
+          for (const part of item.content) {
+            if (typeof part === 'string') {
+              text += (text ? '\n' : '') + part;
+            } else if (part.type === 'text') {
+              text += (text ? '\n' : '') + (part.text || '');
+            } else if (part.type === 'image_url') {
+              const url = String(part.image_url?.url || '');
+              const b64 = url.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+              if (b64) images.push(b64);
+            }
+          }
+          if (images.length) hasImages = true;
+          return { role: item.role, content: text, ...(images.length ? { images } : {}) };
+        }
+        return item;
+      });
+      if (hasImages && (!provider.capabilities?.includes('image') || selectedModel === DEFAULT_OLLAMA_MODEL)) {
+        selectedModel = DEFAULT_OLLAMA_VISION_MODEL;
+      }
+    }
     const requestMessages = anthropic ? messages.filter((item) => item.role !== 'system').map((item) => {
       if (item.role === 'tool') return { role: 'user', content: [{ type: 'tool_result', tool_use_id: item.tool_call_id, content: String(item.content || '') }] };
       if (item.role === 'assistant' && item.tool_calls?.length) {
@@ -121,9 +163,22 @@ async function callProvider(provider, messages, fetchImpl, timeoutMs, toolSpecs 
     const maxTokens = Math.min(8192, Math.max(128, Number(process.env.MODEL_MAX_OUTPUT_TOKENS || 2048)));
     // Some installed Qwen templates prefill a thinking block even with think:false.
     // JSON-constrained final answers keep internal deliberation out of ordinary chat.
-    const structuredOllamaAnswer = ollama && !toolSpecs.length && messages.every((item) => typeof item.content === 'string');
+    const structuredOllamaAnswer = ollama && !hasImages && !toolSpecs.length && ollamaMessages.every((item) => typeof item.content === 'string');
     const stream = !!onToken && !toolSpecs.length;
-    const body = ollama ? { model: provider.modelId, messages: [{ role: 'system', content: '/no_think\nReturn only the final answer.' }, ...messages], stream, think: false, options: { num_predict: Math.min(512, maxTokens) }, ...(structuredOllamaAnswer ? { format: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false } } : {}), ...(toolSpecs.length ? { tools: toolSpecs } : {}) } : anthropic ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, stream, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) } : { model: provider.modelId, messages, max_tokens: maxTokens, stream, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
+    const ollamaSystemHeader = hasImages ? [] : [{ role: 'system', content: '/no_think\nReturn only the final answer.' }];
+    const body = ollama
+      ? {
+          model: selectedModel,
+          messages: [...ollamaSystemHeader, ...ollamaMessages],
+          stream,
+          think: false,
+          options: { num_predict: Math.min(512, maxTokens) },
+          ...(structuredOllamaAnswer ? { format: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false } } : {}),
+          ...(toolSpecs.length ? { tools: toolSpecs } : {})
+        }
+      : anthropic
+        ? { model: provider.modelId, max_tokens: maxTokens, messages: requestMessages, stream, ...(system ? { system } : {}), ...(toolSpecs.length ? { tools: toolSpecs.map((item) => ({ name: item.function.name, description: item.function.description || '', input_schema: item.function.parameters || { type: 'object' } })) } : {}) }
+        : { model: provider.modelId, messages, max_tokens: maxTokens, stream, ...(toolSpecs.length ? { tools: toolSpecs, tool_choice: 'auto' } : {}) };
     const endpoint = ollama ? `${new URL(provider.baseUrl).origin}/api/chat` : `${provider.baseUrl.replace(/\/$/, '')}${anthropic ? '/messages' : '/chat/completions'}`;
     const response = await fetchImpl(endpoint, {
       method: 'POST',

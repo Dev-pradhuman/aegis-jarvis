@@ -91,8 +91,36 @@ export default async function brainRoutes(req, res, url, state, ctx) {
     if (req.method === 'GET' && url.pathname === '/api/brain/sources') return json(res, 200, { sources: brainCatalog.list(state.modelRouting?.providerHealth) });
     if (req.method === 'POST' && url.pathname === '/api/brain/sources') { const source = brainCatalog.addSource(await body(req)); return json(res, 201, { source }); }
     if (req.method === 'GET' && url.pathname === '/api/provider') return json(res, 200, { provider: publicProvider(state.provider) });
-    if (req.method === 'GET' && url.pathname === '/api/model-routing') return json(res, 200, { settings: { jarvisMode: state.modelRouting?.jarvisMode || 'normal', modelMode: state.modelRouting?.modelMode || 'auto', manualModel: state.modelRouting?.manualModel || 'agent_brain', manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false, dataPolicy: state.modelRouting?.dataPolicy || 'auto', routingWorkflow: state.modelRouting?.routingWorkflow || 'cascade' }, models: modelRegistry(), providerPools: publicPools(), providerHealth: state.modelRouting?.providerHealth || {}, recentTelemetry: (state.modelRouting?.telemetry || []).slice(0, 25), debug: process.env.JARVIS_ROUTER_DEBUG === 'true' });
-    if (req.method === 'PATCH' && url.pathname === '/api/model-routing') { const input = await body(req); const updated = await updateState((draft) => { draft.modelRouting ??= {}; if (['normal', 'coding', 'deepthinking'].includes(input.jarvisMode)) draft.modelRouting.jarvisMode = input.jarvisMode; if (['auto', 'manual'].includes(input.modelMode)) draft.modelRouting.modelMode = input.modelMode; if (modelRegistry()[input.manualModel]) draft.modelRouting.manualModel = input.manualModel; if (typeof input.manualFallbackAllowed === 'boolean') draft.modelRouting.manualFallbackAllowed = input.manualFallbackAllowed; if (input.lockedSourceId === null || brainCatalog.list().some((source) => source.id === input.lockedSourceId)) draft.modelRouting.lockedSourceId = input.lockedSourceId; if (['local', 'cloud', 'auto'].includes(input.dataPolicy)) draft.modelRouting.dataPolicy = input.dataPolicy; if (['cascade', 'local-first', 'web-first'].includes(input.routingWorkflow)) draft.modelRouting.routingWorkflow = input.routingWorkflow; return draft; }); return json(res, 200, { settings: updated.modelRouting }); }
+    if (req.method === 'POST' && url.pathname === '/api/models/execution-mode') {
+      const input = await body(req);
+      const mode = input.mode === 'local' ? 'local' : 'cloud';
+      const updated = await updateState((draft) => {
+        draft.modelRouting ??= {};
+        draft.modelRouting.executionMode = mode;
+        return draft;
+      });
+      return json(res, 200, { ok: true, executionMode: mode, settings: updated.modelRouting });
+    }
+    if (req.method === 'GET' && (url.pathname === '/api/models/routing' || url.pathname === '/api/model-routing')) {
+      return json(res, 200, {
+        executionMode: state.modelRouting?.executionMode || 'cloud',
+        settings: {
+          executionMode: state.modelRouting?.executionMode || 'cloud',
+          jarvisMode: state.modelRouting?.jarvisMode || 'normal',
+          modelMode: state.modelRouting?.modelMode || 'auto',
+          manualModel: state.modelRouting?.manualModel || 'agent_brain',
+          manualFallbackAllowed: state.modelRouting?.manualFallbackAllowed !== false,
+          dataPolicy: state.modelRouting?.dataPolicy || 'auto',
+          routingWorkflow: state.modelRouting?.routingWorkflow || 'cascade'
+        },
+        models: modelRegistry(),
+        providerPools: publicPools(),
+        providerHealth: state.modelRouting?.providerHealth || {},
+        recentTelemetry: (state.modelRouting?.telemetry || []).slice(0, 25),
+        debug: process.env.JARVIS_ROUTER_DEBUG === 'true'
+      });
+    }
+    if (req.method === 'PATCH' && (url.pathname === '/api/models/routing' || url.pathname === '/api/model-routing')) { const input = await body(req); const updated = await updateState((draft) => { draft.modelRouting ??= {}; if (['cloud', 'local'].includes(input.executionMode)) draft.modelRouting.executionMode = input.executionMode; if (['normal', 'coding', 'deepthinking'].includes(input.jarvisMode)) draft.modelRouting.jarvisMode = input.jarvisMode; if (['auto', 'manual'].includes(input.modelMode)) draft.modelRouting.modelMode = input.modelMode; if (modelRegistry()[input.manualModel]) draft.modelRouting.manualModel = input.manualModel; if (typeof input.manualFallbackAllowed === 'boolean') draft.modelRouting.manualFallbackAllowed = input.manualFallbackAllowed; if (input.lockedSourceId === null || brainCatalog.list().some((source) => source.id === input.lockedSourceId)) draft.modelRouting.lockedSourceId = input.lockedSourceId; if (['local', 'cloud', 'auto'].includes(input.dataPolicy)) draft.modelRouting.dataPolicy = input.dataPolicy; if (['cascade', 'local-first', 'web-first'].includes(input.routingWorkflow)) draft.modelRouting.routingWorkflow = input.routingWorkflow; return draft; }); return json(res, 200, { ok: true, executionMode: updated.modelRouting.executionMode || 'cloud', settings: updated.modelRouting }); }
     if (req.method === 'GET' && url.pathname === '/api/provider/models') {
         const provider = state.provider || {};
         if (!provider.baseUrl) return json(res, 400, { error: 'Provider base URL is not configured' });
