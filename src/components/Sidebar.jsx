@@ -2,16 +2,10 @@ import Icon from './Icon.jsx';
 import '../styles/sidebar.css';
 
 export const NAV_ITEMS = [
-  { id: 'overview', label: 'Overview', icon: 'overview' },
-  { id: 'chat', label: 'Chat', icon: 'chat' },
-  { id: 'brain', label: 'Brain', icon: 'brain' },
+  { id: 'overview', label: 'Home', icon: 'overview' },
   { id: 'tasks', label: 'Tasks', icon: 'tasks' },
-  { id: 'approvals', label: 'Approvals', icon: 'approvals' },
-  { id: 'connections', label: 'Connections', icon: 'connections' },
-  { id: 'workflows', label: 'Workflows', icon: 'workflows' },
-  { id: 'goals', label: 'Goals', icon: 'goals' },
-  { id: 'agents', label: 'Agents', icon: 'agents' },
-  { id: 'skills', label: 'Skills', icon: 'skills' },
+  { id: 'memory', label: 'Memory', icon: 'database' },
+  { id: 'activity', label: 'Activity', icon: 'activity' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ];
 

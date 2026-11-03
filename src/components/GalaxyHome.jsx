@@ -1,23 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, AudioLines, Bell, Bot, BrainCircuit, ChevronRight, Database, Expand, FlaskConical, FolderKanban, Globe2, Home, ListTodo, MemoryStick, MessageCircle, Moon, PanelLeftClose, PanelLeftOpen, Phone, PlugZap, Radio, RotateCcw, Settings2, ShieldCheck, Shrink, Sparkles, Sun, Workflow, Wrench } from 'lucide-react';
+import {
+  Activity,
+  AudioLines,
+  BrainCircuit,
+  ChevronRight,
+  Database,
+  Expand,
+  Globe2,
+  Home,
+  ListTodo,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RotateCcw,
+  Settings2,
+  Shrink,
+  Sun,
+  X,
+} from 'lucide-react';
 import useTelemetry from '../hooks/useTelemetry.js';
 import { pollWithBackoff } from '../hooks/pollWithBackoff.js';
 import useVisualState from '../galaxy/useVisualState.js';
 import useWindowManager from '../galaxy/WindowManager.jsx';
+import Chat from './Chat.jsx';
+import {
+  TasksWorkspace,
+  MemoryWorkspace,
+  ActivityWorkspace,
+  SettingsWorkspaceCombined,
+} from './WorkspaceViews.jsx';
 import '../styles/galaxy-home.css';
 import '../styles/galaxy-immersive.css';
 
 const NAV = [
-  { id: 'home', label: 'Home', icon: Home }, { id: 'chat', label: 'Chat', icon: MessageCircle },
-  { id: 'brain', label: 'Brain', icon: BrainCircuit },
-  { id: 'tasks', label: 'Tasks', icon: ListTodo }, { id: 'reminders', label: 'Reminders', icon: Bell }, { id: 'runs', label: 'Runs', icon: Activity },
-  { id: 'workflows', label: 'Workflows', icon: Workflow }, { id: 'memory', label: 'Memory', icon: Database },
-  { id: 'browser', label: 'Browser', icon: Globe2 },
-  { id: 'approvals', label: 'Approvals', icon: ShieldCheck }, { id: 'agents', label: 'Agents', icon: Bot },
-  { id: 'mcp', label: 'MCP & tools', icon: Wrench }, { id: 'research', label: 'Research', icon: FlaskConical },
-  { id: 'projects', label: 'Projects', icon: FolderKanban }, { id: 'media', label: 'Media', icon: Sparkles },
-  { id: 'integrations', label: 'Integrations', icon: PlugZap }, { id: 'phone', label: 'Phone', icon: Phone },
-  { id: 'messaging', label: 'Messaging', icon: Radio }, { id: 'system', label: 'System', icon: MemoryStick },
+  { id: 'home', label: 'Home', icon: Home },
+  { id: 'tasks', label: 'Tasks', icon: ListTodo },
+  { id: 'memory', label: 'Memory', icon: Database },
+  { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ];
 
@@ -81,6 +100,7 @@ export default function GalaxyHome() {
   const homeRef = useRef(null);
   const hideHudTimer = useRef(null);
   const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('home');
   const [metrics, setMetrics] = useState(null);
   const [incomingCall, setIncomingCall] = useState(null);
   const [immersive, setImmersive] = useState(false);
@@ -143,8 +163,32 @@ export default function GalaxyHome() {
     else if (homeRef.current?.requestFullscreen) await homeRef.current.requestFullscreen().catch(() => {});
   };
   useEffect(() => {
+    const handleNav = (e) => {
+      const target = e.detail?.id || e.detail?.view;
+      if (target) open(target);
+    };
+    window.addEventListener('jarvis:navigate', handleNav);
+    window.addEventListener('jarvis:open-window', handleNav);
+    return () => {
+      window.removeEventListener('jarvis:navigate', handleNav);
+      window.removeEventListener('jarvis:open-window', handleNav);
+    };
+  }, []);
+
+  useEffect(() => {
     const onKey = (event) => {
-      if (event.key === 'Escape' && document.fullscreenElement === homeRef.current) { event.preventDefault(); void document.exitFullscreen(); return; }
+      if (event.key === 'Escape') {
+        if (activeTab !== 'home') {
+          event.preventDefault();
+          setActiveTab('home');
+          return;
+        }
+        if (document.fullscreenElement === homeRef.current) {
+          event.preventDefault();
+          void document.exitFullscreen();
+          return;
+        }
+      }
       if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable) return;
       const ownsNavigation = document.activeElement === sceneRef.current?.canvas || document.fullscreenElement === homeRef.current && document.activeElement === homeRef.current;
       if (!ownsNavigation) return;
@@ -153,28 +197,87 @@ export default function GalaxyHome() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [activeTab]);
+
   const open = (id) => {
     if (visual.phase === 'sleeping') visual.wake();
     if (immersive) void document.exitFullscreen();
-    if (id === 'home') { manager.closeAll(); setExpanded(false); return; }
+    if (id === 'home') {
+      setActiveTab('home');
+      manager.closeAll();
+      setExpanded(false);
+      return;
+    }
+    const tabMap = {
+      tasks: 'tasks',
+      reminders: 'tasks',
+      memory: 'memory',
+      activity: 'activity',
+      runs: 'activity',
+      approvals: 'activity',
+      browser: 'activity',
+      settings: 'settings',
+      brain: 'settings',
+      integrations: 'settings',
+      mcp: 'settings',
+      system: 'settings',
+    };
+    if (tabMap[id]) {
+      setActiveTab(tabMap[id]);
+      manager.closeAll();
+      setExpanded(false);
+      return;
+    }
     manager.open(id);
     setExpanded(false);
   };
+
   return <main ref={homeRef} className={`galaxy-home phase-${visual.phase}${immersive ? ' is-immersive' : ''}${hudVisible ? ' show-immersive-hud' : ''}`} data-phase={visual.phase} onPointerMove={(event) => { if (immersive && (event.clientX < 75 || event.clientY > window.innerHeight - 70)) revealHud(); }}>
     <Scene phase={visual.phase} sceneRef={sceneRef} />
     <div className="galaxy-vignette" />
-    <Navigation expanded={expanded} onToggle={() => setExpanded((value) => !value)} open={open} phase={visual.phase} active={manager.windows.filter((item) => !item.minimized).at(-1)?.id || 'home'} />
+    <Navigation expanded={expanded} onToggle={() => setExpanded((value) => !value)} open={open} phase={visual.phase} active={activeTab} />
     <div className="galaxy-topline"><div className="system-identity"><span className="identity-tick" /> SYSTEM ACCESS <span> / INTELLIGENCE</span></div><div className="topline-actions topbar-right"><button type="button" data-testid="execution-mode-toggle" className={`execution-mode-btn ${executionMode === 'local' ? 'local' : 'cloud'}`} onClick={handleToggleMode} title="Toggle between Cloud API cascade and Local Ollama inference" aria-label="Toggle execution mode">{executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}</button><span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />{visual.serviceStatus}<button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera"><RotateCcw size={14} /></button><button onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep} title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'} aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}>{visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
     <button className="galaxy-fullscreen-toggle" onClick={() => void toggleImmersive()} aria-label={immersive ? 'Exit immersive Galaxy' : 'Enter immersive Galaxy'} title={immersive ? 'Exit immersive Galaxy (Esc)' : 'Enter immersive Galaxy (F)'}>{immersive ? <Shrink size={15} /> : <Expand size={15} />}</button>
-    <section className="galaxy-left-card" aria-label="JARVIS activity"><div className="micro-label">SYSTEM ACTIVITY <span>{visual.backendOnline ? 'LIVE' : visual.serviceStatus}</span></div><div className="activity-primary"><strong>{visual.backendOnline && telemetry.online ? telemetry.usage?.requests ?? '—' : '—'}</strong><span>REQUESTS</span></div><div className="activity-sub">{!visual.backendOnline ? 'SERVICE UNAVAILABLE' : visual.activeRun ? `RUNNING · ${visual.activeRun.title || visual.activeRun.id}` : telemetry.modelRouting?.last?.actualModel || telemetry.provider?.model || 'MODEL UNAVAILABLE'}</div><div className="activity-line"><span>CORE STATE</span><b>{visual.phase.toUpperCase()}</b></div></section>
-    <Telemetry metrics={visual.backendOnline ? metrics : null} telemetry={telemetry} status={visual.serviceStatus} open={open} />
-    {visual.activeRun && <div className="galaxy-task-cards"><button onClick={() => open('runs')}><span>{visual.activeRun.title || visual.activeRun.id}</span><small>{visual.activeRun.status}</small></button></div>}
-    {visual.browserStatus?.engine && <button className="galaxy-browser-chip" onClick={() => open('browser')}><Globe2 size={13} />{visual.browserStatus.humanActionRequired ? 'HUMAN ACTION' : !visual.browserStatus.active ? 'BROWSER READY' : visual.browserStatus.engine === 'firefox' ? 'VISUAL BROWSER' : 'BROWSING'}<span>{visual.browserStatus.engine.toUpperCase()}</span></button>}
-    {visual.browserStatus?.humanActionRequired && <div className="galaxy-handoff"><strong>Human verification required</strong><span>Firefox needs your interaction to continue this browser task.</span><button onClick={() => open('browser')}>Open browser controls <ChevronRight size={14} /></button></div>}
-    {incomingCall && <div className="galaxy-call-notice" role="status"><strong>Incoming call</strong><span>{incomingCall.contactName || incomingCall.number || 'Unknown caller'}</span><button onClick={() => open('phone')}>View phone status <ChevronRight size={14} /></button></div>}
-    <VoiceChannel phase={visual.phase} open={open} />
-    <div className="galaxy-bottomline"><span>CORE {visual.phase.toUpperCase()}</span><i /> <span>{visual.backendOnline ? 'LOCAL SERVICE CONNECTED' : 'LOCAL SERVICE UNAVAILABLE'}</span></div>
+
+    {activeTab === 'home' && (
+      <>
+        <div className="galaxy-home-chat-wrapper" data-testid="galaxy-home-chat">
+          <Chat embedded={true} />
+        </div>
+        <section className="galaxy-left-card" aria-label="JARVIS activity"><div className="micro-label">SYSTEM ACTIVITY <span>{visual.backendOnline ? 'LIVE' : visual.serviceStatus}</span></div><div className="activity-primary"><strong>{visual.backendOnline && telemetry.online ? telemetry.usage?.requests ?? '—' : '—'}</strong><span>REQUESTS</span></div><div className="activity-sub">{!visual.backendOnline ? 'SERVICE UNAVAILABLE' : visual.activeRun ? `RUNNING · ${visual.activeRun.title || visual.activeRun.id}` : telemetry.modelRouting?.last?.actualModel || telemetry.provider?.model || 'MODEL UNAVAILABLE'}</div><div className="activity-line"><span>CORE STATE</span><b>{visual.phase.toUpperCase()}</b></div></section>
+        <Telemetry metrics={visual.backendOnline ? metrics : null} telemetry={telemetry} status={visual.serviceStatus} open={open} />
+        {visual.activeRun && <div className="galaxy-task-cards"><button onClick={() => open('runs')}><span>{visual.activeRun.title || visual.activeRun.id}</span><small>{visual.activeRun.status}</small></button></div>}
+        {visual.browserStatus?.engine && <button className="galaxy-browser-chip" onClick={() => open('browser')}><Globe2 size={13} />{visual.browserStatus.humanActionRequired ? 'HUMAN ACTION' : !visual.browserStatus.active ? 'BROWSER READY' : visual.browserStatus.engine === 'firefox' ? 'VISUAL BROWSER' : 'BROWSING'}<span>{visual.browserStatus.engine.toUpperCase()}</span></button>}
+        {visual.browserStatus?.humanActionRequired && <div className="galaxy-handoff"><strong>Human verification required</strong><span>Firefox needs your interaction to continue this browser task.</span><button onClick={() => open('browser')}>Open browser controls <ChevronRight size={14} /></button></div>}
+        {incomingCall && <div className="galaxy-call-notice" role="status"><strong>Incoming call</strong><span>{incomingCall.contactName || incomingCall.number || 'Unknown caller'}</span><button onClick={() => open('phone')}>View phone status <ChevronRight size={14} /></button></div>}
+        <VoiceChannel phase={visual.phase} open={open} />
+        <div className="galaxy-bottomline"><span>CORE {visual.phase.toUpperCase()}</span><i /> <span>{visual.backendOnline ? 'LOCAL SERVICE CONNECTED' : 'LOCAL SERVICE UNAVAILABLE'}</span></div>
+      </>
+    )}
+
+    {activeTab !== 'home' && (
+      <div className="galaxy-fullpage-workspace" data-testid="galaxy-fullpage-workspace" role="region" aria-label={`${activeTab} workspace`}>
+        <div className="galaxy-fullpage-topbar">
+          <div className="galaxy-fullpage-breadcrumb">
+            <button type="button" className="fullpage-home-link" onClick={() => setActiveTab('home')}>
+              <Home size={14} /> HOME
+            </button>
+            <ChevronRight size={13} />
+            <span className="fullpage-current-tab">{activeTab.toUpperCase()}</span>
+          </div>
+          <button type="button" className="galaxy-fullpage-close" onClick={() => setActiveTab('home')} title="Return to Galaxy Home (Esc)">
+            <X size={16} /> <span>CLOSE</span>
+          </button>
+        </div>
+        <div className="galaxy-fullpage-content">
+          {activeTab === 'tasks' && <TasksWorkspace />}
+          {activeTab === 'memory' && <MemoryWorkspace />}
+          {activeTab === 'activity' && <ActivityWorkspace />}
+          {activeTab === 'settings' && <SettingsWorkspaceCombined />}
+        </div>
+      </div>
+    )}
+
     {immersive && hudVisible && <div className="galaxy-gesture-hint">Drag orbit · Wheel zoom · Shift drag pan · W A S D Q E move · H home · Esc exit</div>}
     {visual.previewEnabled && <div className="visual-preview" aria-label="Development visual state preview"><span>STATE PREVIEW</span>{['sleeping', 'idle', 'listening', 'thinking', 'working', 'speaking'].map((state) => <button key={state} className={(visual.preview || visual.phase) === state ? 'active' : ''} onClick={() => visual.setPreview(state)}>{state}</button>)}<button onClick={() => visual.setPreview(null)}>Live</button></div>}
     {manager.view}

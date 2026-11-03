@@ -22,9 +22,19 @@ function LegacyConsole() {
     const handleNav = (e) => {
       const target = e.detail?.id || e.detail?.view;
       if (target) {
-        if (target === 'reminders') setActiveView('tasks');
-        else if (['overview', 'chat', 'brain', 'tasks', 'approvals', 'connections', 'workflows', 'goals', 'agents', 'skills', 'settings'].includes(target)) {
-          setActiveView(target);
+        const map = {
+          home: 'overview',
+          reminders: 'tasks',
+          runs: 'activity',
+          approvals: 'activity',
+          browser: 'activity',
+          brain: 'settings',
+          mcp: 'settings',
+          integrations: 'settings',
+        };
+        const resolved = map[target] || target;
+        if (['overview', 'tasks', 'memory', 'activity', 'settings'].includes(resolved)) {
+          setActiveView(resolved);
         }
       }
     };

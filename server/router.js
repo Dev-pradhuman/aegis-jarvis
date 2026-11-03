@@ -204,7 +204,12 @@ export function routeRequest(text) {
   const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?$/i);
   if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
   if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value) || /\b(?:what(?:'s| is) playing|what song is playing|media status|current song|playing right now|now playing)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };
-  if (/^(?:which|what|list|show).{0,35}\bmodels?\b.{0,30}(?:available|configured|connected)?\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'models.list', args: {}, confidence: 0.99 };
+  if (
+    /^(?:who are you|who r u|what are you|who is jarvis|identify yourself)\??$/i.test(value) ||
+    /^(?:which|what|tell me which)\s+(?:model|llm|ai)\s+(?:are you|is this|do you use|are you using|running)\??$/i.test(value) ||
+    /^(?:which|what)\s+model\s+(?:are you|are u)\??$/i.test(value) ||
+    /^(?:which|what|list|show).{0,35}\bmodels?\b.{0,30}(?:available|configured|connected|active|running|using)?\??$/i.test(value)
+  ) return { route: 'TOOL_CALL', capability: 'models.list', args: { query: value }, confidence: 0.99 };
   if (/\b(?:mcp servers?|connected mcp|mcp tools?)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'mcp.servers', args: {}, confidence: 0.99 };
   if (/\b(?:project status|what changed in (?:the )?project|what is happening in (?:the )?project|status of (?:the )?project|what files have changed in my git repo)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'projects.status', args: {}, confidence: 0.98 };
   const projectQuestion = value.match(/^(?:what(?:'s| is) happening in|what changed in|status of)\s+(.+?)\??$/i);

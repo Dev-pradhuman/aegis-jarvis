@@ -103,55 +103,6 @@ export default function GlobalVoice() {
     };
   }, [pttKeyCombo]);
 
-  let indicatorClass = 'global-voice-indicator';
-  if (state === 'capturing') indicatorClass += ' capturing';
-  if (state === 'speaking') indicatorClass += ' speaking';
-
-  const styles = {
-    position: 'fixed',
-    bottom: '20px',
-    right: '20px',
-    width: '50px',
-    height: '50px',
-    borderRadius: '50%',
-    backgroundColor: state === 'capturing' ? 'red' : (state === 'speaking' ? '#4caf50' : '#444'),
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'white',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-    animation: state === 'speaking' ? 'pulse 1.5s infinite' : 'none',
-    zIndex: 9999,
-    fontSize: '24px'
-  };
-
-  return (
-    <>
-      <div className={indicatorClass} style={styles}>
-        {state === 'capturing' ? '🎤' : '🎙️'}
-        {error && (
-          <div style={{
-            position: 'absolute',
-            bottom: '60px',
-            right: 0,
-            backgroundColor: 'red',
-            color: 'white',
-            padding: '4px 8px',
-            fontSize: '12px',
-            borderRadius: '4px',
-            whiteSpace: 'nowrap'
-          }}>
-            Voice Error: {error}
-          </div>
-        )}
-      </div>
-      <style>{`
-        @keyframes pulse {
-          0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
-          70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
-          100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
-        }
-      `}</style>
-    </>
-  );
+  // Floating bottom-right mic circle removed per AC3; PTT listeners remain active
+  return null;
 }

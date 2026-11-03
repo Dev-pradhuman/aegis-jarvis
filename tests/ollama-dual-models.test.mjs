@@ -172,3 +172,81 @@ test('AC1 & AC2: Top-right execution mode switch and clean bottom-right corner',
   assert.ok(topBarSrc.includes('topbar-right'), 'TopBar must contain topbar-right');
   assert.ok(topBarSrc.includes('execution-mode-btn'), 'TopBar must render execution-mode-btn');
 });
+
+test('AC1 & AC2: 5 essential sidebar tabs and full-page layout for non-Home views', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Verify GalaxyHome.jsx NAV pruned to 5 essential tabs
+  const galaxyHomeSrc = fs.readFileSync(path.resolve('src/components/GalaxyHome.jsx'), 'utf8');
+  assert.ok(galaxyHomeSrc.includes("id: 'home', label: 'Home'"), 'Must include Home tab');
+  assert.ok(galaxyHomeSrc.includes("id: 'tasks', label: 'Tasks'"), 'Must include Tasks tab');
+  assert.ok(galaxyHomeSrc.includes("id: 'memory', label: 'Memory'"), 'Must include Memory tab');
+  assert.ok(galaxyHomeSrc.includes("id: 'activity', label: 'Activity'"), 'Must include Activity tab');
+  assert.ok(galaxyHomeSrc.includes("id: 'settings', label: 'Settings'"), 'Must include Settings tab');
+
+  // Ensure pruned tabs are not in NAV array
+  assert.ok(!galaxyHomeSrc.includes("id: 'workflows', label: 'Workflows'"), 'Workflows tab should be pruned from NAV');
+  assert.ok(!galaxyHomeSrc.includes("id: 'agents', label: 'Agents'"), 'Agents tab should be pruned from NAV');
+  assert.ok(!galaxyHomeSrc.includes("id: 'research', label: 'Research'"), 'Research tab should be pruned from NAV');
+  assert.ok(!galaxyHomeSrc.includes("id: 'phone', label: 'Phone'"), 'Phone tab should be pruned from NAV');
+  assert.ok(!galaxyHomeSrc.includes("id: 'messaging', label: 'Messaging'"), 'Messaging tab should be pruned from NAV');
+
+  // Verify Sidebar.jsx NAV_ITEMS pruned to 5 essential items
+  const sidebarSrc = fs.readFileSync(path.resolve('src/components/Sidebar.jsx'), 'utf8');
+  assert.ok(sidebarSrc.includes("id: 'overview', label: 'Home'"), 'Sidebar must include Home');
+  assert.ok(sidebarSrc.includes("id: 'tasks', label: 'Tasks'"), 'Sidebar must include Tasks');
+  assert.ok(sidebarSrc.includes("id: 'memory', label: 'Memory'"), 'Sidebar must include Memory');
+  assert.ok(sidebarSrc.includes("id: 'activity', label: 'Activity'"), 'Sidebar must include Activity');
+  assert.ok(sidebarSrc.includes("id: 'settings', label: 'Settings'"), 'Sidebar must include Settings');
+  assert.ok(!sidebarSrc.includes("id: 'skills', label: 'Skills'"), 'Skills must be pruned from Sidebar');
+
+  // Verify full-page workspace rendering in GalaxyHome.jsx
+  assert.ok(galaxyHomeSrc.includes('galaxy-fullpage-workspace'), 'GalaxyHome must render galaxy-fullpage-workspace');
+  assert.ok(galaxyHomeSrc.includes('<TasksWorkspace />'), 'GalaxyHome must render TasksWorkspace');
+  assert.ok(galaxyHomeSrc.includes('<MemoryWorkspace />'), 'GalaxyHome must render MemoryWorkspace');
+  assert.ok(galaxyHomeSrc.includes('<ActivityWorkspace />'), 'GalaxyHome must render ActivityWorkspace');
+  assert.ok(galaxyHomeSrc.includes('<SettingsWorkspaceCombined />'), 'GalaxyHome must render SettingsWorkspaceCombined');
+});
+
+test('AC3: Ultra-transparent Home Chat and removed floating mic circle', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Verify GlobalVoice.jsx has floating button removed
+  const globalVoiceSrc = fs.readFileSync(path.resolve('src/components/GlobalVoice.jsx'), 'utf8');
+  assert.ok(!globalVoiceSrc.includes('global-voice-indicator'), 'GlobalVoice must not render global-voice-indicator');
+  assert.ok(!globalVoiceSrc.includes("position: 'fixed'"), 'GlobalVoice must not have fixed position indicator');
+
+  // Verify GalaxyHome.jsx renders embedded chat on home tab
+  const galaxyHomeSrc = fs.readFileSync(path.resolve('src/components/GalaxyHome.jsx'), 'utf8');
+  assert.ok(galaxyHomeSrc.includes('galaxy-home-chat-wrapper'), 'GalaxyHome must render galaxy-home-chat-wrapper');
+  assert.ok(galaxyHomeSrc.includes('<Chat embedded={true} />'), 'GalaxyHome must embed Chat');
+
+  // Verify chat.css has ultra-transparent styling
+  const chatCss = fs.readFileSync(path.resolve('src/styles/chat.css'), 'utf8');
+  assert.ok(chatCss.includes('.embedded-home-chat.chat-panel'), 'chat.css must style .embedded-home-chat');
+  assert.ok(chatCss.includes('rgba(8, 12, 24, 0.12)'), 'chat.css must use ultra-transparent background');
+  assert.ok(chatCss.includes('rgba(15, 23, 42, 0.22)'), 'chat.css must use semi-transparent message body');
+  assert.ok(chatCss.includes('rgba(15, 23, 42, 0.25)'), 'chat.css must use transparent command input');
+});
+
+test('AC4: Model identity queries route cleanly and return clean human text', () => {
+  const queries = [
+    'which model are you?',
+    'which model are you',
+    'what model are you using?',
+    'what model are you using',
+    'what model are you',
+    'who are you?',
+    'who are you',
+    'who r u',
+    'identify yourself'
+  ];
+
+  for (const q of queries) {
+    const res = routeRequest(q);
+    assert.equal(res.route, 'TOOL_CALL', `Failed route for: ${q}`);
+    assert.equal(res.capability, 'models.list', `Failed capability for: ${q}`);
+  }
+});

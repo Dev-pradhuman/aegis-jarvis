@@ -4,7 +4,7 @@ import { createGoal, spawnAgent, updateAgentMemory, completeAgentTask } from '..
 import { getState, updateState, activityEntry } from '../store.js';
 import { getTool, listCapabilities, listTools } from '../registry.js';
 import { validateToolInput } from '../toolSchema.js';
-import { publicPools } from '../modelPool.js';
+import { publicPools, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_VISION_MODEL } from '../modelPool.js';
 import { assembleModelContext } from '../contextAssembler.js';
 import { modelRegistry, selectLogicalModel } from '../modelRouting.js';
 import { executeBrainWorkflow } from '../brainWorkflow.js';
@@ -469,7 +469,23 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             reply = `Email sent to ${route.args.to}.`;
           }
           else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
-          else if (route.capability === 'models.list') { const result = await invokeChatTool('models.list'); data = result.data; const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id); reply = ready.length ? `Configured model routes: ${ready.join(', ')}.` : 'No model provider credentials are configured for the logical model pools.'; }
+          else if (route.capability === 'models.list') {
+            const isLocal = state.modelRouting?.executionMode === 'local';
+            const queryText = (input.text || route.args?.query || '').toLowerCase();
+            const isIdentityOrSelf = /who (?:are|r) you|what (?:model|are you)|which model|are you using|active model/i.test(queryText);
+
+            if (isLocal) {
+              reply = `I am JARVIS, running in LOCAL mode powered by Ollama. My active text/tools model is ${DEFAULT_OLLAMA_MODEL} and my vision model is ${DEFAULT_OLLAMA_VISION_MODEL}.`;
+            } else if (isIdentityOrSelf) {
+              const cloudModel = state.provider?.model || state.modelRouting?.last?.actualModel || 'Groq / OpenRouter cloud cascade';
+              reply = `I am JARVIS, running in CLOUD API mode. My active reasoning and tool cascade is powered by ${cloudModel} with local Ollama fallback.`;
+            } else {
+              const result = await invokeChatTool('models.list');
+              data = result.data;
+              const ready = Object.entries(data.providerPools).filter(([, providers]) => providers.some((provider) => provider.credentialConfigured)).map(([id]) => id);
+              reply = ready.length ? `Configured model routes: ${ready.join(', ')} (Execution mode: ${state.modelRouting?.executionMode?.toUpperCase() || 'CLOUD'}).` : 'No model provider credentials are configured for the logical model pools.';
+            }
+          }
           else if (route.capability === 'mcp.servers') { const result = await invokeChatTool('mcp.servers'); data = result.data; reply = data.servers.length ? `MCP servers: ${data.servers.map((server) => `${server.name} (${server.status})`).join(', ')}.` : 'No outbound MCP servers are configured.'; }
           else if (route.capability === 'projects.status') { const result = await invokeChatTool('projects.status'); data = result.data; const selected = route.args.name ? data.projects.filter((project) => project.name.toLowerCase() === route.args.name.toLowerCase() || project.name.toLowerCase().includes(route.args.name.toLowerCase())) : data.projects; reply = selected.length ? selected.map((project) => `${project.name}: ${project.status}${project.branch ? ` on ${project.branch}` : ''}${project.changedFiles === null ? '' : `, ${project.changedFiles} changed files`}`).join('\n') : `No connected project matches ${route.args.name}.`; }
           else if (route.capability === 'research.plan') { const result = await invokeChatTool('research.plan', route.args); data = result.data; reply = data.status === 'sources_collected' ? `Collected ${data.sources.length} attributable sources for ${data.topic}. Source verification and synthesis remain next steps.` : data.message; }

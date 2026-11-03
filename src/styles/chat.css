@@ -350,3 +350,53 @@
   color: #ef4444;
 }
 
+/* Embedded Home Chat Ultra-Transparent Styling */
+.embedded-home-chat.chat-panel {
+  background: rgba(8, 12, 24, 0.12) !important;
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+  height: 100%;
+}
+
+.embedded-home-chat .chat-head {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 8px;
+}
+
+.embedded-home-chat .chat-head .hud-title {
+  color: #c2d8ff;
+  font: 11px 'Share Tech Mono', monospace;
+  letter-spacing: 0.15em;
+}
+
+.embedded-home-chat .chat-log {
+  background: transparent !important;
+}
+
+.embedded-home-chat .msg .body {
+  background: rgba(15, 23, 42, 0.22) !important;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+  border-radius: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.embedded-home-chat .msg.user .body {
+  background: rgba(10, 25, 47, 0.35) !important;
+  border-color: rgba(56, 189, 248, 0.18);
+}
+
+.embedded-home-chat .chat-input {
+  background: rgba(15, 23, 42, 0.25) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 10px;
+}
+
+

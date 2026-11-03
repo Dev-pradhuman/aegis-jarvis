@@ -23,7 +23,7 @@ function normalizeServerMessages(list) {
   }));
 }
 
-export default function Chat() {
+export default function Chat({ embedded = false }) {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const isTypingRef = useRef(false);
@@ -726,9 +726,9 @@ export default function Chat() {
   const lastIsStreamingJarvis = lastMsg?.who === 'JARVIS' && (lastMsg.lines?.join('').length || 0) > 0;
 
   return (
-    <section className="chat-panel hud-panel">
-      <div className="chat-head">
-        <div className="hud-title">Jarvis Chat Interface</div>
+    <section className={`chat-panel hud-panel${embedded ? ' embedded-home-chat' : ''}`}>
+      <div className={`chat-head${embedded ? ' embedded-head' : ''}`}>
+        <div className="hud-title">{embedded ? 'JARVIS // CHAT' : 'Jarvis Chat Interface'}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             type="button"

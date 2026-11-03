@@ -6,6 +6,8 @@ import Chat from './Chat.jsx';
 import Icon from './Icon.jsx';
 import Tasks from './Tasks.jsx';
 import RemindersPanel from './RemindersPanel.jsx';
+import LiveModule from '../galaxy/LiveModule.jsx';
+import BrowserPanel from '../galaxy/BrowserPanel.jsx';
 import useAppearance from '../hooks/useAppearance.js';
 import '../styles/workspaces.css';
 
@@ -13,6 +15,8 @@ const VIEW_META = {
   chat: ['Communications', 'Conversation channel and active context'],
   brain: ['Neural Brain', 'WebGL cognition model and spatial gesture control'],
   tasks: ['Task Operations', 'Active work, execution state, and queue health'],
+  memory: ['Durable Memory', 'Durable context, semantic retrieval, and long-term knowledge'],
+  activity: ['Activity & Operations', 'Live execution runs, approval queue, and browser automation'],
   approvals: ['Approval Gate', 'Human authorization for consequential actions'],
   connections: ['Connections', 'Services, channels, and runtime endpoints'],
   workflows: ['Workflows', 'Multi-stage automations and execution history'],
@@ -167,7 +171,7 @@ function BrainWorkspace() {
   );
 }
 
-function TasksWorkspace() {
+export function TasksWorkspace() {
   return (
     <div className="workspace-page">
       <WorkspaceHeader view="tasks" />
@@ -1148,11 +1152,263 @@ function SettingsWorkspace() {
   </div>;
 }
 
+export function MemoryWorkspace() {
+  const [memories, setMemories] = useState([]);
+  const [query, setQuery] = useState('');
+  const [newText, setNewText] = useState('');
+  const [kind, setKind] = useState('project');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadMemories = async (searchQuery = '') => {
+    setLoading(true);
+    try {
+      const endpoint = searchQuery.trim()
+        ? `/api/memory/search?q=${encodeURIComponent(searchQuery.trim())}`
+        : '/api/memory';
+      const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`Memory service ${res.status}`);
+      const data = await res.json();
+      setMemories(data.memories || []);
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMemories();
+  }, []);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    loadMemories(query);
+  };
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!newText.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/memory', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: newText.trim(), kind }),
+      });
+      if (!res.ok) throw new Error('Failed to save memory');
+      setNewText('');
+      await loadMemories(query);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="workspace-page memory-workspace">
+      <WorkspaceHeader view="memory" />
+      <MetricStrip
+        items={[
+          ['Stored Records', String(memories.length).padStart(2, '0'), 'cyan'],
+          ['Search State', loading ? 'INDEXING' : 'ONLINE', loading ? 'orange' : 'green'],
+          ['Persistence', 'LOCAL DB', 'green'],
+        ]}
+      />
+
+      <div className="memory-controls-grid">
+        <form className="memory-search-bar" onSubmit={handleSearch}>
+          <input
+            type="search"
+            placeholder="Search stored memories by keyword or topic..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <button type="submit" className="action-btn">Search</button>
+          {query && (
+            <button
+              type="button"
+              className="action-btn-ghost"
+              onClick={() => { setQuery(''); loadMemories(''); }}
+            >
+              Clear
+            </button>
+          )}
+        </form>
+
+        <form className="memory-create-form" onSubmit={handleAdd}>
+          <input
+            type="text"
+            placeholder="Store new durable memory record..."
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+          />
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="project">Project</option>
+            <option value="preference">Preference</option>
+            <option value="system">System</option>
+            <option value="fact">Fact</option>
+          </select>
+          <button type="submit" className="action-btn-accent" disabled={saving || !newText.trim()}>
+            {saving ? 'Storing…' : '+ Store'}
+          </button>
+        </form>
+      </div>
+
+      {error && <div className="workspace-error-banner" role="alert">{error}</div>}
+
+      <div className="memory-records-list">
+        {memories.length === 0 ? (
+          <div className="workspace-empty-card">
+            <p>No memory records found{query ? ` for "${query}"` : ''}.</p>
+          </div>
+        ) : (
+          memories.map((m, idx) => (
+            <div key={m.id || idx} className="memory-record-card">
+              <div className="record-header">
+                <span className="record-kind-badge mono">{(m.kind || 'memory').toUpperCase()}</span>
+                <span className="record-time mono">{m.createdAt ? new Date(m.createdAt).toLocaleString() : 'Saved'}</span>
+              </div>
+              <p className="record-text">{m.text}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ActivityWorkspace() {
+  const [activeSubTab, setActiveSubTab] = useState('runs');
+
+  return (
+    <div className="workspace-page activity-workspace">
+      <WorkspaceHeader
+        view="activity"
+        action={
+          <div className="activity-subtab-cluster">
+            <button
+              type="button"
+              className={`subtab-btn ${activeSubTab === 'runs' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('runs')}
+            >
+              Runs & Operations
+            </button>
+            <button
+              type="button"
+              className={`subtab-btn ${activeSubTab === 'approvals' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('approvals')}
+            >
+              Approvals Gate
+            </button>
+            <button
+              type="button"
+              className={`subtab-btn ${activeSubTab === 'browser' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('browser')}
+            >
+              Browser Status
+            </button>
+          </div>
+        }
+      />
+
+      <div className="activity-subtab-content">
+        {activeSubTab === 'runs' && (
+          <div className="workspace-panel full">
+            <div className="panel-toolbar"><div className="panel-label">Live Execution Runs</div></div>
+            <LiveModule id="runs" />
+          </div>
+        )}
+        {activeSubTab === 'approvals' && (
+          <div className="approval-workspace-grid">
+            <div className="workspace-panel expanded-list"><Approvals /></div>
+            <ApprovalPolicyPanel />
+          </div>
+        )}
+        {activeSubTab === 'browser' && (
+          <div className="workspace-panel full">
+            <div className="panel-toolbar"><div className="panel-label">Autonomous Browser Status</div></div>
+            <BrowserPanel />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function SettingsWorkspaceCombined() {
+  const [activeSubTab, setActiveSubTab] = useState('models');
+
+  return (
+    <div className="workspace-page settings-combined-workspace">
+      <WorkspaceHeader
+        view="settings"
+        action={
+          <div className="activity-subtab-cluster">
+            <button
+              type="button"
+              className={`subtab-btn ${activeSubTab === 'models' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('models')}
+            >
+              Brain & Models
+            </button>
+            <button
+              type="button"
+              className={`subtab-btn ${activeSubTab === 'general' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('general')}
+            >
+              System & Appearance
+            </button>
+            <button
+              type="button"
+              className={`subtab-btn ${activeSubTab === 'integrations' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('integrations')}
+            >
+              Integrations & MCP
+            </button>
+          </div>
+        }
+      />
+
+      <div className="settings-subtab-content">
+        {activeSubTab === 'models' && <BrainManager />}
+        {activeSubTab === 'general' && <SettingsWorkspace />}
+        {activeSubTab === 'integrations' && (
+          <div className="settings-shell">
+            <ComposioPanel />
+            <div className="workspace-panel full" style={{ marginTop: '16px' }}>
+              <div className="panel-toolbar"><div className="panel-label">MCP Tool Servers</div></div>
+              <LiveModule id="mcp" />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspaceViews({ view }) {
   const views = {
-    chat: <ChatWorkspace />, brain: <BrainManager />, tasks: <TasksWorkspace />, approvals: <ApprovalsWorkspace />,
-    connections: <ConnectionsWorkspace />, workflows: <WorkflowsWorkspace />, goals: <GoalsWorkspace />,
-    agents: <AgentsWorkspace />, skills: <SkillsWorkspace />, settings: <div className="settings-shell"><ComposioPanel /><SettingsWorkspace /></div>,
+    chat: <ChatWorkspace />,
+    brain: <BrainManager />,
+    tasks: <TasksWorkspace />,
+    reminders: <TasksWorkspace />,
+    memory: <MemoryWorkspace />,
+    activity: <ActivityWorkspace />,
+    runs: <ActivityWorkspace />,
+    approvals: <ApprovalsWorkspace />,
+    browser: <ActivityWorkspace />,
+    connections: <ConnectionsWorkspace />,
+    workflows: <WorkflowsWorkspace />,
+    goals: <GoalsWorkspace />,
+    agents: <AgentsWorkspace />,
+    skills: <SkillsWorkspace />,
+    settings: <SettingsWorkspaceCombined />,
+    system: <SettingsWorkspaceCombined />,
+    mcp: <SettingsWorkspaceCombined />,
   };
   return views[view] || null;
 }
