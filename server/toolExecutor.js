@@ -97,7 +97,7 @@ async function inspectDirectory(root, relative = '.', depth = 0) {
 export const implementedToolIds = [
   'projects.status', 'models.list', 'research.plan', 'mcp.servers', 'mcp.call',
   'messages.send', 'browser.open', 'browser.navigate', 'browser.click', 'browser.type',
-  'browser.press', 'browser.read', 'browser.content', 'browser.accessibility', 'browser.screenshot',
+  'browser.press', 'browser.read', 'browser.content', 'browser.accessibility', 'browser.snapshot', 'browser.screenshot',
   'browser.wait', 'browser.evaluate', 'browser.status', 'browser.handoff',
   'browser.resume', 'browser.close', 'apps.list', 'apps.open', 'project.inspect',
   'files.read', 'command.execute', 'composio.execute', 'tasks.list', 'tasks.manage',
@@ -318,6 +318,7 @@ async function runTool(toolId, input = {}, context = {}) {
       'browser.read': () => browserManager.read(),
       'browser.content': () => browserManager.getPageContent(),
       'browser.accessibility': () => browserManager.getAccessibilityTree(),
+      'browser.snapshot': () => browserManager.snapshot(),
       'browser.screenshot': () => browserManager.screenshot(),
       'browser.wait': () => browserManager.waitFor(input.selector, input.timeout),
       'browser.evaluate': () => browserManager.evaluate(input.code),

@@ -10,6 +10,7 @@ const CORE_TOOLS = new Set([
   'browser.navigate',
   'browser.open',
   'browser.press',
+  'browser.snapshot',
   'browser.handoff',
   'apps.open'
 ]);

@@ -1,10 +1,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, execSync } from 'node:child_process';
 import { ensureLinuxDesktopEnv } from '../platform/linux/env.js';
 
 const defaultProfile = fileURLToPath(new URL('../data/browser-profile/', import.meta.url));
+
+export function isObscuraAvailable() {
+  if (process.env.OBSCURA_CDP_URL) return true;
+  try {
+    const bin = process.env.OBSCURA_BIN || 'obscura';
+    execSync(`which ${bin}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function ensureDisplayEnvironment(env = process.env) {
   ensureLinuxDesktopEnv(env);
@@ -99,6 +110,47 @@ function challengeScript() {
   return null;
 }
 
+function snapshotScript() {
+  const query = 'a[href],button,input,select,textarea,[role="button"],[role="link"],[role="textbox"],[role="menuitem"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[contenteditable="true"],[data-testid],[data-tab]';
+  const elements = Array.from(document.querySelectorAll(query)).slice(0, 300);
+  const items = [];
+  const refMap = {};
+  let counter = 1;
+
+  for (const el of elements) {
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+    } catch {}
+
+    const ref = `e${counter++}`;
+    el.setAttribute('data-jarvis-ref', ref);
+
+    const isCE = el.getAttribute('contenteditable') === 'true' || el.isContentEditable;
+    const rawRole = el.getAttribute('role');
+    const tag = el.tagName.toLowerCase();
+    const role = rawRole || (isCE ? 'textbox' : (tag === 'a' ? 'link' : (tag === 'button' ? 'button' : (['input', 'textarea'].includes(tag) ? 'textbox' : tag))));
+
+    let name = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '';
+    if (!name && el.innerText) {
+      name = el.innerText.trim().replace(/\s+/g, ' ').slice(0, 80);
+    }
+    if (!name && el.value) {
+      name = String(el.value).slice(0, 80);
+    }
+    const selector = `[data-jarvis-ref="${ref}"]`;
+    const item = { ref, role, name, selector };
+    items.push(item);
+    refMap[ref] = item;
+    if (counter > 150) break;
+  }
+
+  const textLines = items.map((item) => `- ${item.role} "${item.name}" [ref=@${item.ref}]`);
+  return { items, refMap, text: textLines.join('\n') };
+}
+
 export class LightpandaEngine {
   constructor(options = {}) { this.options = options; this.kind = 'lightpanda'; this.process = null; this.browser = null; this.context = null; this.page = null; }
   async start() {
@@ -114,7 +166,11 @@ export class LightpandaEngine {
   }
   isHealthy() { return Boolean(this.process && this.process.exitCode === null && this.browser?.connected && this.page && !this.page.isClosed()); }
   url() { return this.page?.url() || null; }
-  async navigate(url) { await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 }); return { url: this.url(), title: await this.page.title() }; }
+  async navigate(url) {
+    await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    const snap = await this.snapshot().catch(() => ({ items: [], refMap: {}, text: '' }));
+    return { url: this.url(), title: await this.page.title(), snapshot: snap.text, refs: snap.refMap };
+  }
   async click(selector) { await this.page.click(selector, { timeout: 12000 }); return { url: this.url(), selector }; }
   async type(selector, text) {
     if (this.page.locator) {
@@ -163,6 +219,10 @@ export class LightpandaEngine {
   }
   async content() { return (await this.page.content()).slice(0, 200000); }
   async accessibility() { return this.page.evaluate(accessibilityScript); }
+  async snapshot() {
+    if (!this.page) return { items: [], refMap: {}, text: '' };
+    return this.page.evaluate(snapshotScript).catch(() => ({ items: [], refMap: {}, text: '' }));
+  }
   async waitFor(selector, timeout = 12000) { await this.page.waitForSelector(selector, { timeout }); return { selector, found: true }; }
   async formState() { return this.page.evaluate(safeFormScript).catch(() => []); }
   async challenge() { return this.page.evaluate(challengeScript).catch(() => null); }
@@ -221,7 +281,8 @@ export class PatchrightEngine {
 
   async navigate(url) {
     await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
-    return { url: this.url(), title: await this.page.title() };
+    const snap = await this.snapshot().catch(() => ({ items: [], refMap: {}, text: '' }));
+    return { url: this.url(), title: await this.page.title(), snapshot: snap.text, refs: snap.refMap };
   }
 
   async click(selector) {
@@ -294,6 +355,11 @@ export class PatchrightEngine {
     return this.page.evaluate(accessibilityScript);
   }
 
+  async snapshot() {
+    if (!this.page) return { items: [], refMap: {}, text: '' };
+    return this.page.evaluate(snapshotScript).catch(() => ({ items: [], refMap: {}, text: '' }));
+  }
+
   async screenshot() {
     return {
       mimeType: 'image/png',
@@ -364,4 +430,372 @@ export class PatchrightEngine {
   }
 }
 
-export const FirefoxEngine = PatchrightEngine;
+export class ObscuraEngine {
+  constructor(options = {}) {
+    this.options = options;
+    this.kind = 'obscura';
+    this.process = null;
+    this.browser = null;
+    this.context = null;
+    this.page = null;
+    this.headed = false;
+  }
+
+  async start() {
+    const port = Number(this.options.port || process.env.OBSCURA_PORT || 9222);
+    const cdpUrl = process.env.OBSCURA_CDP_URL || `http://127.0.0.1:${port}`;
+    if (!process.env.OBSCURA_CDP_URL) {
+      const { spawn } = await import('node:child_process');
+      const bin = process.env.OBSCURA_BIN || 'obscura';
+      this.process = spawn(bin, ['serve', '--port', String(port), '--stealth'], { stdio: 'ignore' });
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    const { chromium } = await import('patchright');
+    this.browser = await chromium.connectOverCDP(cdpUrl);
+    this.context = this.browser.contexts()[0] || await this.browser.newContext();
+    this.page = this.context.pages()[0] || await this.context.newPage();
+    this.page.setDefaultTimeout(15000);
+  }
+
+  isHealthy() {
+    return Boolean(this.browser?.isConnected() && this.page && !this.page.isClosed());
+  }
+
+  url() {
+    return this.page?.url() || null;
+  }
+
+  async navigate(url) {
+    await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    const snap = await this.snapshot().catch(() => ({ items: [], refMap: {}, text: '' }));
+    return { url: this.url(), title: await this.page.title(), snapshot: snap.text, refs: snap.refMap };
+  }
+
+  async click(selector) {
+    await this.page.locator(selector).click({ timeout: 12000 });
+    return { url: this.url(), selector };
+  }
+
+  async type(selector, text) {
+    const loc = this.page.locator(selector);
+    const isRich = await loc.evaluate((el) => {
+      const isCE = el.isContentEditable || el.getAttribute('contenteditable') === 'true';
+      const isRoleTextbox = el.getAttribute('role') === 'textbox';
+      return isCE || isRoleTextbox;
+    }).catch(() => false);
+
+    if (isRich) {
+      await loc.click({ timeout: 12000 }).catch(() => {});
+      if (typeof loc.pressSequentially === 'function') {
+        await loc.pressSequentially(text, { delay: 15 });
+      } else {
+        await this.page.keyboard.type(text, { delay: 15 });
+      }
+    } else {
+      await loc.fill(text, { timeout: 12000 });
+    }
+    return { url: this.url(), selector, length: text.length };
+  }
+
+  async press(key, selector) {
+    if (selector) {
+      const loc = this.page.locator(selector);
+      await loc.focus({ timeout: 12000 }).catch(async () => {
+        await loc.click({ timeout: 12000 }).catch(() => {});
+      });
+    }
+    await this.page.keyboard.press(key);
+    return { url: this.url(), key, selector: selector || null };
+  }
+
+  async evaluate(code) {
+    return this.page.evaluate(code);
+  }
+
+  async read() {
+    try {
+      const client = await this.page.context().newCDPSession(this.page);
+      const { markdown } = await client.send('LP.getMarkdown');
+      if (markdown) {
+        return {
+          title: await this.page.title(),
+          text: markdown.slice(0, 30000),
+          markdown: true,
+        };
+      }
+    } catch {}
+    return this.page.evaluate(() => ({
+      title: document.title,
+      text: (document.body?.innerText || '').slice(0, 30000),
+      links: Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((a) => ({
+        text: a.innerText?.trim().slice(0, 120) || '',
+        href: a.href,
+      })),
+      inputs: Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"],[role="textbox"]')).slice(0, 50).map((el) => {
+        const isCE = el.getAttribute('contenteditable') === 'true' || el.isContentEditable;
+        const selector = el.id ? `#${el.id}` : el.getAttribute('aria-label') ? `[aria-label="${el.getAttribute('aria-label')}"]` : el.getAttribute('placeholder') ? `[placeholder="${el.getAttribute('placeholder')}"]` : el.getAttribute('data-tab') ? `${isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase()}[data-tab="${el.getAttribute('data-tab')}"]` : isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase();
+        return {
+          role: el.getAttribute('role') || (isCE ? 'textbox' : el.tagName.toLowerCase()),
+          placeholder: el.getAttribute('placeholder') || '',
+          ariaLabel: el.getAttribute('aria-label') || '',
+          selector,
+        };
+      }),
+    }));
+  }
+
+  async content() {
+    return (await this.page.content()).slice(0, 200000);
+  }
+
+  async accessibility() {
+    return this.page.evaluate(accessibilityScript);
+  }
+
+  async snapshot() {
+    if (!this.page) return { items: [], refMap: {}, text: '' };
+    return this.page.evaluate(snapshotScript).catch(() => ({ items: [], refMap: {}, text: '' }));
+  }
+
+  async waitFor(selector, timeout = 12000) {
+    await this.page.locator(selector).waitFor({ timeout });
+    return { selector, found: true };
+  }
+
+  async formState() {
+    return this.page.evaluate(safeFormScript).catch(() => []);
+  }
+
+  async challenge() {
+    return this.page.evaluate(challengeScript).catch(() => null);
+  }
+
+  async close() {
+    await this.page?.close().catch(() => {});
+    await this.context?.close().catch(() => {});
+    await this.browser?.close().catch(() => {});
+    if (this.process && this.process.exitCode === null) {
+      this.process.kill('SIGTERM');
+    }
+    this.page = this.context = this.browser = this.process = null;
+  }
+}
+
+export class CamoufoxEngine {
+  constructor(options = {}) {
+    this.options = options;
+    this.kind = options.kind || 'firefox';
+    this.context = null;
+    this.page = null;
+    this.headed = false;
+    this.authenticatedDomains = new Set();
+    this.fallbackEngine = null;
+  }
+
+  async start({ headed = false } = {}) {
+    ensureDisplayEnvironment();
+    const profile = path.resolve(this.options.profileDir || process.env.CAMOUFOX_PROFILE_DIR || path.join(defaultProfile, '../camoufox-profile'));
+    try {
+      const { Camoufox } = await import('camoufox');
+      this.context = await Camoufox({
+        headless: !headed,
+        persistent_context: true,
+        user_data_dir: profile,
+        os: 'linux',
+        humanize: true,
+        env: process.env,
+      });
+      this.headed = headed;
+      this.page = this.context.pages()[0] || await this.context.newPage();
+      this.page.setDefaultTimeout(20000);
+    } catch (err) {
+      console.warn(`[browser] Camoufox launch failed: ${err.message}. Falling back to Patchright.`);
+      this.fallbackEngine = new PatchrightEngine(this.options);
+      await this.fallbackEngine.start({ headed });
+      this.context = this.fallbackEngine.context;
+      this.page = this.fallbackEngine.page;
+      this.headed = this.fallbackEngine.headed;
+    }
+  }
+
+  isHealthy() {
+    if (this.fallbackEngine) return this.fallbackEngine.isHealthy();
+    return Boolean(this.context && this.page && !this.page.isClosed() && (this.context.browser?.() ? this.context.browser().isConnected() : true));
+  }
+
+  url() {
+    if (this.fallbackEngine) return this.fallbackEngine.url();
+    return this.page?.url() || null;
+  }
+
+  async navigate(url) {
+    if (this.fallbackEngine) return this.fallbackEngine.navigate(url);
+    await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    const snap = await this.snapshot().catch(() => ({ items: [], refMap: {}, text: '' }));
+    return { url: this.url(), title: await this.page.title(), snapshot: snap.text, refs: snap.refMap };
+  }
+
+  async click(selector) {
+    if (this.fallbackEngine) return this.fallbackEngine.click(selector);
+    await this.page.locator(selector).click({ timeout: 12000 });
+    return { url: this.url(), selector };
+  }
+
+  async type(selector, text) {
+    if (this.fallbackEngine) return this.fallbackEngine.type(selector, text);
+    const loc = this.page.locator(selector);
+    const isRich = await loc.evaluate((el) => {
+      const isCE = el.isContentEditable || el.getAttribute('contenteditable') === 'true';
+      const isRoleTextbox = el.getAttribute('role') === 'textbox';
+      return isCE || isRoleTextbox;
+    }).catch(() => false);
+
+    if (isRich) {
+      await loc.click({ timeout: 12000 }).catch(() => {});
+      if (typeof loc.pressSequentially === 'function') {
+        await loc.pressSequentially(text, { delay: 15 });
+      } else {
+        await this.page.keyboard.type(text, { delay: 15 });
+      }
+    } else {
+      await loc.fill(text, { timeout: 12000 });
+    }
+    return { url: this.url(), selector, length: text.length };
+  }
+
+  async press(key, selector) {
+    if (this.fallbackEngine) return this.fallbackEngine.press(key, selector);
+    if (selector) {
+      const loc = this.page.locator(selector);
+      await loc.focus({ timeout: 12000 }).catch(async () => {
+        await loc.click({ timeout: 12000 }).catch(() => {});
+      });
+    }
+    await this.page.keyboard.press(key);
+    return { url: this.url(), key, selector: selector || null };
+  }
+
+  async evaluate(code) {
+    if (this.fallbackEngine) return this.fallbackEngine.evaluate(code);
+    return this.page.evaluate(code);
+  }
+
+  async read() {
+    if (this.fallbackEngine) return this.fallbackEngine.read();
+    return this.page.evaluate(() => ({
+      title: document.title,
+      text: (document.body?.innerText || '').slice(0, 30000),
+      links: Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((a) => ({
+        text: a.innerText?.trim().slice(0, 120) || '',
+        href: a.href,
+      })),
+      inputs: Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"],[role="textbox"]')).slice(0, 50).map((el) => {
+        const isCE = el.getAttribute('contenteditable') === 'true' || el.isContentEditable;
+        const selector = el.id ? `#${el.id}` : el.getAttribute('aria-label') ? `[aria-label="${el.getAttribute('aria-label')}"]` : el.getAttribute('placeholder') ? `[placeholder="${el.getAttribute('placeholder')}"]` : el.getAttribute('data-tab') ? `${isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase()}[data-tab="${el.getAttribute('data-tab')}"]` : isCE ? 'div[contenteditable="true"]' : el.tagName.toLowerCase();
+        return {
+          role: el.getAttribute('role') || (isCE ? 'textbox' : el.tagName.toLowerCase()),
+          placeholder: el.getAttribute('placeholder') || '',
+          ariaLabel: el.getAttribute('aria-label') || '',
+          selector,
+        };
+      }),
+    }));
+  }
+
+  async content() {
+    if (this.fallbackEngine) return this.fallbackEngine.content();
+    return (await this.page.content()).slice(0, 200000);
+  }
+
+  async accessibility() {
+    if (this.fallbackEngine) return this.fallbackEngine.accessibility();
+    return this.page.evaluate(accessibilityScript);
+  }
+
+  async snapshot() {
+    if (this.fallbackEngine) return this.fallbackEngine.snapshot();
+    if (!this.page) return { items: [], refMap: {}, text: '' };
+    return this.page.evaluate(snapshotScript).catch(() => ({ items: [], refMap: {}, text: '' }));
+  }
+
+  async screenshot() {
+    if (this.fallbackEngine) return this.fallbackEngine.screenshot();
+    return {
+      mimeType: 'image/png',
+      data: (await this.page.screenshot({ type: 'png' })).toString('base64'),
+      url: this.url(),
+    };
+  }
+
+  async waitFor(selector, timeout = 12000) {
+    if (this.fallbackEngine) return this.fallbackEngine.waitFor(selector, timeout);
+    await this.page.locator(selector).waitFor({ timeout });
+    return { selector, found: true };
+  }
+
+  async formState() {
+    if (this.fallbackEngine) return this.fallbackEngine.formState();
+    return this.page.evaluate(safeFormScript).catch(() => []);
+  }
+
+  async applyFormState(fields = []) {
+    if (this.fallbackEngine) return this.fallbackEngine.applyFormState(fields);
+    await this.page.evaluate((values) => {
+      for (const field of values) {
+        const element = field.id ? document.getElementById(field.id) : Array.from(document.getElementsByName(field.name || '')).find((node) => node.tagName.toLowerCase() === field.tag);
+        if (element && element.type !== 'password') {
+          element.value = field.value;
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    }, fields).catch(() => {});
+  }
+
+  async challenge() {
+    if (this.fallbackEngine) return this.fallbackEngine.challenge();
+    return this.page.evaluate(challengeScript).catch(() => null);
+  }
+
+  async bringToFront() {
+    if (this.fallbackEngine) return this.fallbackEngine.bringToFront();
+    if (this.page) {
+      await this.page.bringToFront().catch(() => {});
+    }
+    focusBrowserWindow();
+  }
+
+  async relaunchHeaded() {
+    const url = this.url();
+    const fields = this.page ? await this.formState() : [];
+    await this.close();
+    await this.start({ headed: true });
+    if (url && /^https?:/.test(url)) {
+      await this.navigate(url);
+      await this.applyFormState(fields);
+    }
+    await this.bringToFront();
+  }
+
+  async relaunchHeadless() {
+    const url = this.url();
+    const fields = this.page ? await this.formState() : [];
+    await this.close();
+    await this.start({ headed: false });
+    if (url && /^https?:/.test(url)) {
+      await this.navigate(url);
+      await this.applyFormState(fields);
+    }
+  }
+
+  async close() {
+    if (this.fallbackEngine) {
+      await this.fallbackEngine.close().catch(() => {});
+      this.fallbackEngine = null;
+    }
+    await this.context?.close().catch(() => {});
+    this.context = this.page = null;
+    this.headed = false;
+  }
+}
+
+export const FirefoxEngine = CamoufoxEngine;

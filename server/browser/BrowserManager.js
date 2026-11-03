@@ -1,11 +1,32 @@
-import { FirefoxEngine, LightpandaEngine } from './engines.js';
+import { FirefoxEngine, LightpandaEngine, ObscuraEngine, CamoufoxEngine, isObscuraAvailable } from './engines.js';
 
 export class BrowserError extends Error {
   constructor(code, message, cause) { super(message, { cause }); this.name = 'BrowserError'; this.code = code; }
 }
 
+export const STATEFUL_WEB_DOMAINS = [
+  'web.whatsapp.com',
+  'instagram.com',
+  'chatgpt.com',
+  'claude.ai',
+  'gemini.google.com',
+  'mail.google.com',
+  'x.com',
+  'discord.com',
+];
+
+export function isStatefulDomain(url) {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return STATEFUL_WEB_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
 const VISUAL_ACTIONS = new Set(['screenshot']);
-const VALID_ACTIONS = new Set(['navigate', 'click', 'type', 'press', 'evaluate', 'read', 'content', 'accessibility', 'screenshot', 'waitFor']);
+const VALID_ACTIONS = new Set(['navigate', 'click', 'type', 'press', 'evaluate', 'read', 'content', 'accessibility', 'screenshot', 'waitFor', 'snapshot']);
 
 function classify(error) {
   if (error instanceof BrowserError) return error.code;
@@ -18,7 +39,9 @@ function classify(error) {
 export class BrowserManager {
   constructor(options = {}) {
     this.createLightpanda = options.createLightpanda || (() => new LightpandaEngine(options));
-    this.createFirefox = options.createFirefox || options.createPatchright || (() => new FirefoxEngine(options));
+    this.createFirefox = options.createCamoufox || options.createFirefox || options.createPatchright || (() => new FirefoxEngine(options));
+    this.createCamoufox = this.createFirefox;
+    this.createObscura = options.createObscura || (() => new ObscuraEngine(options));
     this.maxRetries = Math.max(0, Math.min(3, Number(options.maxRetries ?? process.env.BROWSER_MAX_RETRIES ?? 1)));
     this.idleTimeoutMs = Math.max(100, Number(options.idleTimeoutMs ?? process.env.BROWSER_IDLE_TIMEOUT_MS ?? 120000));
     this.logger = options.logger || console;
@@ -36,6 +59,20 @@ export class BrowserManager {
     this.busy = false;
     this.idleTimer = null;
     this.queue = Promise.resolve();
+    this.refMap = {};
+  }
+
+  resolveSelector(selector) {
+    if (typeof selector !== 'string') return selector;
+    const trimmed = selector.trim();
+    if (trimmed.startsWith('@')) {
+      const ref = trimmed.slice(1);
+      return `[data-jarvis-ref="${ref}"]`;
+    }
+    if (/^e\d+$/i.test(trimmed)) {
+      return `[data-jarvis-ref="${trimmed}"]`;
+    }
+    return selector;
   }
 
   getStatus() {
@@ -68,9 +105,9 @@ export class BrowserManager {
 
   scheduleIdle() {
     clearTimeout(this.idleTimer);
-    if (this.engine?.kind !== 'firefox' || this.state === 'HUMAN_ACTION_REQUIRED') return;
+    if ((this.engine?.kind !== 'firefox' && this.engine?.kind !== 'camoufox') || this.state === 'HUMAN_ACTION_REQUIRED') return;
     this.idleTimer = setTimeout(() => { this.serial(async () => {
-      if (this.engine?.kind === 'firefox' && this.state !== 'HUMAN_ACTION_REQUIRED') {
+      if ((this.engine?.kind === 'firefox' || this.engine?.kind === 'camoufox') && this.state !== 'HUMAN_ACTION_REQUIRED') {
         this.currentUrl = this.engine.url() || this.currentUrl;
         this.lastFields = await this.engine.formState?.().catch(() => []) || [];
         this.lastEngine = 'firefox';
@@ -81,19 +118,21 @@ export class BrowserManager {
   }
 
   async start(kind, headed = false) {
-    this.state = kind === 'firefox' ? 'FIREFOX_STARTING' : 'LIGHTPANDA_ACTIVE';
-    const engine = kind === 'firefox' ? this.createFirefox() : this.createLightpanda();
+    this.state = (kind === 'firefox' || kind === 'camoufox') ? 'FIREFOX_STARTING' : (kind === 'obscura' ? 'OBSCURA_ACTIVE' : 'LIGHTPANDA_ACTIVE');
+    const engine = (kind === 'firefox' || kind === 'camoufox')
+      ? this.createFirefox()
+      : (kind === 'obscura' ? this.createObscura() : this.createLightpanda());
     try {
       await engine.start({ headed });
       this.engine = engine;
-      this.state = kind === 'firefox' ? 'FIREFOX_ACTIVE' : 'LIGHTPANDA_ACTIVE';
+      this.state = (kind === 'firefox' || kind === 'camoufox') ? 'FIREFOX_ACTIVE' : (kind === 'obscura' ? 'OBSCURA_ACTIVE' : 'LIGHTPANDA_ACTIVE');
       this.log(`${kind} started`);
       return engine;
     } catch (error) {
       await engine.close().catch(() => {});
       this.state = 'ERROR';
       this.lastError = error.message;
-      throw new BrowserError(kind === 'firefox' ? 'FIREFOX_START_FAILED' : 'BROWSER_UNAVAILABLE', `${kind} could not start: ${error.message}`, error);
+      throw new BrowserError((kind === 'firefox' || kind === 'camoufox') ? 'FIREFOX_START_FAILED' : 'BROWSER_UNAVAILABLE', `${kind} could not start: ${error.message}`, error);
     }
   }
 
@@ -129,7 +168,7 @@ export class BrowserManager {
   async checkChallenge(action, args, continuation = null) {
     let challenge = await this.engine.challenge?.();
     if (!challenge) return null;
-    if (this.engine.kind !== 'firefox') {
+    if (this.engine.kind !== 'firefox' && this.engine.kind !== 'camoufox') {
       await this.fallback('human verification');
       challenge = await this.engine.challenge?.() || challenge;
     }
@@ -174,6 +213,9 @@ export class BrowserManager {
   async perform(action, args = {}) {
     if (!VALID_ACTIONS.has(action)) throw new BrowserError('BROWSER_UNAVAILABLE', `Unsupported browser action: ${action}`);
     if (this.state === 'HUMAN_ACTION_REQUIRED') throw new BrowserError('HUMAN_ACTION_REQUIRED', 'Complete the verification in Firefox, then resume.');
+    if (args.selector && typeof args.selector === 'string') {
+      args = { ...args, selector: this.resolveSelector(args.selector) };
+    }
     if (['click', 'type', 'waitFor'].includes(action) && (typeof args.selector !== 'string' || !args.selector.trim() || args.selector.length > 500)) throw new BrowserError('TARGET_NOT_FOUND', 'A CSS selector of 1 to 500 characters is required.');
     if (action === 'press' && (typeof args.key !== 'string' || !args.key.trim() || args.key.length > 40)) throw new BrowserError('BROWSER_ACTION_FAILED', 'A valid key name of 1 to 40 characters is required.');
     if (action === 'type' && String(args.text ?? '').length > 10000) throw new BrowserError('BROWSER_ACTION_FAILED', 'Browser text exceeds the 10,000 character limit.');
@@ -186,11 +228,27 @@ export class BrowserManager {
     }
     const visual = VISUAL_ACTIONS.has(action) || args.mode === 'visual';
     const isAuthDomain = this.isDomainAuthenticated(args.url || this.currentUrl);
-    if ((visual || isAuthDomain) && this.engine?.kind !== 'firefox') await this.fallback(isAuthDomain ? 'authenticated domain' : 'visual capability required');
-    else if (!this.engine) {
-      const preferred = isAuthDomain ? 'firefox' : (this.lastEngine && this.currentUrl ? this.lastEngine : (process.platform === 'win32' || process.env.BROWSER_PRIMARY === 'firefox' ? 'firefox' : 'lightpanda'));
+    const isStateful = isStatefulDomain(args.url || this.currentUrl);
+
+    if ((visual || isAuthDomain || isStateful) && (this.engine?.kind !== 'firefox' && this.engine?.kind !== 'camoufox')) {
+      await this.fallback(isStateful ? 'stateful domain' : (isAuthDomain ? 'authenticated domain' : 'visual capability required'));
+    } else if (!this.engine) {
+      let preferred = 'lightpanda';
+      if (visual || isAuthDomain || isStateful) {
+        preferred = 'firefox';
+      } else if (this.lastEngine && this.currentUrl) {
+        preferred = this.lastEngine;
+      } else if (isObscuraAvailable()) {
+        preferred = 'obscura';
+      } else if (process.platform === 'win32' || process.env.BROWSER_PRIMARY === 'firefox' || process.env.BROWSER_PRIMARY === 'camoufox') {
+        preferred = 'firefox';
+      }
       try { await this.start(preferred); }
-      catch (error) { if (preferred !== 'lightpanda') throw error; this.record('Lightpanda unavailable', 'lightpanda', 'firefox'); await this.start('firefox'); }
+      catch (error) {
+        if (preferred !== 'lightpanda' && preferred !== 'obscura') throw error;
+        this.record(`${preferred} unavailable`, preferred, 'firefox');
+        await this.start('firefox');
+      }
       if (action !== 'navigate' && this.currentUrl) { await this.engine.navigate(this.currentUrl); await this.engine.applyFormState?.(this.lastFields); }
     }
     if (!this.engine.isHealthy()) await this.recover();
@@ -201,6 +259,7 @@ export class BrowserManager {
       if (action === 'press') return this.engine.press(args.key, args.selector);
       if (action === 'evaluate') return this.engine.evaluate(args.code);
       if (action === 'waitFor') return this.engine.waitFor(args.selector, args.timeout);
+      if (action === 'snapshot') return this.engine.snapshot();
       return this.engine[action]();
     };
     let result;
@@ -214,9 +273,14 @@ export class BrowserManager {
       }
     }
     this.currentUrl = this.engine.url() || this.currentUrl;
+    if (result?.refs) {
+      this.refMap = { ...this.refMap, ...result.refs };
+    } else if (result?.refMap) {
+      this.refMap = { ...this.refMap, ...result.refMap };
+    }
     const handoff = await this.checkChallenge(action, args);
     if (handoff) return handoff;
-    this.state = this.engine.kind === 'firefox' ? 'FIREFOX_ACTIVE' : 'LIGHTPANDA_ACTIVE';
+    this.state = (this.engine.kind === 'firefox' || this.engine.kind === 'camoufox') ? 'FIREFOX_ACTIVE' : (this.engine.kind === 'obscura' ? 'OBSCURA_ACTIVE' : 'LIGHTPANDA_ACTIVE');
     this.lastError = null; this.scheduleIdle(); this.log(`${this.engine.kind} ${action} success`);
     return { result, status: this.getStatus() };
   }
@@ -226,6 +290,7 @@ export class BrowserManager {
   click(selector, options = {}) { return this.execute('click', { selector, ...options }); }
   type(selector, text, options = {}) { return this.execute('type', { selector, text, ...options }); }
   press(key, selector, options = {}) { return this.execute('press', { key, selector, ...options }); }
+  snapshot() { return this.execute('snapshot'); }
   read() { return this.execute('read'); }
   getPageContent() { return this.execute('content'); }
   getAccessibilityTree() { return this.execute('accessibility'); }
