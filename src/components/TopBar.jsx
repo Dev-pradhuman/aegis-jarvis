@@ -90,7 +90,8 @@ export default function TopBar() {
   }, [telemetry.modelRouting?.executionMode]);
 
   const handleToggleMode = async () => {
-    const nextMode = activeMode === 'local' ? 'cloud' : 'local';
+    const cycle = { cloud: 'cli', cli: 'local', local: 'cloud' };
+    const nextMode = cycle[activeMode] || 'cloud';
     setLocalMode(nextMode);
     try {
       const res = await fetch('/api/models/execution-mode', {
@@ -180,12 +181,12 @@ export default function TopBar() {
         <div className="eyebrow">Execution Mode</div>
         <button
           type="button"
-          className={`execution-mode-btn ${activeMode === 'local' ? 'local' : 'cloud'}`}
+          className={`execution-mode-btn ${activeMode === 'cli' ? 'cli' : activeMode === 'local' ? 'local' : 'cloud'}`}
           onClick={handleToggleMode}
-          title="Toggle between Cloud API cascade and Local Ollama inference"
+          title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama"
           data-testid="execution-mode-toggle"
         >
-          {activeMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
+          {activeMode === 'cli' ? '⚡ CLI AGENT' : activeMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
         </button>
       </div>
       <div className="tb-seg tb-core">

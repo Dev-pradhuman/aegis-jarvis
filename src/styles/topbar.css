@@ -127,6 +127,16 @@
   border-color: rgba(0, 168, 255, 0.7);
   box-shadow: 0 0 10px rgba(0, 168, 255, 0.3);
 }
+.execution-mode-btn.cli {
+  background: rgba(234, 179, 8, 0.14);
+  border: 1px solid rgba(234, 179, 8, 0.45);
+  color: #facc15;
+}
+.execution-mode-btn.cli:hover {
+  background: rgba(234, 179, 8, 0.28);
+  border-color: rgba(234, 179, 8, 0.8);
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.35);
+}
 .execution-mode-btn.local {
   background: rgba(0, 255, 136, 0.12);
   border: 1px solid rgba(0, 255, 136, 0.4);

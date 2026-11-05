@@ -126,6 +126,7 @@ import { PiperProvider } from './ttsProvider.js';
 import { WakeWordProvider } from './wakeWordProvider.js';
 import { EnergyVADProvider } from './vadProvider.js';
 import { voiceRoutes } from './routes/voice.js';
+import { cliAgentBridge } from './cliAgentBridge.js';
 
 const voicePipeline = new VoicePipeline({
   audioSource: new AudioCapture(),
@@ -135,6 +136,9 @@ const voicePipeline = new VoicePipeline({
   sttProvider: new GroqWhisperProvider({ enabled: true, localProvider: new WhisperProvider() }),
   ttsProvider: new PiperProvider({ audioPlayback: new AudioPlayback() })
 });
+
+cliAgentBridge.setVoicePipeline(voicePipeline);
+cliAgentBridge.init().catch((err) => console.warn('[CliAgentBridge] Init warning:', err.message));
 voicePipeline.on('transcription', async (text) => {
   if (!text || typeof text !== 'string') {
     if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');
@@ -195,7 +199,7 @@ voicePipeline.on('transcription', async (text) => {
         return draft;
       });
 
-      await voicePipeline.speak(result.reply);
+      await voicePipeline.speak(result.spokenText || result.reply);
     } else {
       if (voicePipeline.state !== 'idle') voicePipeline.transition('idle');
     }

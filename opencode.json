@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "jarvis": {
+        "type": "local",
+        "command": [
+          "node",
+          "/home/pradhuman/projects/aegis-jarvis/scripts/jarvis-mcp-stdio.mjs"
+        ]
+      }
+    }
+  }
+}

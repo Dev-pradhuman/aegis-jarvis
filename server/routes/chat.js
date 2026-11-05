@@ -47,6 +47,7 @@ import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrain
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
 import { openDesktopUrl } from '../platform/linux/apps.js';
 import { osPlatform } from '../platform/index.js';
+import { cliAgentBridge } from '../cliAgentBridge.js';
 
 export default async function chatRoutes(req, res, url, state, ctx) {
   const { json, safeWrite, safeEnd, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
@@ -286,6 +287,80 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           }
         }
 
+        const executionMode = input.mode || state.modelRouting?.executionMode || 'cloud';
+        if (executionMode === 'cli') {
+          const isIdentityOrSelf = /who (?:are|r) you|what (?:model|are you)|which model|are you using|active model/i.test(text);
+          if (isIdentityOrSelf) {
+            const reply = 'I am JARVIS, running in CLI AGENT mode powered by OpenCode with full MCP desktop tool integration.';
+            if (isSSE) {
+              if (!clientDisconnected && !res.writableEnded) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders?.();
+                safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+                safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: reply })}\n\n`);
+                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, assistant: 'JARVIS', executionMode: 'cli' })}\n\n`);
+                safeEnd(res);
+              }
+              return true;
+            }
+            return json(res, 200, { reply, assistant: 'JARVIS', executionMode: 'cli' });
+          }
+
+          if (isSSE) {
+            if (clientDisconnected || res.writableEnded || res.destroyed) return true;
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders?.();
+            safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+          }
+
+          try {
+            const result = await cliAgentBridge.prompt(text, {
+              source: input.source,
+              speak: Boolean(input.speak),
+              onToken: (chunk) => {
+                if (isSSE && !clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: chunk })}\n\n`);
+                }
+              },
+              onEvent: (event) => {
+                if (isSSE && !clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify(event)}\n\n`);
+                }
+              }
+            });
+
+            if (isSSE) {
+              if (!clientDisconnected) {
+                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply: result.reply, assistant: 'JARVIS', runId: result.runId, tools: result.tools, executionMode: 'cli' })}\n\n`);
+                safeEnd(res);
+              }
+              return true;
+            }
+
+            return json(res, 200, {
+              reply: result.reply,
+              spokenText: result.spokenText,
+              assistant: 'JARVIS',
+              runId: result.runId,
+              tools: result.tools,
+              executionMode: 'cli'
+            });
+          } catch (cliErr) {
+            if (isSSE) {
+              if (!clientDisconnected) {
+                safeWrite(res, `data: ${JSON.stringify({ type: 'error', error: cliErr.message })}\n\n`);
+                safeEnd(res);
+              }
+              return true;
+            }
+            return json(res, 502, { error: cliErr.message, executionMode: 'cli' });
+          }
+        }
+
         const routeStarted = performance.now(); const route = routeRequest(text);
         if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
           const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.origin = 'chat'; transitionRun(run, 'running');
@@ -470,11 +545,15 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           }
           else if (route.capability === 'runtime.telemetry') { data = { provider: publicProvider(state.provider), usage: state.runtime?.usage || {}, uptimeSeconds: uptimeSeconds() }; reply = `Using ${data.provider.label} with model ${data.provider.model}.`; }
           else if (route.capability === 'models.list') {
-            const isLocal = state.modelRouting?.executionMode === 'local';
+            const executionMode = state.modelRouting?.executionMode || 'cloud';
+            const isCli = executionMode === 'cli';
+            const isLocal = executionMode === 'local';
             const queryText = (input.text || route.args?.query || '').toLowerCase();
             const isIdentityOrSelf = /who (?:are|r) you|what (?:model|are you)|which model|are you using|active model/i.test(queryText);
 
-            if (isLocal) {
+            if (isCli) {
+              reply = 'I am JARVIS, running in CLI AGENT mode powered by OpenCode with full MCP desktop tool integration.';
+            } else if (isLocal) {
               reply = `I am JARVIS, running in LOCAL mode powered by Ollama. My active text/tools model is ${DEFAULT_OLLAMA_MODEL} and my vision model is ${DEFAULT_OLLAMA_VISION_MODEL}.`;
             } else if (isIdentityOrSelf) {
               const cloudModel = state.provider?.model || state.modelRouting?.last?.actualModel || 'Groq / OpenRouter cloud cascade';

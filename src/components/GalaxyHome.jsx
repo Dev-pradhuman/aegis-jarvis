@@ -123,7 +123,8 @@ export default function GalaxyHome() {
   }, []);
 
   const handleToggleMode = async () => {
-    const nextMode = executionMode === 'local' ? 'cloud' : 'local';
+    const cycle = { cloud: 'cli', cli: 'local', local: 'cloud' };
+    const nextMode = cycle[executionMode] || 'cloud';
     setExecutionMode(nextMode);
     try {
       const res = await fetch('/api/models/execution-mode', {
@@ -236,7 +237,7 @@ export default function GalaxyHome() {
     <Scene phase={visual.phase} sceneRef={sceneRef} />
     <div className="galaxy-vignette" />
     <Navigation expanded={expanded} onToggle={() => setExpanded((value) => !value)} open={open} phase={visual.phase} active={activeTab} />
-    <div className="galaxy-topline"><div className="system-identity"><span className="identity-tick" /> SYSTEM ACCESS <span> / INTELLIGENCE</span></div><div className="topline-actions topbar-right"><button type="button" data-testid="execution-mode-toggle" className={`execution-mode-btn ${executionMode === 'local' ? 'local' : 'cloud'}`} onClick={handleToggleMode} title="Toggle between Cloud API cascade and Local Ollama inference" aria-label="Toggle execution mode">{executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}</button><span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />{visual.serviceStatus}<button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera"><RotateCcw size={14} /></button><button onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep} title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'} aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}>{visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
+    <div className="galaxy-topline"><div className="system-identity"><span className="identity-tick" /> SYSTEM ACCESS <span> / INTELLIGENCE</span></div><div className="topline-actions topbar-right"><button type="button" data-testid="execution-mode-toggle" className={`execution-mode-btn ${executionMode === 'cli' ? 'cli' : executionMode === 'local' ? 'local' : 'cloud'}`} onClick={handleToggleMode} title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama" aria-label="Toggle execution mode">{executionMode === 'cli' ? '⚡ CLI' : executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}</button><span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />{visual.serviceStatus}<button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera"><RotateCcw size={14} /></button><button onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep} title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'} aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}>{visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
     <button className="galaxy-fullscreen-toggle" onClick={() => void toggleImmersive()} aria-label={immersive ? 'Exit immersive Galaxy' : 'Enter immersive Galaxy'} title={immersive ? 'Exit immersive Galaxy (Esc)' : 'Enter immersive Galaxy (F)'}>{immersive ? <Shrink size={15} /> : <Expand size={15} />}</button>
 
     {activeTab === 'home' && (
