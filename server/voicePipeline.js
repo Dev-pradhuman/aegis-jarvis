@@ -121,63 +121,124 @@ export class VoicePipeline extends EventEmitter {
     }
   }
 
+  async playAudioBuffer(audioBuf) {
+    const { spawn } = await import('node:child_process');
+    return new Promise((resolve) => {
+      const ffplay = spawn('ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', '-']);
+      ffplay.stdin.on('error', () => {});
+      let fallbackTriggered = false;
+      const doFallback = () => {
+        if (fallbackTriggered) return;
+        fallbackTriggered = true;
+        this.fallbackPlay(audioBuf).then(resolve);
+      };
+
+      ffplay.on('error', doFallback);
+      ffplay.on('close', (code) => {
+        if (code !== 0) doFallback();
+        else resolve();
+      });
+      ffplay.stdin.end(audioBuf);
+    });
+  }
+
+  async fallbackPlay(audioBuf) {
+    const { spawn } = await import('node:child_process');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const tmpFile = path.join(os.tmpdir(), `jarvis-speech-${Date.now()}.wav`);
+    try {
+      await fs.writeFile(tmpFile, audioBuf);
+      await new Promise((resolve) => {
+        const mpv = spawn('mpv', ['--no-video', '--really-quiet', tmpFile]);
+        mpv.on('error', () => {
+          const pw = spawn('pw-play', [tmpFile]);
+          pw.on('error', () => {
+            const pa = spawn('paplay', [tmpFile]);
+            pa.on('error', () => resolve());
+            pa.on('close', () => resolve());
+          });
+          pw.on('close', () => resolve());
+        });
+        mpv.on('close', () => resolve());
+      });
+      await fs.unlink(tmpFile).catch(() => {});
+    } catch {}
+  }
+
   async speak(text) {
     this.transition('speaking');
     const isTest = process.env.JARVIS_TEST === '1';
+    const isMockTts = this.ttsProvider && this.ttsProvider.constructor?.name !== 'PiperProvider';
+
+    // In test mode or when a mock provider is passed, call ttsProvider directly for isolation and speed
+    if ((isTest || isMockTts) && this.ttsProvider) {
+      try {
+        await this.ttsProvider.speak(text);
+      } catch {}
+      if (this.state === 'speaking') {
+        this.transition('idle');
+      }
+      return { audio: null, audioBase64: null, text };
+    }
+
+    let audioBuf = null;
     const hasCloudKeys = Boolean(process.env.ELEVENLABS_API_KEY || process.env.GROQ_API_KEY);
 
+    // 1. Try synthesizeSpeech (cloud or configured provider)
     if (hasCloudKeys && !isTest) {
       try {
         const { synthesizeSpeech } = await import('./tts.js');
         const res = await synthesizeSpeech({ text });
-        const audioBuf = res?.audio || res?.audioBuffer;
-        if (audioBuf && this.audioPlayback) {
-          const { spawn } = await import('node:child_process');
-          const ffmpeg = spawn('ffmpeg', ['-i', 'pipe:0', '-f', 's16le', '-ar', '22050', '-ac', '1', 'pipe:1']);
-          ffmpeg.stdin.on('error', () => {});
-          ffmpeg.on('error', () => {});
-          ffmpeg.stdin.end(audioBuf);
-          await this.audioPlayback.playStream(ffmpeg.stdout);
-          if (this.state === 'speaking') {
-            this.transition('idle');
-          }
-          return;
-        }
-      } catch (err) {
-        // Fall back to local ttsProvider
-      }
+        audioBuf = res?.audio || res?.audioBuffer || null;
+      } catch {}
     }
 
-    if (this.ttsProvider) {
+    // 2. If no cloud audioBuf and local piper is available, synthesize with piper
+    if (!audioBuf && !isTest) {
+      try {
+        const { spawn } = await import('node:child_process');
+        const path = await import('node:path');
+        const fs = await import('node:fs/promises');
+        const piperBin = path.join(process.cwd(), 'bin/piper');
+        const piperModel = process.env.PIPER_MODEL_PATH || path.join(process.cwd(), '.cache/voice/piper-voice.onnx');
+        await fs.access(piperModel);
+        
+        audioBuf = await new Promise((resolve) => {
+          const proc = spawn(piperBin, ['-m', piperModel, '-f', '-'], { stdio: ['pipe', 'pipe', 'pipe'] });
+          const chunks = [];
+          proc.stdout.on('data', (c) => chunks.push(c));
+          proc.on('close', (code) => {
+            if (code === 0 && chunks.length) resolve(Buffer.concat(chunks));
+            else resolve(null);
+          });
+          proc.on('error', () => resolve(null));
+          proc.stdin.write(text);
+          proc.stdin.end();
+        });
+      } catch {}
+    }
+
+    // 3. Play audio out loud on the Linux host PipeWire audio sink using ffplay / mpv / pw-play
+    if (audioBuf && !isTest) {
+      await this.playAudioBuffer(audioBuf);
+    } else if (this.ttsProvider && !isTest) {
       try {
         await this.ttsProvider.speak(text);
-        if (this.state === 'speaking') {
-          this.transition('idle');
-        }
-        return;
-      } catch (err) {
-        // Log and attempt cloud fallback below
-      }
+      } catch {}
     }
 
-    try {
-      const { synthesizeSpeech } = await import('./tts.js');
-      const res = await synthesizeSpeech({ text });
-      const audioBuf = res?.audio || res?.audioBuffer;
-      if (audioBuf && this.audioPlayback) {
-        const { spawn } = await import('node:child_process');
-        const ffmpeg = spawn('ffmpeg', ['-i', 'pipe:0', '-f', 's16le', '-ar', '22050', '-ac', '1', 'pipe:1']);
-        ffmpeg.stdin.on('error', () => {});
-        ffmpeg.on('error', () => {});
-        ffmpeg.stdin.end(audioBuf);
-        await this.audioPlayback.playStream(ffmpeg.stdout);
-      }
-    } catch {
-      // Fallback failed or text-only
-    }
     if (this.state === 'speaking') {
       this.transition('idle');
     }
+
+    const audioBase64 = audioBuf ? audioBuf.toString('base64') : null;
+    return {
+      audio: audioBuf,
+      audioBase64,
+      text
+    };
   }
 
   async streamSpeak(textStream) {

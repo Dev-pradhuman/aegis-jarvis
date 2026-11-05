@@ -190,8 +190,8 @@ export function routeRequest(text) {
   if (pressKey) return { route: 'TOOL_CALL', capability: 'computer.keypress', args: { keys: pressKey[1].trim() }, confidence: 0.99 };
   const setVolume = value.match(/^(?:set\s+(?:the\s+)?(?:system\s+)?volume\s+(?:to\s+)?|volume\s+)(\d{1,3})%?$/i);
   if (setVolume && Number(setVolume[1]) <= 100) return { route: 'TOOL_CALL', capability: 'audio.set_volume', args: { volume: Number(setVolume[1]) }, confidence: 0.99 };
-  if (/^(?:mute|mute audio|mute volume)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };
-  if (/^(?:unmute|unmute audio|unmute volume)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.unmute', args: {}, confidence: 0.99 };
+  if (/^(?:mute|mute audio|mute volume|mute the (?:sound|audio|volume)|mute sound)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.mute', args: {}, confidence: 0.99 };
+  if (/^(?:unmute|unmute audio|unmute volume|unmute the (?:sound|audio|volume)|unmute sound)$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.unmute', args: {}, confidence: 0.99 };
   const adjustVolume = value.match(/(?:turn\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(?:turn\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(lower|drop|decrease|raise|increase|bump)\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume)(?:\s+(?:by\s+)?(\d{1,3}))?\s*(?:%|percent)?/i) ||
     raw.match(/(?:turn\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(?:turn\s+)?(?:speaker\s+|system\s+)?volume\s+(down|up|lower|higher)|(lower|drop|decrease|raise|increase|bump)\s+(?:the\s+)?(?:speaker\s+|system\s+)?volume)(?:\s+(?:by\s+)?(\d{1,3}))?\s*(?:%|percent)?/i);
   if (adjustVolume) {

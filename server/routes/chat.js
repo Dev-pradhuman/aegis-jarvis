@@ -288,80 +288,8 @@ export default async function chatRoutes(req, res, url, state, ctx) {
         }
 
         const executionMode = input.mode || state.modelRouting?.executionMode || 'cloud';
-        if (executionMode === 'cli') {
-          const isIdentityOrSelf = /who (?:are|r) you|what (?:model|are you)|which model|are you using|active model/i.test(text);
-          if (isIdentityOrSelf) {
-            const reply = 'I am JARVIS, running in CLI AGENT mode powered by OpenCode with full MCP desktop tool integration.';
-            if (isSSE) {
-              if (!clientDisconnected && !res.writableEnded) {
-                res.setHeader('Content-Type', 'text/event-stream');
-                res.setHeader('Cache-Control', 'no-cache');
-                res.setHeader('Connection', 'keep-alive');
-                res.flushHeaders?.();
-                safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
-                safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: reply })}\n\n`);
-                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, assistant: 'JARVIS', executionMode: 'cli' })}\n\n`);
-                safeEnd(res);
-              }
-              return true;
-            }
-            return json(res, 200, { reply, assistant: 'JARVIS', executionMode: 'cli' });
-          }
-
-          if (isSSE) {
-            if (clientDisconnected || res.writableEnded || res.destroyed) return true;
-            res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection', 'keep-alive');
-            res.flushHeaders?.();
-            safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
-          }
-
-          try {
-            const result = await cliAgentBridge.prompt(text, {
-              source: input.source,
-              speak: Boolean(input.speak),
-              onToken: (chunk) => {
-                if (isSSE && !clientDisconnected) {
-                  safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: chunk })}\n\n`);
-                }
-              },
-              onEvent: (event) => {
-                if (isSSE && !clientDisconnected) {
-                  safeWrite(res, `data: ${JSON.stringify(event)}\n\n`);
-                }
-              }
-            });
-
-            if (isSSE) {
-              if (!clientDisconnected) {
-                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply: result.reply, assistant: 'JARVIS', runId: result.runId, tools: result.tools, executionMode: 'cli' })}\n\n`);
-                safeEnd(res);
-              }
-              return true;
-            }
-
-            return json(res, 200, {
-              reply: result.reply,
-              spokenText: result.spokenText,
-              assistant: 'JARVIS',
-              runId: result.runId,
-              tools: result.tools,
-              executionMode: 'cli'
-            });
-          } catch (cliErr) {
-            if (isSSE) {
-              if (!clientDisconnected) {
-                safeWrite(res, `data: ${JSON.stringify({ type: 'error', error: cliErr.message })}\n\n`);
-                safeEnd(res);
-              }
-              return true;
-            }
-            return json(res, 502, { error: cliErr.message, executionMode: 'cli' });
-          }
-        }
-
-        const routeStarted = performance.now(); const route = routeRequest(text);
+        const routeStarted = performance.now();
+        const route = routeRequest(text);
         if (route.route === 'TOOL_CALL' && route.confidence >= 0.9) {
           const run = await beginRun(state, { request: text, type: 'tool', conversationId: input.conversationId || null }); run.origin = 'chat'; transitionRun(run, 'running');
           const toolStarted = performance.now(); let data; let reply;
@@ -552,7 +480,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             const isIdentityOrSelf = /who (?:are|r) you|what (?:model|are you)|which model|are you using|active model/i.test(queryText);
 
             if (isCli) {
-              reply = 'I am JARVIS, running in CLI AGENT mode powered by OpenCode with full MCP desktop tool integration.';
+              reply = 'I am JARVIS, running in CLI AGENT mode powered by Antigravity CLI (Gemini 3.8 Flash) with full MCP desktop tool integration.';
             } else if (isLocal) {
               reply = `I am JARVIS, running in LOCAL mode powered by Ollama. My active text/tools model is ${DEFAULT_OLLAMA_MODEL} and my vision model is ${DEFAULT_OLLAMA_VISION_MODEL}.`;
             } else if (isIdentityOrSelf) {
@@ -606,7 +534,99 @@ export default async function chatRoutes(req, res, url, state, ctx) {
           if (run.steps[0]?.status === 'queued') { run.steps[0].status = 'completed'; run.steps[0].startedAt = run.steps[0].startedAt || new Date().toISOString(); run.steps[0].completedAt = new Date().toISOString(); }
           finishRun(run, data, { total: 0 });
           await updateState((draft) => { const stored = draft.runs?.find((item) => item.id === run.id); if (stored) Object.assign(stored, run); else { draft.runs ??= []; draft.runs.unshift(run); } if (data?.media?.kind === 'video') { draft.mediaJobs ??= []; draft.mediaJobs.unshift(data.media); draft.mediaJobs = draft.mediaJobs.slice(0, 100); } draft.runtime ??= { usage: {}, latency: {} }; draft.runtime.usage ??= { requests: 0, tokens: 0, cost: 0 }; draft.runtime.usage.requests += 1; draft.runtime.latency ??= { samples: 0 }; draft.runtime.latency.routerMs = routeStarted ? Math.round(performance.now() - routeStarted) : 0; draft.runtime.latency.toolMs = Math.round(performance.now() - toolStarted); draft.runtime.latency.totalMs = Math.round(performance.now() - routeStarted); draft.runtime.latency.samples = Number(draft.runtime.latency.samples || 0) + 1; draft.conversations ??= []; if (input.source !== 'voice' || input.retainTranscript) { draft.conversations.push({ who: 'YOU', time: new Date().toISOString(), lines: [text] }, { who: 'JARVIS', time: new Date().toISOString(), lines: [reply], media: data?.media || null }); } draft.conversations = draft.conversations.slice(-100); return draft; });
-          return json(res, 200, { reply, assistant: 'JARVIS', grounded: true, runId: run.id, route, action: data?.action ? data : null, media: data?.media || null });
+          const shouldSpeak = input.speak === true || input.source === 'voice' || executionMode === 'cli';
+          let audioBase64 = null;
+          if (shouldSpeak && reply && ctx.voicePipeline) {
+            try {
+              const speakRes = await ctx.voicePipeline.speak(reply);
+              audioBase64 = speakRes?.audioBase64 || null;
+            } catch (speakErr) {
+              console.warn('[chat] Tool reply speak error:', speakErr.message);
+            }
+          }
+          return json(res, 200, { reply, spokenText: reply, audioBase64, assistant: 'JARVIS', grounded: true, runId: run.id, route, executionMode, action: data?.action ? data : null, media: data?.media || null });
+        }
+
+        if (executionMode === 'cli') {
+          const isIdentityOrSelf = /who (?:are|r) you|what (?:model|are you)|which model|are you using|active model/i.test(text);
+          if (isIdentityOrSelf) {
+            const reply = 'I am JARVIS, running in CLI AGENT mode powered by Antigravity CLI (Gemini 3.8 Flash) with full MCP desktop tool integration.';
+            const shouldSpeak = input.speak !== false;
+            let audioBase64 = null;
+            if (shouldSpeak && ctx.voicePipeline) {
+              try {
+                const speakRes = await ctx.voicePipeline.speak(reply);
+                audioBase64 = speakRes?.audioBase64 || null;
+              } catch {}
+            }
+            if (isSSE) {
+              if (!clientDisconnected && !res.writableEnded) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders?.();
+                safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+                safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: reply })}\n\n`);
+                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, spokenText: reply, audioBase64, assistant: 'JARVIS', executionMode: 'cli' })}\n\n`);
+                safeEnd(res);
+              }
+              return true;
+            }
+            return json(res, 200, { reply, spokenText: reply, audioBase64, assistant: 'JARVIS', executionMode: 'cli' });
+          }
+
+          if (isSSE) {
+            if (clientDisconnected || res.writableEnded || res.destroyed) return true;
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders?.();
+            safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+          }
+
+          try {
+            const result = await cliAgentBridge.prompt(text, {
+              source: input.source,
+              speak: input.speak !== false,
+              onToken: (chunk) => {
+                if (isSSE && !clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: chunk })}\n\n`);
+                }
+              },
+              onEvent: (event) => {
+                if (isSSE && !clientDisconnected) {
+                  safeWrite(res, `data: ${JSON.stringify(event)}\n\n`);
+                }
+              }
+            });
+
+            if (isSSE) {
+              if (!clientDisconnected) {
+                safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply: result.reply, spokenText: result.spokenText, audioBase64: result.audioBase64, assistant: 'JARVIS', runId: result.runId, tools: result.tools, executionMode: 'cli' })}\n\n`);
+                safeEnd(res);
+              }
+              return true;
+            }
+
+            return json(res, 200, {
+              reply: result.reply,
+              spokenText: result.spokenText,
+              audioBase64: result.audioBase64,
+              assistant: 'JARVIS',
+              runId: result.runId,
+              tools: result.tools,
+              executionMode: 'cli'
+            });
+          } catch (cliErr) {
+            if (isSSE) {
+              if (!clientDisconnected) {
+                safeWrite(res, `data: ${JSON.stringify({ type: 'error', error: cliErr.message })}\n\n`);
+                safeEnd(res);
+              }
+              return true;
+            }
+            return json(res, 502, { error: cliErr.message, executionMode: 'cli' });
+          }
         }
 
         const run = await beginRun(state, { request: text, type: 'chat', conversationId: input.conversationId || null });

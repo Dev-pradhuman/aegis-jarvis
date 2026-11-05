@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
-import { ensureMcpConfig } from './mcpBridge.js';
+import { ensureMcpConfig, ensureIsolatedAgyProfile, DEFAULT_CLI_HOME, DEFAULT_CLI_WORKSPACE } from './mcpBridge.js';
 import { getState, updateState, activityEntry } from './store.js';
 import { createRun, addRunStep, transitionRun, completeRun, failRun } from './runEngine.js';
 
@@ -42,6 +42,8 @@ export function formatTextForSpeech(str = '') {
 export class CliAgentBridge {
   constructor(options = {}) {
     this.projectRoot = options.projectRoot || DEFAULT_PROJECT_ROOT;
+    this.cliHome = options.cliHome || DEFAULT_CLI_HOME;
+    this.cliWorkspace = options.cliWorkspace || DEFAULT_CLI_WORKSPACE;
     this.sessionId = options.sessionId || `ses_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this.agyConversationId = options.agyConversationId || null;
     this.voicePipeline = options.voicePipeline || null;
@@ -63,10 +65,16 @@ export class CliAgentBridge {
    * Initializes MCP configs and prepares background CLI session.
    */
   async init() {
+    if (process.env.JARVIS_TEST === '1') return;
     try {
       await ensureMcpConfig(this.projectRoot);
+      await ensureIsolatedAgyProfile({
+        homeDir: this.cliHome,
+        workspaceDir: this.cliWorkspace,
+        projectRoot: this.projectRoot
+      });
     } catch (err) {
-      console.warn('[CliAgentBridge] Failed to ensure MCP configuration:', err.message);
+      console.warn('[CliAgentBridge] Failed to ensure MCP configuration or isolated profile:', err.message);
     }
   }
 
@@ -229,12 +237,18 @@ export class CliAgentBridge {
   }
 
   /**
-   * Runs prompt via agy CLI.
+   * Runs prompt via agy CLI inside isolated ~/.jarvis-cli-profile/home.
    */
   async executeWithAgy(userText, options = {}, run = null, executedTools = []) {
     return new Promise((resolve, reject) => {
+      const promptText = !this.agyConversationId
+        ? `You are JARVIS. Reply in 1-2 concise sentences suitable for spoken TTS.\n\n${userText}`
+        : userText;
+
       const args = [
-        '-p', userText,
+        '-p', promptText,
+        '--model', 'gemini-3.8-flash-low',
+        '--effort', 'low',
         '--dangerously-skip-permissions',
         '--output-format', 'json'
       ];
@@ -245,8 +259,16 @@ export class CliAgentBridge {
       let proc;
       try {
         proc = spawn('agy', args, {
-          cwd: this.projectRoot,
-          env: process.env,
+          cwd: this.cliWorkspace,
+          env: {
+            ...process.env,
+            HOME: this.cliHome,
+            PATH: process.env.PATH || '',
+            DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || '',
+            XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || '',
+            DISPLAY: process.env.DISPLAY || '',
+            WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || ''
+          },
           stdio: ['ignore', 'pipe', 'pipe']
         });
       } catch (err) {
@@ -305,12 +327,29 @@ export class CliAgentBridge {
    * Sends a user prompt into the persistent CLI agent session and processes structured output.
    */
   async prompt(userText, options = {}) {
+    if (process.env.JARVIS_TEST === '1') {
+      const mockReply = `Mock reply for: ${userText}`;
+      if (options.onToken) {
+        options.onToken('Mock reply for: ');
+        options.onToken(userText);
+      }
+      return {
+        reply: mockReply,
+        spokenText: mockReply,
+        audioBase64: null,
+        sessionId: options.sessionId || this.sessionId,
+        tools: [],
+        provider: this.cliProvider,
+        runId: `run-test-${Date.now()}`
+      };
+    }
+
     await this.init();
 
     this.status = 'running';
     this.lastPrompt = userText;
     const targetSessionId = options.sessionId || this.sessionId;
-    const speak = Boolean(options.speak);
+    const speak = options.speak !== false;
     const source = options.source || 'text';
 
     // 1. Create or bind JARVIS Run record for tracking
@@ -397,9 +436,11 @@ export class CliAgentBridge {
     } catch {}
 
     // Handle speech output if requested or from voice
+    let audioBase64 = null;
     if (speak && spokenText && this.voicePipeline) {
       try {
-        await this.voicePipeline.speak(spokenText);
+        const speakResult = await this.voicePipeline.speak(spokenText);
+        audioBase64 = speakResult?.audioBase64 || null;
       } catch (speakErr) {
         console.warn('[CliAgentBridge] Failed to speak output:', speakErr.message);
       }
@@ -408,6 +449,7 @@ export class CliAgentBridge {
     return {
       reply: cleanReply,
       spokenText,
+      audioBase64,
       sessionId: executionResult.sessionId || targetSessionId,
       tools: executedTools,
       provider: providerUsed,
@@ -419,6 +461,9 @@ export class CliAgentBridge {
     return {
       provider: this.cliProvider,
       sessionId: this.sessionId,
+      conversationId: this.agyConversationId,
+      cliHome: this.cliHome,
+      cliWorkspace: this.cliWorkspace,
       status: this.status,
       serverActive: Boolean(this.serverProcess),
       lastPrompt: this.lastPrompt,

@@ -6,7 +6,8 @@ import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { stripAnsi, formatTextForSpeech, CliAgentBridge } from '../server/cliAgentBridge.js';
-import { ensureMcpConfig, getMcpToolDefinitions } from '../server/mcpBridge.js';
+import { ensureMcpConfig, ensureIsolatedAgyProfile, getMcpToolDefinitions, DEFAULT_CLI_HOME, DEFAULT_CLI_WORKSPACE } from '../server/mcpBridge.js';
+import { routeRequest } from '../server/router.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -153,9 +154,68 @@ test('AC3: Execution mode toggle supports "cli" mode', async () => {
   assert.equal(cycle['cloud'], 'cli');
   assert.equal(cycle['cli'], 'local');
   assert.equal(cycle['local'], 'cloud');
+
+  // Reset back to cloud for clean test environment
+  await updateState((draft) => {
+    draft.modelRouting ??= {};
+    draft.modelRouting.executionMode = 'cloud';
+    return draft;
+  });
 });
 
-test('AC3: Chat route responds with CLI AGENT identity when in CLI mode', async () => {
+test('AC1: ensureIsolatedAgyProfile creates stripped HOME profile without global skills or plugins', async () => {
+  const tempDir = path.join(PROJECT_ROOT, '.test-cli-profile-' + Date.now());
+  const tempHome = path.join(tempDir, 'home');
+  const tempWorkspace = path.join(tempDir, 'workspace');
+
+  try {
+    const result = await ensureIsolatedAgyProfile({
+      homeDir: tempHome,
+      workspaceDir: tempWorkspace,
+      projectRoot: PROJECT_ROOT
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.homeDir, tempHome);
+    assert.equal(result.workspaceDir, tempWorkspace);
+
+    // Verify NO .agents or plugins directory exists
+    const hasAgents = await fs.access(path.join(tempHome, '.agents')).then(() => true).catch(() => false);
+    assert.equal(hasAgents, false, '.agents must not exist in isolated home');
+
+    const hasPlugins = await fs.access(path.join(tempHome, '.gemini', 'config', 'plugins')).then(() => true).catch(() => false);
+    assert.equal(hasPlugins, false, 'plugins must not exist in isolated home');
+
+    const hasSkills = await fs.access(path.join(tempHome, '.gemini', 'skills')).then(() => true).catch(() => false);
+    assert.equal(hasSkills, false, 'global skills must not exist in isolated home');
+
+    // Verify settings.json
+    const settingsPath = path.join(tempHome, '.gemini', 'antigravity-cli', 'settings.json');
+    const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+    assert.equal(settings.model, 'gemini-3.8-flash-low');
+    assert.ok(settings.trustedWorkspaces.includes(tempWorkspace));
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('AC2: Fast Tier-0 routing executes deterministic tools without calling model', () => {
+  const queries = [
+    'whats my system volume right now?',
+    'what is the volume',
+    'mute the sound',
+    'pause music',
+    'can you open brave browser'
+  ];
+
+  for (const q of queries) {
+    const route = routeRequest(q);
+    assert.equal(route.route, 'TOOL_CALL', `Query "${q}" should route to TOOL_CALL`);
+    assert.ok(route.confidence >= 0.9, `Query "${q}" should have high confidence`);
+  }
+});
+
+test('AC3: Chat route responds with Antigravity CLI identity in CLI mode', async () => {
   const port = process.env.JARVIS_PORT || 8787;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/chat`, {
@@ -172,11 +232,11 @@ test('AC3: Chat route responds with CLI AGENT identity when in CLI mode', async 
 
     if (res.ok) {
       const data = await res.json();
-      assert.ok(data.reply.includes('CLI AGENT mode powered by OpenCode'));
+      assert.ok(data.reply.includes('CLI AGENT mode powered by Antigravity CLI'));
       assert.equal(data.executionMode, 'cli');
     }
   } catch (err) {
-    // If daemon is not running on 8787 right now, verify logic unit-level
+    // Daemon check
   }
 });
 
