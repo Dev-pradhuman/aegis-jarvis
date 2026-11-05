@@ -106,7 +106,7 @@ export const implementedToolIds = [
   'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'gmail.send', 'calendar.upcoming',
   'media.generate', 'research.search', 'calendar.create', 'composio.read', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
-  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'youtube.play',
+  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play',
   'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'pointer.move', 'pointer.click', 'pointer.scroll',
 
   'screen.capture', 'screen.describe', 'screen.locate', 'screen.read_region',
@@ -271,6 +271,12 @@ async function runTool(toolId, input = {}, context = {}) {
   }
   if (toolId === 'screen.capture') return { ok: true, toolId, data: await osPlatform.screen.capture(input) };
   if (toolId === 'media.status') return { ok: true, toolId, data: await osPlatform.media.status(input.player) };
+  if (toolId === 'media.play_music') {
+    const rawQuery = String(input.query || input.song || input.title || input.search || '').trim();
+    if (!rawQuery) throw new Error('A search query is required for media.play_music');
+    const data = await osPlatform.media.playMusic(rawQuery, input);
+    return { ok: Boolean(data.status === 'playing'), toolId, data };
+  }
   if (toolId.startsWith('media.') && toolId !== 'media.generate') {
     const action = toolId.split('.')[1];
     const data = await osPlatform.media[action](input.player);
@@ -281,7 +287,8 @@ async function runTool(toolId, input = {}, context = {}) {
     if (!rawQuery) throw new Error('A search query is required for youtube.play');
     const data = await playYouTubeVideo(rawQuery, {
       browserManager: context.browserManager || browserManager,
-      openDesktopUrl: context.openDesktopUrl || openDesktopUrl
+      openDesktopUrl: context.openDesktopUrl || openDesktopUrl,
+      directWatch: true
     });
     return { ok: true, toolId, data };
   }

@@ -362,6 +362,13 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             data = response.data || response;
             reply = `Playing ${data.title || route.args.query} on YouTube.`;
           }
+          else if (route.capability === 'media.play_music') {
+            const response = await invokeChatTool('media.play_music', route.args);
+            data = response.data || response;
+            const trackTitle = data.title || route.args.query;
+            const byArtist = data.artist && data.artist !== 'YouTube' ? ` by ${data.artist}` : '';
+            reply = `Playing ${trackTitle}${byArtist} in the background.`;
+          }
           else if (route.capability.startsWith('audio.')) {
             const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
             if (response.status !== 200 || !response.body.ok) {
@@ -381,7 +388,7 @@ export default async function chatRoutes(req, res, url, state, ctx) {
               await updateState((draft) => draft);
               return json(res, response.status === 200 ? 409 : response.status, { reply: message, runId: run.id, data, code: 'MEDIA_ACTION_UNVERIFIED' });
             }
-            reply = route.capability === 'media.status' ? `${data.application} is ${data.state}${data.title ? `: ${data.title}` : ''}.` : `${data.player.application} is now ${data.player.state}${data.player.title ? `: ${data.player.title}` : ''}.`;
+            reply = route.capability === 'media.status' ? `${data.application} is ${data.state}${data.title ? `: ${data.title}` : ''}.` : `${data.player?.application || 'Media player'} is now ${data.player?.state || 'paused'}${data.player?.title ? `: ${data.player.title}` : ''}.`;
           }
           else if (route.capability === 'apps.open') {
             const result = await invokeChatTool('apps.open', route.args);

@@ -201,8 +201,8 @@ export function routeRequest(text) {
     return { route: 'TOOL_CALL', capability: isDown ? 'audio.volume_down' : 'audio.volume_up', args: { step }, confidence: 0.99 };
   }
   if (/^(?:what(?:'s| is) (?:the |my )?(?:system )?volume|show (?:system )?volume|volume status|whats my (?:system )?volume)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
-  const youtubePlayMatch = value.match(/^(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+?)\s+(?:on|in)\s+(?:youtube|yt)(?:\.com)?$/i) ||
-    value.match(/^(?:(?:on|in)\s+)?(?:youtube|yt)(?:\.com)?\s+(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+)$/i);
+  const youtubePlayMatch = value.match(/^(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on|open|stream)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+?)\s+(?:on|in)\s+(?:youtube|yt)(?:\.com)?$/i) ||
+    value.match(/^(?:(?:on|in)\s+)?(?:youtube|yt)(?:\.com)?\s+(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on|open|stream)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+)$/i);
   if (youtubePlayMatch) {
     const rawQuery = (youtubePlayMatch[1] || '').trim().replace(/^[":']+|[":']+$/g, '');
     if (rawQuery) {
@@ -214,8 +214,22 @@ export function routeRequest(text) {
       };
     }
   }
-  const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?$/i);
-  if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
+  const mediaStopMatch = value.match(/^(?:stop|pause|halt)(?:\s+(?:the\s+)?(?:music|song|track|media|playback|playing))?$/i);
+  if (mediaStopMatch) return { route: 'TOOL_CALL', capability: 'media.pause', args: {}, confidence: 0.99 };
+  const genericMediaAction = value.match(/^(play|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media|playback))?$/i);
+  if (genericMediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[genericMediaAction[1].toLowerCase()] || genericMediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
+  const backgroundMusicMatch = value.match(/^(?:play|stream|listen\s+to|put\s+on)\s+(?:the\s+)?(?:song\s+|track\s+|music\s+)?(.+)$/i);
+  if (backgroundMusicMatch) {
+    const rawSong = (backgroundMusicMatch[1] || '').trim().replace(/^[":']+|[":']+$/g, '');
+    if (rawSong && !/^(?:music|song|track|media|playback)$/i.test(rawSong)) {
+      return {
+        route: 'TOOL_CALL',
+        capability: 'media.play_music',
+        args: { query: rawSong },
+        confidence: 0.99
+      };
+    }
+  }
   if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value) || /\b(?:what(?:'s| is) playing|what song is playing|media status|current song|playing right now|now playing)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };
   if (
     /^(?:who are you|who r u|what are you|who is jarvis|identify yourself)\??$/i.test(value) ||

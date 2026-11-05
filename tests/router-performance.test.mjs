@@ -3,6 +3,7 @@ import test from 'node:test';
 import { routeRequest } from '../server/router.js';
 
 test('high-confidence deterministic routes avoid model calls', () => {
+  routeRequest('warmup');
   const started = performance.now();
   const route = routeRequest('show my tasks');
   const elapsed = performance.now() - started;

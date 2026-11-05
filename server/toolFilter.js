@@ -13,6 +13,7 @@ const CORE_TOOLS = new Set([
   'browser.snapshot',
   'browser.handoff',
   'apps.open',
+  'media.play_music',
   'youtube.play'
 ]);
 let cachedIndex = null;
