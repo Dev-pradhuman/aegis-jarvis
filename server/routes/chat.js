@@ -357,6 +357,11 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             }
             data = { action: 'browser.handoff', url: route.args.url, label: route.args.label, recipient: route.args.recipient, isWhatsAppMessage: route.args.isWhatsAppMessage };
           }
+          else if (route.capability === 'youtube.play') {
+            const response = await invokeChatTool('youtube.play', route.args);
+            data = response.data || response;
+            reply = `Playing ${data.title || route.args.query} on YouTube.`;
+          }
           else if (route.capability.startsWith('audio.')) {
             const response = { status: 200, body: await invokeChatTool(route.capability, route.args) };
             if (response.status !== 200 || !response.body.ok) {
@@ -543,6 +548,19 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             } catch (speakErr) {
               console.warn('[chat] Tool reply speak error:', speakErr.message);
             }
+          }
+          if (isSSE) {
+            if (!clientDisconnected && !res.writableEnded) {
+              res.setHeader('Content-Type', 'text/event-stream');
+              res.setHeader('Cache-Control', 'no-cache');
+              res.setHeader('Connection', 'keep-alive');
+              res.flushHeaders?.();
+              safeWrite(res, `data: ${JSON.stringify({ type: 'start' })}\n\n`);
+              safeWrite(res, `data: ${JSON.stringify({ type: 'token', text: reply })}\n\n`);
+              safeWrite(res, `data: ${JSON.stringify({ type: 'done', reply, spokenText: reply, audioBase64, assistant: 'JARVIS', grounded: true, runId: run.id, route, executionMode, action: data?.action ? data : null, media: data?.media || null })}\n\n`);
+              safeEnd(res);
+            }
+            return true;
           }
           return json(res, 200, { reply, spokenText: reply, audioBase64, assistant: 'JARVIS', grounded: true, runId: run.id, route, executionMode, action: data?.action ? data : null, media: data?.media || null });
         }

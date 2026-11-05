@@ -11,6 +11,7 @@ import { openDesktopUrl, resolveApp } from './platform/linux/apps.js';
 import { windowError } from './platform/linux/windows.js';
 import { ensureLinuxDesktopEnv } from './platform/linux/env.js';
 import { browserManager } from './browser/index.js';
+import { playYouTubeVideo } from './browser/youtube.js';
 import { listProjectStatus } from './projectIntelligence.js';
 import { callMcpTool, discoverMcpServers, mcpActionHash } from './mcpDiscovery.js';
 import { modelRegistry } from './modelRouting.js';
@@ -105,7 +106,7 @@ export const implementedToolIds = [
   'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'gmail.send', 'calendar.upcoming',
   'media.generate', 'research.search', 'calendar.create', 'composio.read', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
-  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous',
+  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'youtube.play',
   'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'pointer.move', 'pointer.click', 'pointer.scroll',
 
   'screen.capture', 'screen.describe', 'screen.locate', 'screen.read_region',
@@ -275,6 +276,15 @@ async function runTool(toolId, input = {}, context = {}) {
     const data = await osPlatform.media[action](input.player);
     return { ok: data.verified === true, toolId, data };
   }
+  if (toolId === 'youtube.play') {
+    const rawQuery = String(input.query || input.song || input.title || input.search || '').trim();
+    if (!rawQuery) throw new Error('A search query is required for youtube.play');
+    const data = await playYouTubeVideo(rawQuery, {
+      browserManager: context.browserManager || browserManager,
+      openDesktopUrl: context.openDesktopUrl || openDesktopUrl
+    });
+    return { ok: true, toolId, data };
+  }
   if (toolId === 'projects.status') return { ok: true, toolId, data: { projects: await listProjectStatus() } };
   if (toolId === 'models.list') return { ok: true, toolId, data: { models: modelRegistry(), providerPools: publicPools() } };
   if (toolId === 'research.plan') { const data = await planGroundedResearch(input); return { ok: data.status === 'sources_collected', toolId, data }; }
@@ -437,3 +447,5 @@ export function emergencyStop() {
     browserManager.close().catch(() => {});
   } catch (e) {}
 }
+
+export { playYouTubeVideo };

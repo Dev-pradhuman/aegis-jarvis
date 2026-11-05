@@ -13,6 +13,7 @@ export const STATEFUL_WEB_DOMAINS = [
   'mail.google.com',
   'x.com',
   'discord.com',
+  'youtube.com',
 ];
 
 export function isStatefulDomain(url) {

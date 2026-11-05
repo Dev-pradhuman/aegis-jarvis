@@ -201,6 +201,19 @@ export function routeRequest(text) {
     return { route: 'TOOL_CALL', capability: isDown ? 'audio.volume_down' : 'audio.volume_up', args: { step }, confidence: 0.99 };
   }
   if (/^(?:what(?:'s| is) (?:the |my )?(?:system )?volume|show (?:system )?volume|volume status|whats my (?:system )?volume)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
+  const youtubePlayMatch = value.match(/^(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+?)\s+(?:on|in)\s+(?:youtube|yt)(?:\.com)?$/i) ||
+    value.match(/^(?:(?:on|in)\s+)?(?:youtube|yt)(?:\.com)?\s+(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+)$/i);
+  if (youtubePlayMatch) {
+    const rawQuery = (youtubePlayMatch[1] || '').trim().replace(/^[":']+|[":']+$/g, '');
+    if (rawQuery) {
+      return {
+        route: 'TOOL_CALL',
+        capability: 'youtube.play',
+        args: { query: rawQuery },
+        confidence: 0.99
+      };
+    }
+  }
   const mediaAction = value.match(/^(play|pause|resume|skip|next|previous|toggle)(?:\s+(?:the\s+)?(?:music|song|track|media))?$/i);
   if (mediaAction) return { route: 'TOOL_CALL', capability: `media.${({ resume: 'play', skip: 'next' })[mediaAction[1].toLowerCase()] || mediaAction[1].toLowerCase()}`, args: {}, confidence: 0.99 };
   if (/^(?:what(?:'s| is) playing|media status|current song)\??$/i.test(value) || /\b(?:what(?:'s| is) playing|what song is playing|media status|current song|playing right now|now playing)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'media.status', args: {}, confidence: 0.99 };

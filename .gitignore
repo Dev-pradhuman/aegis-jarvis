@@ -10,6 +10,7 @@ server/data/brain-secrets.json
 server/data/generated/
 server/data/browser/
 server/data/browser-profile/
+server/data/camoufox-profile/
 .playwright-cli/
 # Local visual reference; the app renders its Galaxy procedurally.
 frontend-glaxy-ideas/Video-73210.mp4

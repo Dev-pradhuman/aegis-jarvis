@@ -12,7 +12,8 @@ const CORE_TOOLS = new Set([
   'browser.press',
   'browser.snapshot',
   'browser.handoff',
-  'apps.open'
+  'apps.open',
+  'youtube.play'
 ]);
 let cachedIndex = null;
 export const clearToolFilterCache = () => { cachedIndex = null; };

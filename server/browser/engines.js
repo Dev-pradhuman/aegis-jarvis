@@ -141,7 +141,8 @@ function snapshotScript() {
       name = String(el.value).slice(0, 80);
     }
     const selector = `[data-jarvis-ref="${ref}"]`;
-    const item = { ref, role, name, selector };
+    const href = tag === 'a' ? (el.getAttribute('href') || el.href) : undefined;
+    const item = { ref, role, name, selector, ...(href ? { href } : {}) };
     items.push(item);
     refMap[ref] = item;
     if (counter > 150) break;
@@ -286,7 +287,7 @@ export class PatchrightEngine {
   }
 
   async click(selector) {
-    await this.page.locator(selector).click({ timeout: 12000 });
+    await this.page.locator(selector).first().click({ timeout: 12000 });
     return { url: this.url(), selector };
   }
 
@@ -472,7 +473,7 @@ export class ObscuraEngine {
   }
 
   async click(selector) {
-    await this.page.locator(selector).click({ timeout: 12000 });
+    await this.page.locator(selector).first().click({ timeout: 12000 });
     return { url: this.url(), selector };
   }
 
@@ -637,7 +638,7 @@ export class CamoufoxEngine {
 
   async click(selector) {
     if (this.fallbackEngine) return this.fallbackEngine.click(selector);
-    await this.page.locator(selector).click({ timeout: 12000 });
+    await this.page.locator(selector).first().click({ timeout: 12000 });
     return { url: this.url(), selector };
   }
 
