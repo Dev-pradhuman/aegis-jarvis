@@ -156,6 +156,14 @@ test('natural language browser sign-in requests route deterministically to brows
   assert.equal(r4.route, 'TOOL_CALL');
   assert.equal(r4.capability, 'browser.handoff');
   assert.equal(r4.args.url, null);
+
+  const r5 = routeRequest('can you opeen its headless browser(rn headed) so that i can sign in my insta discord and whatsapp account so jarvis can comminicate on them?');
+  assert.equal(r5.route, 'TOOL_CALL');
+  assert.equal(r5.capability, 'browser.handoff');
+  assert.equal(r5.args.url, 'https://www.instagram.com');
+  assert.ok(r5.args.urls.includes('https://www.instagram.com'));
+  assert.ok(r5.args.urls.includes('https://discord.com/app'));
+  assert.ok(r5.args.urls.includes('https://web.whatsapp.com'));
 });
 
 test('context assembler includes persistent Patchright browser guidance when browser tools are active', () => {

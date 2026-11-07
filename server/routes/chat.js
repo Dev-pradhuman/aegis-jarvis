@@ -346,16 +346,20 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             } catch {}
           }
           else if (route.capability === 'browser.handoff') {
-            await browserManager.handoff(route.args.url);
+            await browserManager.handoff(route.args.url, { urls: route.args.urls });
             if (route.args.isWhatsAppMessage) {
               const who = route.args.recipient ? ` to ${route.args.recipient}` : '';
               reply = `Direct WhatsApp API sending is not connected. I have opened WhatsApp Web for you so you can send your message${who} directly.`;
-            } else if (route.args.isSignIn) {
-              reply = `Opened browser for ${route.args.url}. Please complete your sign-in, and reply "done" or click Resume Browser when finished.`;
+            } else if (route.args.isSignIn || (route.args.urls && route.args.urls.length)) {
+              const siteNames = (route.args.urls || [route.args.url]).filter(Boolean).map((u) => {
+                try { return new URL(u).hostname.replace(/^www\./i, ''); } catch { return u; }
+              });
+              const namesList = siteNames.join(', ');
+              reply = `I have opened the headed browser for you${namesList ? ` with tabs for ${namesList}` : ''}. Please log in to your accounts. Once you're done, reply "done" or click Resume Browser, and I will preserve your sessions in headless mode so I can communicate on them.`;
             } else {
-              reply = `Opened ${route.args.label || route.args.url} in browser.`;
+              reply = `Opened ${route.args.label || route.args.url || 'browser'} in headed mode. Please sign in, and reply "done" or click Resume Browser when finished.`;
             }
-            data = { action: 'browser.handoff', url: route.args.url, label: route.args.label, recipient: route.args.recipient, isWhatsAppMessage: route.args.isWhatsAppMessage };
+            data = { action: 'browser.handoff', url: route.args.url, urls: route.args.urls, label: route.args.label, recipient: route.args.recipient, isWhatsAppMessage: route.args.isWhatsAppMessage };
           }
           else if (route.capability === 'youtube.play') {
             const response = await invokeChatTool('youtube.play', route.args);

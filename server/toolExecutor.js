@@ -288,7 +288,7 @@ async function runTool(toolId, input = {}, context = {}) {
     const data = await playYouTubeVideo(rawQuery, {
       browserManager: context.browserManager || browserManager,
       openDesktopUrl: context.openDesktopUrl || openDesktopUrl,
-      directWatch: true
+      directWatch: !context.browserManager
     });
     return { ok: true, toolId, data };
   }

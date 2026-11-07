@@ -65,8 +65,38 @@ export function parseWhatsAppRequest(value) {
   return null;
 }
 
+export function extractSignInTargets(targetText) {
+  if (!targetText) return [];
+  const text = String(targetText).toLowerCase();
+  const urls = [];
+
+  const known = resolveKnownSiteOrDomain(targetText);
+  if (known && known.url) {
+    urls.push(known.url);
+  }
+
+  if (/insta(?:gram)?\b/.test(text) && !urls.includes('https://www.instagram.com')) urls.push('https://www.instagram.com');
+  if (/discord\b/.test(text) && !urls.includes('https://discord.com/app')) urls.push('https://discord.com/app');
+  if (/whatsapp\b/.test(text) && !urls.includes('https://web.whatsapp.com')) urls.push('https://web.whatsapp.com');
+  if (/github\b/.test(text) && !urls.includes('https://github.com')) urls.push('https://github.com');
+  if (/(?:twitter|x\.com)\b/.test(text) && !urls.includes('https://x.com')) urls.push('https://x.com');
+  if (/reddit\b/.test(text) && !urls.includes('https://www.reddit.com')) urls.push('https://www.reddit.com');
+  if (/(?:google|gmail)\b/.test(text) && !urls.includes('https://mail.google.com')) urls.push('https://mail.google.com');
+
+  if (!urls.length) {
+    if (/^https?:\/\//i.test(targetText)) {
+      urls.push(targetText.trim());
+    } else if (targetText.trim() && !/^(?:accounts?|all|my|some)$/i.test(targetText.trim())) {
+      urls.push(`https://${targetText.trim().replace(/^www\./i, '')}`);
+    }
+  }
+  return urls;
+}
+
 export function cleanConversationalPrompt(text) {
   let value = String(text || '').trim();
+  // Normalize common typo opeen -> open
+  value = value.replace(/\bope+n\b/gi, 'open');
   // Strip conversational prefixes and interjections
   value = value.replace(/^(?:(?:hey|yo|hi|ok|okay|hello)\s+)?(?:jarvis[, ]+)?/i, '');
   // Strip conversational preamble clauses (e.g. "my speakers are way too loud,", "it's too loud,", "it's too quiet,")
@@ -245,15 +275,22 @@ export function routeRequest(text) {
   if (research) return { route: 'TOOL_CALL', capability: 'research.plan', args: { topic: research[1].replace(/\?$/, '').trim() }, confidence: 0.97 };
   const media = value.match(/^(?:please\s+)?(?:make|generate|create)\s+(?:me\s+)?(?:an?\s+)?(image|picture|video|clip)\b[\s:,-]*(.*)$/i);
   if (media) return { route: 'TOOL_CALL', capability: 'media.generate', args: { kind: /video|clip/i.test(media[1]) ? 'video' : 'image', prompt: media[2] || value }, confidence: 0.99 };
-  const browserSignIn = value.match(/^(?:jarvis[, ]+)?(?:open|launch)\s+(?:the\s+)?(?:headless\s+)?browser\s+(?:so\s+i\s+can\s+|to\s+)?(?:sign|log)\s*in(?:to|\s+to)?(?:\s+(.+?))?[.!]?$/i) ||
-    value.match(/^(?:jarvis[, ]+)?(?:sign|log)\s*in(?:to|\s+to)?\s+(.+?)\s+(?:in|using|via)\s+(?:the\s+)?(?:headless\s+)?browser[.!]?$/i);
+  const browserSignIn = value.match(/^(?:jarvis[, ]+)?(?:open|launch)\s+(?:the\s+|its\s+)?(?:headless\s+|headed\s+)?browser(?:\s*\(.*?\))?(?:\s+(?:in\s+)?(?:headed|visible|normal)(?:\s+mode)?)?\s+(?:so\s+(?:that\s+)?(?:i\s+can\s+)?|to\s+)?(?:sign|log)\s*in(?:to|\s+to)?(?:\s+(?:to|in|into|my)?\s+)?(.+?)(?:\s+so\s+(?:jarvis|you|we)\s+can\b.*|\s+accounts?.*|\s*[.!?]*$)/i) ||
+    value.match(/^(?:jarvis[, ]+)?(?:open|launch)\s+(?:the\s+|its\s+)?(?:headless\s+|headed\s+)?browser(?:\s*\(.*?\))?(?:\s+(?:in\s+)?(?:headed|visible|normal)(?:\s+mode)?)?(?:\s+(?:so\s+(?:that\s+)?(?:i\s+can\s+)?|to\s+)?(?:sign|log)\s*in(?:to|\s+to)?(?:\s+(.+?))?)?[.!?]?$/i) ||
+    value.match(/^(?:jarvis[, ]+)?(?:sign|log)\s*in(?:to|\s+to)?(?:\s+(?:to|in|into|on))?\s+(.+?)\s+(?:in|using|via|on)\s+(?:the\s+)?(?:headless\s+|headed\s+)?browser[.!]?$/i);
   if (browserSignIn) {
     const rawTarget = (browserSignIn[1] || '').trim();
-    let url = rawTarget;
-    if (url && !/^https?:\/\//i.test(url)) {
-      url = `https://${url.replace(/^www\./i, '')}`;
+    const urls = extractSignInTargets(rawTarget);
+    let primaryUrl = urls[0] || null;
+    if (!primaryUrl && rawTarget && !/^(?:accounts?|all|my|some)$/i.test(rawTarget)) {
+      primaryUrl = /^https?:\/\//i.test(rawTarget) ? rawTarget : `https://${rawTarget.replace(/^www\./i, '')}`;
     }
-    return { route: 'TOOL_CALL', capability: 'browser.handoff', args: { url: url || null }, confidence: 0.99 };
+    return {
+      route: 'TOOL_CALL',
+      capability: 'browser.handoff',
+      args: { url: primaryUrl, urls, isSignIn: true },
+      confidence: 0.99
+    };
   }
   const browserResume = value.match(/^(?:jarvis[, ]+)?(?:resume(?:\s+the)?\s+browser|continue(?:\s+the)?\s+browser|(?:(?:i\s+(?:have\s+)?)?(?:solved|completed)\s+(?:the\s+)?(?:captcha|challenge|verification))|(?:(?:the\s+)?(?:captcha|challenge|verification)\s+(?:is\s+)?(?:solved|completed|passed|done))|(?:(?:i\s+(?:have\s+)?)?(?:signed|logged)\s*in))[.!]?$/i);
   if (browserResume) {

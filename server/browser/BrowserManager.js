@@ -312,8 +312,9 @@ export class BrowserManager {
     return { status: this.getStatus() };
   }); }
 
-  handoff(targetUrl = null) { return this.serial(async () => {
-    const url = targetUrl || this.pending?.url || this.currentUrl;
+  handoff(targetUrl = null, options = {}) { return this.serial(async () => {
+    const urls = Array.isArray(options.urls) ? options.urls : (options.urls ? [options.urls] : []);
+    const primaryUrl = targetUrl || urls[0] || this.pending?.url || this.currentUrl;
     if (!this.engine || !this.engine.isHealthy()) {
       if (this.engine) await this.engine.close().catch(() => {});
       this.engine = null;
@@ -321,20 +322,31 @@ export class BrowserManager {
     } else if (!this.engine.headed) {
       await this.engine.relaunchHeaded();
     }
-    if (url && /^https?:\/\//i.test(url)) {
-      await this.engine.navigate(url);
+    if (primaryUrl && /^https?:\/\//i.test(primaryUrl)) {
+      await this.engine.navigate(primaryUrl);
+    }
+    const additionalUrls = urls.filter((u) => u && u !== primaryUrl);
+    if (additionalUrls.length && this.engine?.context) {
+      for (const u of additionalUrls) {
+        try {
+          const tab = await this.engine.context.newPage();
+          await tab.goto(u, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+        } catch {}
+      }
     }
     await this.engine.bringToFront();
     if (this.state === 'HUMAN_ACTION_REQUIRED') {
       if (this.pending) {
         this.pending.headed = true;
         this.pending.handoffError = null;
+        this.pending.urls = [primaryUrl, ...additionalUrls].filter(Boolean);
       }
     } else {
       this.state = 'HUMAN_ACTION_REQUIRED';
       this.pending = {
         action: 'handoff',
-        url: this.engine.url() || url,
+        url: this.engine.url() || primaryUrl,
+        urls: [primaryUrl, ...additionalUrls].filter(Boolean),
         challenge: { type: 'LOGIN_SIGNIN', title: 'Interactive User Sign-in' },
         headed: true,
         handoffError: null
@@ -352,7 +364,7 @@ export class BrowserManager {
     this.pending = null;
     this.pendingContinuation = null;
 
-    // Pin authenticated domain
+    // Pin authenticated domain(s)
     const currentUrl = this.engine.url() || this.currentUrl;
     if (currentUrl) {
       try {
@@ -360,6 +372,20 @@ export class BrowserManager {
         if (domain) {
           this.authenticatedDomains.add(domain);
           this.engine.authenticatedDomains?.add?.(domain);
+        }
+      } catch {}
+    }
+    if (this.engine?.context?.pages) {
+      try {
+        for (const p of this.engine.context.pages()) {
+          const u = p.url();
+          if (u && /^https?:\/\//i.test(u)) {
+            const d = new URL(u).hostname;
+            if (d) {
+              this.authenticatedDomains.add(d);
+              this.engine.authenticatedDomains?.add?.(d);
+            }
+          }
         }
       } catch {}
     }
