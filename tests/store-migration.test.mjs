@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const testDataDir = path.join(__dirname, '../server/data');
 
 test('Store Migration', async (t) => {
-  const { getState, updateState } = await import('../server/store.js');
+  const { getState, updateState, resetStateCache } = await import('../server/store.js');
 
   await t.test('migrates old model aliases and creates a backup', async () => {
     const oldState = {
@@ -23,6 +23,7 @@ test('Store Migration', async (t) => {
     const stateFile = path.join(testDataDir, 'state.json');
     await writeFile(stateFile, JSON.stringify(oldState), 'utf8');
 
+    resetStateCache?.();
     // getState() triggers load() internally
     const snapshot = await getState();
 

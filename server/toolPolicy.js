@@ -8,6 +8,7 @@ const unattendedAllowedIds = new Set([
   'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play',
   'windows.list', 'windows.get_active', 'windows.focus',
   'apps.list', 'apps.open', 'browser.open', 'browser.navigate', 'browser.click', 'browser.type', 'browser.press', 'browser.read', 'browser.content', 'browser.accessibility', 'browser.snapshot', 'browser.screenshot', 'browser.wait', 'browser.handoff', 'browser.resume', 'browser.close',
+  'whatsapp.send',
   'gmail.latest', 'calendar.upcoming', 'composio.read',
   'screen.describe', 'camera.describe', 'clipboard.read', 'clipboard.write', 'files.read',
 ]);

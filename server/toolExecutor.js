@@ -12,6 +12,7 @@ import { windowError } from './platform/linux/windows.js';
 import { ensureLinuxDesktopEnv } from './platform/linux/env.js';
 import { browserManager } from './browser/index.js';
 import { playYouTubeVideo } from './browser/youtube.js';
+import { sendWhatsAppWebMessage } from './browser/whatsapp.js';
 import { listProjectStatus } from './projectIntelligence.js';
 import { callMcpTool, discoverMcpServers, mcpActionHash } from './mcpDiscovery.js';
 import { modelRegistry } from './modelRouting.js';
@@ -106,7 +107,7 @@ export const implementedToolIds = [
   'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'gmail.send', 'calendar.upcoming',
   'media.generate', 'research.search', 'calendar.create', 'composio.read', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
-  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play',
+  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play', 'whatsapp.send',
   'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'pointer.move', 'pointer.click', 'pointer.scroll',
 
   'screen.capture', 'screen.describe', 'screen.locate', 'screen.read_region',
@@ -301,7 +302,19 @@ async function runTool(toolId, input = {}, context = {}) {
     const data = await callMcpTool(input, { fetchImpl: context.fetchImpl || fetch });
     return { ok: !data.isError, toolId, data };
   }
+  if (toolId === 'whatsapp.send') {
+    const recipient = input.recipient || input.to || input.contact || '';
+    const message = input.message || input.text || input.body || '';
+    const data = await sendWhatsAppWebMessage(recipient, message, { browserManager: context.browserManager || browserManager });
+    return { ok: Boolean(data.delivered), toolId, data };
+  }
   if (toolId === 'messages.send') {
+    if (String(input.channel || '').toLowerCase() === 'whatsapp' || String(input.provider || '').toLowerCase() === 'whatsapp') {
+      const recipient = input.recipient || input.to || input.contact || '';
+      const message = input.message || input.text || input.body || '';
+      const data = await sendWhatsAppWebMessage(recipient, message, { browserManager: context.browserManager || browserManager });
+      return { ok: Boolean(data.delivered), toolId, data };
+    }
     requireExactApproval(toolId, input, context.approval, context.runId, messageActionHash(input));
     const data = await sendMessage(input);
     return { ok: Boolean(data.delivered), toolId, data };

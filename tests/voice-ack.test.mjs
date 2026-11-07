@@ -37,7 +37,7 @@ test('Voice Acknowledgement', async (t) => {
         'Accept': 'text/event-stream',
         'Origin': 'http://localhost:5173'
       },
-      body: JSON.stringify({ message: 'use tools to find the time', source: 'voice' })
+      body: JSON.stringify({ message: 'use tools to find the time', source: 'voice', mode: 'cloud' })
     });
     
     const text = await response.text();

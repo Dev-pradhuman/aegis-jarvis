@@ -143,6 +143,10 @@ export function pruneState(state) {
   return state;
 }
 
+export function resetStateCache() {
+  statePromise = null;
+}
+
 export async function getState() {
   statePromise ??= load();
   return statePromise;

@@ -14,7 +14,8 @@ const CORE_TOOLS = new Set([
   'browser.handoff',
   'apps.open',
   'media.play_music',
-  'youtube.play'
+  'youtube.play',
+  'whatsapp.send'
 ]);
 let cachedIndex = null;
 export const clearToolFilterCache = () => { cachedIndex = null; };
