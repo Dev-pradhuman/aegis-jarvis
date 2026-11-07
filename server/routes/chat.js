@@ -242,7 +242,10 @@ export default async function chatRoutes(req, res, url, state, ctx) {
         }
 
         // Natural browser verification/sign-in resume interception
-        if (browserManager.state === 'HUMAN_ACTION_REQUIRED' && /^(?:i(?:'m| am)?\s+)?(?:done|finished|continue|resumed?|i\s+(?:have\s+)?(?:logged|signed)\s+in|challenge\s+solved|solved)[.!]?$/i.test(text)) {
+        if (browserManager.state === 'HUMAN_ACTION_REQUIRED' && (
+          /^(?:i(?:'m| am)?\s+)?(?:done|finished|continue|resumed?|i\s+(?:have\s+)?(?:logged|signed)\s+in|challenge\s+solved|solved)[.!]?$/i.test(text) ||
+          /\b(?:(?:logged|signed)\s*in|can\s+(?:you|u)\s+verify|verify(?:\s+all|\s+login)?|check\s+(?:if|login|status))\b/i.test(text)
+        )) {
           try {
             const resumeResult = await browserManager.resume();
             if (resumeResult.code === 'HUMAN_ACTION_REQUIRED') {
