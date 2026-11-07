@@ -369,6 +369,11 @@ export default async function chatRoutes(req, res, url, state, ctx) {
             data = response.data || response;
             reply = `Playing ${data.title || route.args.query} on YouTube.`;
           }
+          else if (route.capability === 'spotify.play') {
+            const response = await invokeChatTool('spotify.play', route.args);
+            data = response.data || response;
+            reply = `Playing ${data.title || route.args.query} on Spotify.`;
+          }
           else if (route.capability === 'media.play_music') {
             const response = await invokeChatTool('media.play_music', route.args);
             data = response.data || response;

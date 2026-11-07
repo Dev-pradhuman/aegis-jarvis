@@ -15,6 +15,7 @@ const CORE_TOOLS = new Set([
   'apps.open',
   'media.play_music',
   'youtube.play',
+  'spotify.play',
   'whatsapp.send'
 ]);
 let cachedIndex = null;

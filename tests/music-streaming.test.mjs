@@ -9,6 +9,8 @@ import { resolveFirstYouTubeVideo, playYouTubeVideo } from '../server/browser/yo
 import { ensureMpvMprisScript, stopBackgroundMusic, MPV_IPC_SOCKET } from '../server/platform/linux/media.js';
 
 test('Music Routing: natural music queries route cleanly to media.play_music', () => {
+  const origPrefer = process.env.PREFER_SPOTIFY;
+  process.env.PREFER_SPOTIFY = 'false';
   const musicQueries = [
     { text: 'play Hum-Dum song', expected: 'Hum-Dum song' },
     { text: 'can you play Hum-Dum song', expected: 'Hum-Dum song' },
@@ -28,6 +30,8 @@ test('Music Routing: natural music queries route cleanly to media.play_music', (
     assert.equal(route.args.query, q.expected, `Query "${q.text}" must extract query "${q.expected}"`);
     assert.ok(route.confidence >= 0.9, `Query "${q.text}" must have high confidence`);
   }
+  if (origPrefer !== undefined) process.env.PREFER_SPOTIFY = origPrefer;
+  else delete process.env.PREFER_SPOTIFY;
 });
 
 test('Music Routing: stop/pause commands route to media.pause', () => {

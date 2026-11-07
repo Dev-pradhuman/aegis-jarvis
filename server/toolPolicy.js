@@ -5,7 +5,7 @@ const unattendedAllowedIds = new Set([
   'memory.search', 'runtime.telemetry', 'diagnostics',
   'models.list', 'projects.status', 'mcp.servers', 'browser.status', 'project.inspect', 'computer.capabilities',
   'audio.get_volume', 'audio.set_volume', 'audio.mute', 'audio.unmute', 'audio.volume_up', 'audio.volume_down',
-  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play',
+  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play', 'spotify.play',
   'windows.list', 'windows.get_active', 'windows.focus',
   'apps.list', 'apps.open', 'browser.open', 'browser.navigate', 'browser.click', 'browser.type', 'browser.press', 'browser.read', 'browser.content', 'browser.accessibility', 'browser.snapshot', 'browser.screenshot', 'browser.wait', 'browser.handoff', 'browser.resume', 'browser.close',
   'whatsapp.send',

@@ -1,3 +1,5 @@
+import { isSpotifyInstalled } from './spotify.js';
+
 export const KNOWN_SITES = {
   instagram: { url: 'https://www.instagram.com', label: 'Instagram' },
   youtube: { url: 'https://www.youtube.com', label: 'YouTube' },
@@ -231,6 +233,19 @@ export function routeRequest(text) {
     return { route: 'TOOL_CALL', capability: isDown ? 'audio.volume_down' : 'audio.volume_up', args: { step }, confidence: 0.99 };
   }
   if (/^(?:what(?:'s| is) (?:the |my )?(?:system )?volume|show (?:system )?volume|volume status|whats my (?:system )?volume)\??$/i.test(value)) return { route: 'TOOL_CALL', capability: 'audio.get_volume', args: {}, confidence: 0.99 };
+  const spotifyPlayMatch = value.match(/^(?:play|search\s+and\s+play|listen\s+to|put\s+on|stream)\s+(?:the\s+)?(?:song\s+|track\s+|music\s+)?(.+?)\s+(?:on|in|via|through)\s+spotify(?:\.com)?$/i) ||
+    value.match(/^(?:(?:on|in|via|through)\s+)?spotify(?:\.com)?\s+(?:play|search\s+and\s+play|listen\s+to|put\s+on|stream)\s+(?:the\s+)?(?:song\s+|track\s+|music\s+)?(.+)$/i);
+  if (spotifyPlayMatch) {
+    const rawQuery = (spotifyPlayMatch[1] || '').trim().replace(/^[":']+|[":']+$/g, '');
+    if (rawQuery) {
+      return {
+        route: 'TOOL_CALL',
+        capability: 'spotify.play',
+        args: { query: rawQuery },
+        confidence: 0.99
+      };
+    }
+  }
   const youtubePlayMatch = value.match(/^(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on|open|stream)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+?)\s+(?:on|in)\s+(?:youtube|yt)(?:\.com)?$/i) ||
     value.match(/^(?:(?:on|in)\s+)?(?:youtube|yt)(?:\.com)?\s+(?:play|search\s+and\s+play|listen\s+to|watch|put\s+on|open|stream)\s+(?:the\s+)?(?:song\s+|video\s+|track\s+)?(.+)$/i);
   if (youtubePlayMatch) {
@@ -252,9 +267,10 @@ export function routeRequest(text) {
   if (backgroundMusicMatch) {
     const rawSong = (backgroundMusicMatch[1] || '').trim().replace(/^[":']+|[":']+$/g, '');
     if (rawSong && !/^(?:music|song|track|media|playback)$/i.test(rawSong)) {
+      const preferSpotify = process.env.PREFER_SPOTIFY === 'true' || (process.env.PREFER_SPOTIFY !== 'false' && isSpotifyInstalled());
       return {
         route: 'TOOL_CALL',
-        capability: 'media.play_music',
+        capability: preferSpotify ? 'spotify.play' : 'media.play_music',
         args: { query: rawSong },
         confidence: 0.99
       };

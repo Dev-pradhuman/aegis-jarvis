@@ -13,6 +13,7 @@ import { ensureLinuxDesktopEnv } from './platform/linux/env.js';
 import { browserManager } from './browser/index.js';
 import { playYouTubeVideo } from './browser/youtube.js';
 import { sendWhatsAppWebMessage } from './browser/whatsapp.js';
+import { playSpotifyTrack } from './spotify.js';
 import { listProjectStatus } from './projectIntelligence.js';
 import { callMcpTool, discoverMcpServers, mcpActionHash } from './mcpDiscovery.js';
 import { modelRegistry } from './modelRouting.js';
@@ -107,7 +108,7 @@ export const implementedToolIds = [
   'memory.search', 'runtime.telemetry', 'diagnostics', 'gmail.latest', 'gmail.send', 'calendar.upcoming',
   'media.generate', 'research.search', 'calendar.create', 'composio.read', 'audio.get_volume',
   'audio.set_volume', 'audio.volume_up', 'audio.volume_down', 'audio.mute', 'audio.unmute',
-  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play', 'whatsapp.send',
+  'media.status', 'media.play', 'media.pause', 'media.toggle', 'media.next', 'media.previous', 'media.play_music', 'youtube.play', 'spotify.play', 'whatsapp.send',
   'clipboard.read', 'clipboard.write', 'computer.capabilities', 'computer.keypress', 'computer.type', 'pointer.move', 'pointer.click', 'pointer.scroll',
 
   'screen.capture', 'screen.describe', 'screen.locate', 'screen.read_region',
@@ -289,7 +290,17 @@ async function runTool(toolId, input = {}, context = {}) {
     const data = await playYouTubeVideo(rawQuery, {
       browserManager: context.browserManager || browserManager,
       openDesktopUrl: context.openDesktopUrl || openDesktopUrl,
-      directWatch: !context.browserManager
+      ...(input.directWatch !== undefined ? { directWatch: input.directWatch } : (context.directWatch !== undefined ? { directWatch: context.directWatch } : {}))
+    });
+    return { ok: true, toolId, data };
+  }
+  if (toolId === 'spotify.play') {
+    const rawQuery = String(input.query || input.song || input.track || input.search || '').trim();
+    if (!rawQuery) throw new Error('A search query is required for spotify.play');
+    const data = await playSpotifyTrack(rawQuery, {
+      runExec: context.runExec,
+      fetchImpl: context.fetchImpl,
+      waitMs: context.waitMs
     });
     return { ok: true, toolId, data };
   }
