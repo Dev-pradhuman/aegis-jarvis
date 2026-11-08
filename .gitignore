@@ -47,5 +47,6 @@ bin/
 scripts/archive/
 scratch/
 *.gif
+*.mp4
 brag-output/
 repomix-output*
