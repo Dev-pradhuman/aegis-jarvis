@@ -378,11 +378,11 @@ export default function GalaxyHome() {
         if (immersive && (event.clientX < 75 || event.clientY > window.innerHeight - 70)) revealHud();
       }}
     >
-      {/* 1. Real-Time Gargantua 3D Black Hole Scene */}
+      {/* 1. Real-Time Raymarched Gargantua Black Hole Scene */}
       <Scene phase={visual.phase} sceneRef={sceneRef} drawerOpen={drawerOpen} />
       <div className="galaxy-vignette" />
 
-      {/* 2. Slim 60px Icon Navigation Rail */}
+      {/* 2. Permanently Visible 60px Left Sidebar Rail */}
       <Navigation
         open={open}
         active={activeTab}
@@ -390,39 +390,166 @@ export default function GalaxyHome() {
         drawerOpen={drawerOpen}
       />
 
-      {/* 3. Top Header Bar with Mode Toggle & Actions */}
-      <div className="galaxy-topline">
-        <div className="system-identity">
-          <span className="identity-tick" />
-          <span className="wordmark-title">J A R V I S</span>
-          <span className="wordmark-subtitle"> / PERSONAL EXECUTION LAYER</span>
+      {/* 3. Main Workspace Container (starts at left: 60px, width: calc(100vw - 60px)) */}
+      <div className="galaxy-workspace-container">
+        {/* Top Header Bar with Mode Toggle & Actions */}
+        <div className="galaxy-topline">
+          <div className="system-identity">
+            <span className="identity-tick" />
+            <span className="wordmark-title">J A R V I S</span>
+            <span className="wordmark-subtitle"> / PERSONAL EXECUTION LAYER</span>
+          </div>
+          <div className="topline-actions topbar-right">
+            <button
+              type="button"
+              data-testid="execution-mode-toggle"
+              className={`execution-mode-btn ${
+                executionMode === 'cli' ? 'cli' : executionMode === 'local' ? 'local' : 'cloud'
+              }`}
+              onClick={handleToggleMode}
+              title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama"
+              aria-label="Toggle execution mode"
+            >
+              {executionMode === 'cli' ? '⚡ CLI' : executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
+            </button>
+            <span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />
+            <span className="service-status-lbl">{visual.serviceStatus}</span>
+            <button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera">
+              <RotateCcw size={14} />
+            </button>
+            <button
+              onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep}
+              title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
+              aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
+            >
+              {visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          </div>
         </div>
-        <div className="topline-actions topbar-right">
-          <button
-            type="button"
-            data-testid="execution-mode-toggle"
-            className={`execution-mode-btn ${
-              executionMode === 'cli' ? 'cli' : executionMode === 'local' ? 'local' : 'cloud'
-            }`}
-            onClick={handleToggleMode}
-            title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama"
-            aria-label="Toggle execution mode"
+
+        {/* HOME TAB VIEW */}
+        {activeTab === 'home' && (
+          <>
+            {/* Centerpiece Hero Greeting Typography */}
+            <div className={`galaxy-hero-typography ${drawerOpen ? 'shifted' : 'centered'}`}>
+              <h1 className="hero-greeting">
+                <span className="hero-prefix">{getDynamicGreeting()}</span>
+                <span className="hero-name"> Pradhuman.</span>
+              </h1>
+              <p className="hero-subtitle">J A R V I S &nbsp; • &nbsp; P E R S O N A L &nbsp; E X E C U T I O N &nbsp; L A Y E R</p>
+            </div>
+
+            {/* STATE 2: Docked Left Frosted-Glass Chat Drawer (left: 16px inside workspace, 76px from screen edge) */}
+            <div
+              className={`galaxy-home-chat-wrapper ${drawerOpen ? 'is-open' : 'is-hidden'}`}
+              data-testid="galaxy-home-chat"
+            >
+              <Chat embedded={true} />
+            </div>
+
+            {/* STATE 1: Floating Glass Command Pill at bottom */}
+            {!drawerOpen && (
+              <div className="floating-command-pill-container">
+                <form
+                  className="floating-command-pill"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleFloatingCommandSubmit();
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="pill-action-btn add-btn"
+                    onClick={() => setDrawerOpen(true)}
+                    title="New prompt"
+                    aria-label="New prompt"
+                  >
+                    +
+                  </button>
+                  <input
+                    type="text"
+                    className="pill-input"
+                    placeholder="Ask JARVIS anything..."
+                    value={commandInput}
+                    onChange={(e) => setCommandInput(e.target.value)}
+                    onFocus={() => {
+                      setDrawerOpen(true);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={`pill-action-btn screen-btn ${commandScreenAttach ? 'active' : ''}`}
+                    onClick={() => setCommandScreenAttach((prev) => !prev)}
+                    title={commandScreenAttach ? 'Screen attached' : 'Attach screen'}
+                    aria-label="Attach screen"
+                  >
+                    [o]
+                  </button>
+                  <button
+                    type="button"
+                    className="pill-action-btn mic-btn"
+                    onClick={() => setDrawerOpen(true)}
+                    title="Voice command"
+                    aria-label="Voice command"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="3" width="6" height="11" rx="3" />
+                      <path d="M5 11a7 7 0 0014 0M12 18v3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="submit"
+                    className="pill-action-btn send-btn"
+                    title="Send message"
+                    aria-label="Send message"
+                  >
+                    →
+                  </button>
+                </form>
+              </div>
+            )}
+
+            <div className="galaxy-bottomline">
+              <span>CORE {visual.phase.toUpperCase()}</span>
+              <i />
+              <span>{visual.backendOnline ? 'LOCAL SERVICE CONNECTED' : 'LOCAL SERVICE UNAVAILABLE'}</span>
+            </div>
+          </>
+        )}
+
+        {/* FULL-PAGE WORKSPACES FOR NON-HOME TABS */}
+        {activeTab !== 'home' && (
+          <div
+            className="galaxy-fullpage-workspace"
+            data-testid="galaxy-fullpage-workspace"
+            role="region"
+            aria-label={`${activeTab} workspace`}
           >
-            {executionMode === 'cli' ? '⚡ CLI' : executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
-          </button>
-          <span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />
-          <span className="service-status-lbl">{visual.serviceStatus}</span>
-          <button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera">
-            <RotateCcw size={14} />
-          </button>
-          <button
-            onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep}
-            title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
-            aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
-          >
-            {visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
-        </div>
+            <div className="galaxy-fullpage-topbar">
+              <div className="galaxy-fullpage-breadcrumb">
+                <button type="button" className="fullpage-home-link" onClick={() => setActiveTab('home')}>
+                  <Home size={14} /> HOME
+                </button>
+                <ChevronRight size={13} />
+                <span className="fullpage-current-tab">{activeTab.toUpperCase()}</span>
+              </div>
+              <button
+                type="button"
+                className="galaxy-fullpage-close"
+                onClick={() => setActiveTab('home')}
+                title="Return to Galaxy Home (Esc)"
+              >
+                <X size={16} /> <span>CLOSE</span>
+              </button>
+            </div>
+            <div className="galaxy-fullpage-content">
+              {activeTab === 'tasks' && <TasksWorkspace />}
+              {activeTab === 'memory' && <MemoryWorkspace />}
+              {activeTab === 'activity' && <ActivityWorkspace />}
+              {activeTab === 'settings' && <SettingsWorkspaceCombined />}
+            </div>
+          </div>
+        )}
       </div>
 
       <button
@@ -433,131 +560,6 @@ export default function GalaxyHome() {
       >
         {immersive ? <Shrink size={15} /> : <Expand size={15} />}
       </button>
-
-      {/* HOME TAB VIEW */}
-      {activeTab === 'home' && (
-        <>
-          {/* Centerpiece Hero Greeting Typography */}
-          <div className={`galaxy-hero-typography ${drawerOpen ? 'shifted' : 'centered'}`}>
-            <h1 className="hero-greeting">
-              <span className="hero-prefix">{getDynamicGreeting()}</span>
-              <span className="hero-name"> Pradhuman.</span>
-            </h1>
-            <p className="hero-subtitle">J A R V I S &nbsp; • &nbsp; P E R S O N A L &nbsp; E X E C U T I O N &nbsp; L A Y E R</p>
-          </div>
-
-          {/* STATE 2: Docked Left Frosted-Glass Chat Drawer */}
-          <div
-            className={`galaxy-home-chat-wrapper ${drawerOpen ? 'is-open' : 'is-hidden'}`}
-            data-testid="galaxy-home-chat"
-          >
-            <Chat embedded={true} />
-          </div>
-
-          {/* STATE 1: Floating Glass Command Pill at bottom */}
-          {!drawerOpen && (
-            <div className="floating-command-pill-container">
-              <form
-                className="floating-command-pill"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleFloatingCommandSubmit();
-                }}
-              >
-                <button
-                  type="button"
-                  className="pill-action-btn add-btn"
-                  onClick={() => setDrawerOpen(true)}
-                  title="New prompt"
-                  aria-label="New prompt"
-                >
-                  +
-                </button>
-                <input
-                  type="text"
-                  className="pill-input"
-                  placeholder="Ask JARVIS anything..."
-                  value={commandInput}
-                  onChange={(e) => setCommandInput(e.target.value)}
-                  onFocus={() => {
-                    // Clicking or focusing opens drawer smoothly
-                    setDrawerOpen(true);
-                  }}
-                />
-                <button
-                  type="button"
-                  className={`pill-action-btn screen-btn ${commandScreenAttach ? 'active' : ''}`}
-                  onClick={() => setCommandScreenAttach((prev) => !prev)}
-                  title={commandScreenAttach ? 'Screen attached' : 'Attach screen'}
-                  aria-label="Attach screen"
-                >
-                  [o]
-                </button>
-                <button
-                  type="button"
-                  className="pill-action-btn mic-btn"
-                  onClick={() => setDrawerOpen(true)}
-                  title="Voice command"
-                  aria-label="Voice command"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="9" y="3" width="6" height="11" rx="3" />
-                    <path d="M5 11a7 7 0 0014 0M12 18v3" />
-                  </svg>
-                </button>
-                <button
-                  type="submit"
-                  className="pill-action-btn send-btn"
-                  title="Send message"
-                  aria-label="Send message"
-                >
-                  →
-                </button>
-              </form>
-            </div>
-          )}
-
-          <div className="galaxy-bottomline">
-            <span>CORE {visual.phase.toUpperCase()}</span>
-            <i />
-            <span>{visual.backendOnline ? 'LOCAL SERVICE CONNECTED' : 'LOCAL SERVICE UNAVAILABLE'}</span>
-          </div>
-        </>
-      )}
-
-      {/* FULL-PAGE WORKSPACES FOR NON-HOME TABS */}
-      {activeTab !== 'home' && (
-        <div
-          className="galaxy-fullpage-workspace"
-          data-testid="galaxy-fullpage-workspace"
-          role="region"
-          aria-label={`${activeTab} workspace`}
-        >
-          <div className="galaxy-fullpage-topbar">
-            <div className="galaxy-fullpage-breadcrumb">
-              <button type="button" className="fullpage-home-link" onClick={() => setActiveTab('home')}>
-                <Home size={14} /> HOME
-              </button>
-              <ChevronRight size={13} />
-              <span className="fullpage-current-tab">{activeTab.toUpperCase()}</span>
-            </div>
-            <button
-              type="button"
-              className="galaxy-fullpage-close"
-              onClick={() => setActiveTab('home')}
-              title="Return to Galaxy Home (Esc)"
-            >
-              <X size={16} /> <span>CLOSE</span>
-            </button>
-          </div>
-          <div className="galaxy-fullpage-content">
-            {activeTab === 'tasks' && <TasksWorkspace />}
-            {activeTab === 'memory' && <MemoryWorkspace />}
-            {activeTab === 'activity' && <ActivityWorkspace />}
-            {activeTab === 'settings' && <SettingsWorkspaceCombined />}
-          </div>
-        </div>
-      )}
 
       {immersive && hudVisible && (
         <div className="galaxy-gesture-hint">

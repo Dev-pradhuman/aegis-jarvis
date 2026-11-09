@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { safeWrite, safeEnd } from './streamUtils.js';
 
@@ -101,19 +102,25 @@ export async function serveStatic(req, res, url, distDir = defaultDistDir) {
   }
 
   const stream = fs.createReadStream(targetPath);
-  stream.on('data', (chunk) => {
-    if (!safeWrite(res, chunk)) {
-      stream.destroy();
-    }
-  });
-  stream.on('error', (err) => {
-    if (err.code !== 'ENOENT' && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
-      console.warn('[static] stream error:', err.message);
-    }
-    safeEnd(res);
-  });
-  stream.on('end', () => {
-    safeEnd(res);
-  });
+  if (typeof res.on === 'function') {
+    pipeline(stream, res, (err) => {
+      if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE' && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
+        console.warn('[static] stream error:', err.message);
+      }
+    });
+  } else {
+    stream.on('data', (chunk) => {
+      safeWrite(res, chunk);
+    });
+    stream.on('end', () => {
+      safeEnd(res);
+    });
+    stream.on('error', (err) => {
+      if (err.code !== 'ENOENT' && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
+        console.warn('[static] stream error:', err.message);
+      }
+      safeEnd(res);
+    });
+  }
   return true;
 }

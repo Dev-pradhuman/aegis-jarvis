@@ -6,9 +6,20 @@ import '../styles/chat.css';
 const MODEL_LABELS = { 'muse-spark-1.2': 'Muse Spark 1.2', 'deepseek-v4-flash': 'DeepSeek V4 Flash', 'glm-5.2': 'GLM-5.2', 'laguna-s-2.1': 'Laguna S 2.1', 'minimax-m3': 'MiniMax M3', 'nemotron-3-nano-omni': 'Nemotron 3 Nano Omni', 'mimo-v2.5': 'MiMo V2.5', 'nemotron-3.5-lightning': 'Nemotron 3.5 Lightning' };
 const visual = (phase) => window.dispatchEvent(new CustomEvent('jarvis:visual', { detail: { phase } }));
 
+export function formatTimestamp(raw) {
+  if (!raw) return '';
+  const str = String(raw).trim();
+  if (/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(str)) return str;
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+  return str;
+}
+
 function nowTime() {
   const d = new Date();
-  return d.toTimeString().slice(0, 5);
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 function makeMsgId(prefix = 'msg') {
@@ -797,7 +808,7 @@ export default function Chat({ embedded = false, drawerMode = false, onClose = n
                 {m.attachScreen && <span className="screen-tag" title="Attached screen capture">👁️ Screen</span>}
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                <span className="time">{m.time}</span>
+                <span className="time">{formatTimestamp(m.time)}</span>
                 {m.who === 'JARVIS' && (
                   <button
                     type="button"

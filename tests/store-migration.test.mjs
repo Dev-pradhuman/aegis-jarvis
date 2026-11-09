@@ -21,6 +21,7 @@ test('Store Migration', async (t) => {
       ]
     };
     const stateFile = path.join(testDataDir, 'state.json');
+    await updateState((d) => d);
     await writeFile(stateFile, JSON.stringify(oldState), 'utf8');
 
     resetStateCache?.();
