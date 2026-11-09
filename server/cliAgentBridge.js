@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import { ensureMcpConfig, ensureIsolatedAgyProfile, DEFAULT_CLI_HOME, DEFAULT_CLI_WORKSPACE } from './mcpBridge.js';
 import { getState, updateState, activityEntry } from './store.js';
 import { createRun, addRunStep, transitionRun, completeRun, failRun } from './runEngine.js';
+import { pluginManager } from './pluginManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -348,6 +349,12 @@ export class CliAgentBridge {
 
     this.status = 'running';
     this.lastPrompt = userText;
+    await pluginManager.triggerHook('agentStart', {
+      mode: 'cli',
+      text: userText,
+      options,
+      timestamp: Date.now(),
+    }).catch(() => {});
     const targetSessionId = options.sessionId || this.sessionId;
     const speak = options.speak !== false;
     const source = options.source || 'text';
@@ -390,11 +397,24 @@ export class CliAgentBridge {
       }
     } catch (err) {
       this.status = 'error';
+      await pluginManager.triggerHook('agentStop', {
+        mode: 'cli',
+        text: userText,
+        status: 'error',
+        error: err.message,
+        timestamp: Date.now(),
+      }).catch(() => {});
       if (run) failRun(run, err.message);
       throw err;
     }
 
     this.status = 'idle';
+    await pluginManager.triggerHook('agentStop', {
+      mode: 'cli',
+      text: userText,
+      status: 'idle',
+      timestamp: Date.now(),
+    }).catch(() => {});
     const cleanReply = stripAnsi(executionResult.reply).trim() || 'Command completed successfully.';
     const spokenText = formatTextForSpeech(cleanReply);
     this.lastReply = cleanReply;

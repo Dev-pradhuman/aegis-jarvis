@@ -1,0 +1,7 @@
+{
+  "name": "jarvis-telemetry",
+  "version": "1.0.0",
+  "description": "Execution telemetry and safety guardrail plugin for Aegis-JARVIS",
+  "main": "index.js",
+  "enabled": true
+}

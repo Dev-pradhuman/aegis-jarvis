@@ -1,4 +1,5 @@
 import { isSpotifyInstalled } from './spotify.js';
+import { findMatchingSkillsSync } from './skillsEngine.js';
 
 export const KNOWN_SITES = {
   instagram: { url: 'https://www.instagram.com', label: 'Instagram' },
@@ -392,6 +393,19 @@ export function routeRequest(text) {
   }
   if (/^(show|list|what are)\s+(my\s+)?tasks\b/i.test(value) || /\b(?:what are my tasks|what tasks are|show tasks|list tasks|my to-do list|tasks on my|to-do items)\b/i.test(value)) return { route: 'TOOL_CALL', capability: 'tasks.list', args: {}, confidence: 0.99 };
 
+  const explicitSkillMatch = value.match(/^(?:(?:hey|hi|ok|okay)\s+)?(?:jarvis[, ]+)?(?:execute|run|trigger|launch)\s+(?:skill|workflow)\s+([a-zA-Z0-9_-]+)/i);
+  if (explicitSkillMatch) {
+    const skillNameOrSlug = explicitSkillMatch[1].trim();
+    const matches = findMatchingSkillsSync(skillNameOrSlug);
+    const targetSkill = matches.find((s) => s.slug === skillNameOrSlug || s.name.toLowerCase() === skillNameOrSlug.toLowerCase()) || matches[0];
+    return {
+      route: 'SKILL',
+      capability: targetSkill?.slug || skillNameOrSlug,
+      skill: targetSkill || { name: skillNameOrSlug, slug: skillNameOrSlug },
+      confidence: 0.99,
+    };
+  }
+
   const commandMatch = value.match(/^(?:jarvis[, ]+)?(?:execute|run)\s+(?:command|terminal|bash|shell)?\s*:\s*(.+)$/i) ||
     value.match(/^(?:jarvis[, ]+)?(?:execute|run)\s+(?:command|terminal)\s+(.+)$/i);
   if (commandMatch) {
@@ -416,5 +430,14 @@ export function routeRequest(text) {
   if (/^(?:jarvis[, ]+)?(?:what do you see on (?:the |my )?camera|what(?:'s| is) on (?:the |my )?camera|(?:look at|describe) (?:the |my )?camera)\??$/i.test(value)) {
     return { route: 'TOOL_CALL', capability: 'camera.describe', args: {}, confidence: 0.99 };
   }
-  return { route: 'MODEL', capability: null, args: {}, confidence: 0.7 };
+
+  const matchingSkills = findMatchingSkillsSync(value);
+  return {
+    route: 'MODEL',
+    capability: null,
+    args: {},
+    matchedSkill: matchingSkills[0] || null,
+    matchingSkills,
+    confidence: 0.7,
+  };
 }

@@ -127,6 +127,9 @@ import { WakeWordProvider } from './wakeWordProvider.js';
 import { EnergyVADProvider } from './vadProvider.js';
 import { voiceRoutes } from './routes/voice.js';
 import { cliAgentBridge } from './cliAgentBridge.js';
+import { pluginManager } from './pluginManager.js';
+
+pluginManager.loadAllPlugins().catch((err) => console.warn('[PluginManager] Failed to load plugins:', err.message));
 
 const voicePipeline = new VoicePipeline({
   audioSource: new AudioCapture(),

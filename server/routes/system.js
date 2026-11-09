@@ -47,6 +47,9 @@ import { detectedCliSources, discoverBrainModels, ollamaRuntimeStatus, testBrain
 import { publicProviderPresets, presetFor } from '../providerPresets.js';
 import { getCaelestiaTheme } from '../themeBridge.js';
 
+import { pluginManager } from '../pluginManager.js';
+import { discoverSkillsSync } from '../skillsEngine.js';
+
 let calendarCache = { events: [], fetchedAt: 0 };
 async function getCachedCalendarEvents(forceRefresh = false) {
   const now = Date.now();
@@ -94,6 +97,8 @@ export default async function systemRoutes(req, res, url, state, ctx) {
   const { json, body, recordActivity, modelFailureReply, publicProvider, connectionStatus, authorized, uptimeSeconds, desktopErrorStatus, processSchedulerTick, lastSchedulerTick, schedulerEnabled, schedulerInterval, port } = ctx;
 
   if (req.method === 'GET' && url.pathname === '/api/theme/caelestia') return json(res, 200, await getCaelestiaTheme());
+  if (req.method === 'GET' && url.pathname === '/api/plugins') return json(res, 200, { plugins: pluginManager.getLoadedPlugins() });
+  if (req.method === 'GET' && url.pathname === '/api/skills') return json(res, 200, { skills: discoverSkillsSync() });
   if (req.method === 'POST' && url.pathname === '/api/island/hide') {
     try {
       const { exec } = await import('node:child_process');

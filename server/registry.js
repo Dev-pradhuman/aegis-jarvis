@@ -109,3 +109,34 @@ export function listCapabilities() {
   const current = listTools();
   return [...new Set(current.map((tool) => tool.module))].map((module) => ({ module, tools: current.filter((tool) => tool.module === module).map((tool) => tool.id) }));
 }
+
+export function registerTool(toolDef) {
+  if (!toolDef || !toolDef.id) throw new Error('Tool must have an id');
+  const existingIdx = tools.findIndex((t) => t.id === toolDef.id);
+  const normalized = {
+    name: toolDef.name || toolDef.id,
+    description: toolDef.description || '',
+    module: toolDef.module || 'plugins',
+    riskLevel: toolDef.riskLevel || 'READ_ONLY',
+    sideEffects: Boolean(toolDef.sideEffects),
+    reversible: toolDef.reversible !== false,
+    timeout: toolDef.timeout || 10000,
+    enabled: toolDef.enabled !== false,
+    inputSchema: toolDef.inputSchema || objectSchema(),
+    ...toolDef,
+  };
+  if (existingIdx >= 0) {
+    tools[existingIdx] = normalized;
+  } else {
+    tools.push(normalized);
+  }
+  return normalized;
+}
+
+export function unregisterTool(toolId) {
+  const idx = tools.findIndex((t) => t.id === toolId);
+  if (idx >= 0) {
+    return tools.splice(idx, 1)[0];
+  }
+  return null;
+}

@@ -21,6 +21,7 @@ import { publicPools } from './modelPool.js';
 import { calendarRequest, messageActionHash, sendMessage } from './liveAdapters.js';
 import { planGroundedResearch } from './researchWorkflow.js';
 import { getTool } from './registry.js';
+import { pluginManager } from './pluginManager.js';
 import { validateToolInput, validateToolOutput } from './toolSchema.js';
 import { actionFingerprint } from './idempotency.js';
 import { diagnostics, researchSearch, searchMemory } from './systemModules.js';
@@ -467,9 +468,50 @@ async function runTool(toolId, input = {}, context = {}) {
 
 export async function executeTool(toolId, input = {}, context = {}) {
   const tool = getTool(toolId);
-  if (!tool || !implementedToolIds.includes(toolId)) throw new Error(`Unknown or unavailable tool: ${toolId}`);
+  const isPluginTool = pluginManager.hasToolHandler(toolId);
+  if (!tool || (!implementedToolIds.includes(toolId) && !isPluginTool)) {
+    throw new Error(`Unknown or unavailable tool: ${toolId}`);
+  }
   validateToolInput(tool.inputSchema, input);
-  const result = await runTool(toolId, input, context);
+
+  const startTime = Date.now();
+  await pluginManager.triggerHook('preToolCall', {
+    toolId,
+    input,
+    context,
+    timestamp: startTime,
+  });
+
+  let result;
+  let executionError = null;
+  try {
+    if (isPluginTool) {
+      const handler = pluginManager.getToolHandler(toolId);
+      const res = await handler(input, context);
+      result = (res && typeof res === 'object' && 'ok' in res)
+        ? res
+        : { ok: true, toolId, data: res };
+    } else {
+      result = await runTool(toolId, input, context);
+    }
+  } catch (err) {
+    executionError = err;
+    throw err;
+  } finally {
+    const durationMs = Date.now() - startTime;
+    await pluginManager.triggerHook('postToolCall', {
+      toolId,
+      input,
+      result,
+      error: executionError,
+      durationMs,
+      context,
+      timestamp: Date.now(),
+    }).catch((hookErr) => {
+      if (!executionError) console.warn('[PluginManager] postToolCall error:', hookErr.message);
+    });
+  }
+
   return validateToolOutput(tool.outputSchema, result);
 }
 
