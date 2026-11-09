@@ -82,14 +82,33 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
       }
 
-      // Smooth Value Noise (Quintic Hermite interpolation)
-      float vnoise(vec2 p) {
+      // Continuous 2D Unit Gradient Hash
+      vec2 hashGrad(vec2 p) {
+        float n = sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123;
+        float a = fract(n) * 6.283185307;
+        return vec2(cos(a), sin(a));
+      }
+
+      // Perlin Gradient Noise with Quintic (C2 continuous) Hermite interpolation
+      // u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0) -> ZERO square/blocky grid artifacts
+      float gnoise(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
-        vec2 u = f * f * (3.0 - 2.0 * f);
+        vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+
+        vec2 g00 = hashGrad(i + vec2(0.0, 0.0));
+        vec2 g10 = hashGrad(i + vec2(1.0, 0.0));
+        vec2 g01 = hashGrad(i + vec2(0.0, 1.0));
+        vec2 g11 = hashGrad(i + vec2(1.0, 1.0));
+
+        float d00 = dot(g00, f - vec2(0.0, 0.0));
+        float d10 = dot(g10, f - vec2(1.0, 0.0));
+        float d01 = dot(g01, f - vec2(0.0, 1.0));
+        float d11 = dot(g11, f - vec2(1.0, 1.0));
+
         return mix(
-          mix(hash(i + vec2(0.0, 0.0)), hash(i + vec2(1.0, 0.0)), u.x),
-          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+          mix(d00, d10, u.x),
+          mix(d01, d11, u.x),
           u.y
         );
       }
@@ -98,20 +117,19 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
       float fbm(vec2 p) {
         float v = 0.0;
         float a = 0.52;
-        mat2 rot = mat2(cos(0.55), sin(0.55), -sin(0.55), cos(0.55));
+        mat2 rot = mat2(0.80, 0.60, -0.60, 0.80);
         for (int i = 0; i < 4; i++) {
-          v += a * vnoise(p);
-          p = rot * p * 2.18 + vec2(1.3, 2.7);
+          v += a * gnoise(p);
+          p = rot * p * 2.14 + vec2(1.7, 9.2);
           a *= 0.48;
         }
-        return v;
+        return v * 0.5 + 0.5;
       }
 
-      // Rotation matrix to tilt the accretion disk plane by -22 degrees diagonally
+      // Rotation matrix to tilt the accretion disk plane by -24 degrees diagonally
       mat3 getDiskRotation() {
-        // -22 degrees pitch around X, with slight diagonal roll around Z
-        float radX = -0.384; 
-        float radZ = 0.28;
+        float radX = -0.419; // -24 deg pitch
+        float radZ = 0.32;   // diagonal sweep from bottom-left to top-right
         float cx = cos(radX), sx = sin(radX);
         float cz = cos(radZ), sz = sin(radZ);
         mat3 rx = mat3(
@@ -138,13 +156,13 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         uv.x += uMouse.x * 0.035;
         uv.y += uMouse.y * 0.025;
 
-        // Camera setup in 3D spacetime
-        vec3 ro = vec3(0.0, 1.25, -6.6);
-        vec3 target = vec3(0.0, -0.1, 0.0);
+        // Camera setup in 3D spacetime centered dead-on the black hole
+        vec3 ro = vec3(0.0, 0.6, -5.8);
+        vec3 target = vec3(0.0, 0.0, 0.0);
         vec3 forward = normalize(target - ro);
         vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
         vec3 up = cross(right, forward);
-        vec3 dir = normalize(forward * 1.55 + right * uv.x + up * uv.y);
+        vec3 dir = normalize(forward * 1.6 + right * uv.x + up * uv.y);
 
         mat3 diskRot = getDiskRotation();
 
@@ -156,8 +174,7 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         bool hitHorizon = false;
         float minR = 1e6;
 
-        const float RS = 1.08;      // Schwarzschild Horizon Radius
-        const float R_PHOTON = 1.58; // Photon Sphere Radius
+        const float RS = 1.15; // Schwarzschild Horizon Radius
 
         for (int i = 0; i < 64; i++) {
           float r2 = dot(pos, pos);
@@ -175,8 +192,7 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
           if (r > 13.5) break;
 
           // 2. Geodesic Relativistic Deflection (Gravitational Bending)
-          // As rays pass near the black hole, curvature bends rays toward center
-          vec3 gravity = -(pos / r) * (0.082 / max(r2, 0.05)) * stepSize;
+          vec3 gravity = -(pos / r) * (0.088 / max(r2, 0.04)) * stepSize;
           dir = normalize(dir + gravity);
 
           // 3. Volumetric Accretion Disk in Tilted Coordinate Frame
@@ -184,50 +200,50 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
           float dist = length(pDisk.xz);
           float h = abs(pDisk.y);
 
-          // Accretion disk boundary: inner edge ~ 1.35, outer edge ~ 6.0, vertical half-thickness ~ 0.40
-          if (dist >= 1.35 && dist <= 6.2 && h < 0.40) {
-            float normR = (dist - 1.35) / (6.2 - 1.35);
-            float innerRamp = smoothstep(0.0, 0.12, normR);
-            float outerFade = pow(1.0 - normR, 1.6);
+          // Accretion disk boundary: inner edge ~ 1.42, outer edge ~ 6.8, vertical half-thickness ~ 0.36
+          if (dist >= 1.42 && dist <= 6.8 && h < 0.36) {
+            float normR = (dist - 1.42) / (6.8 - 1.42);
+            float innerRamp = smoothstep(0.0, 0.15, normR);
+            float outerFade = pow(1.0 - normR, 1.8);
             float radialProfile = innerRamp * outerFade;
 
             // Soft Gaussian vertical dissipation (silky plasma, no hard edges)
-            float verticalProfile = exp(-h * h / 0.026);
+            float verticalProfile = exp(-h * h / 0.018);
 
             // Keplerian differential swirl: v ~ 1 / sqrt(r)
             float angle = atan(pDisk.z, pDisk.x);
-            float speed = 1.25;
-            float swirl = angle + uTime * uMotion * (speed / max(dist, 0.6)) * 0.45;
+            float speed = 1.35;
+            float swirl = angle + uTime * uMotion * (speed / sqrt(max(dist, 0.8))) * 0.42;
 
-            // Multi-octave smooth 3D FBM noise in polar coordinates - NO concentric stripes
-            vec2 polar1 = vec2(log(dist) * 3.8 - uTime * uMotion * 0.09, swirl * 2.2);
+            // Multi-octave fine logarithmic spiral Perlin noise
+            vec2 polar1 = vec2(log(dist) * 4.2 - uTime * uMotion * 0.08, swirl * 2.4);
             float f1 = fbm(polar1);
-            vec2 polar2 = vec2(log(dist) * 8.6 + f1 * 1.2, swirl * 5.6 - uTime * uMotion * 0.22);
+            vec2 polar2 = vec2(log(dist) * 9.5 + f1 * 1.1, swirl * 6.2 - uTime * uMotion * 0.18);
             float f2 = fbm(polar2);
-            float gas = smoothstep(0.18, 0.88, f1 * 0.65 + f2 * 0.45);
+            float gas = smoothstep(0.22, 0.82, f1 * 0.65 + f2 * 0.45);
 
             // Doppler beaming: approaching side (blueshift + boost) vs receding side (redshift + dim)
             float losVel = -sin(angle);
-            float doppler = 1.0 + 0.72 * losVel;
+            float doppler = 1.0 + 0.78 * losVel;
 
             // Cosmic blue on approaching side, warm copper/gold on receding side
-            vec3 colBlue = mix(vec3(0.12, 0.23, 0.54), vec3(0.22, 0.74, 0.97), gas);
-            vec3 colGold = mix(vec3(0.85, 0.47, 0.02), vec3(0.99, 0.95, 0.78), gas);
+            vec3 colBlue = mix(vec3(0.14, 0.28, 0.62), vec3(0.55, 0.85, 1.0), gas);
+            vec3 colGold = mix(vec3(0.85, 0.42, 0.04), vec3(0.99, 0.88, 0.65), gas);
 
             float dopplerT = clamp((losVel + 1.0) * 0.5, 0.0, 1.0);
             vec3 plasmaCol = mix(colGold, colBlue, dopplerT);
 
             // Hot inner rim flare
-            float hotRim = exp(-normR * 14.0) * 1.8;
-            plasmaCol += vec3(0.9, 0.95, 1.0) * hotRim;
+            float hotRim = exp(-normR * 12.0) * 1.5;
+            plasmaCol += vec3(0.85, 0.95, 1.0) * hotRim;
 
-            float density = (gas * 1.5 + hotRim * 0.8) * radialProfile * verticalProfile * pow(doppler, 2.5);
-            float alpha = clamp(density * stepSize * 2.2, 0.0, 1.0);
+            float density = (gas * 1.6 + hotRim * 0.7) * radialProfile * verticalProfile * pow(max(0.1, doppler), 2.2);
+            float alpha = clamp(density * stepSize * 2.4, 0.0, 1.0);
 
             accumulatedCol += transmit * plasmaCol * alpha * uLight * uVoicePulse;
-            transmit *= (1.0 - alpha * 0.82);
+            transmit *= (1.0 - alpha * 0.85);
 
-            if (transmit < 0.015) break;
+            if (transmit < 0.012) break;
           }
 
           pos += dir * stepSize;
@@ -239,20 +255,44 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
           return;
         }
 
-        // Razor-Thin Photon Ring at r ~ 1.58 (grazing rays that barely escape)
-        float photonDist = abs(minR - R_PHOTON);
-        float photonRim = exp(-photonDist * photonDist / 0.0028); // razor-thin, crisp
+        // ASYMMETRICAL PHOTON CRESCENT ARCS (ZERO uniform 360 circle ring)
         float rimAngle = atan(uv.y, uv.x);
-        float rimDoppler = clamp((-sin(rimAngle - 0.4) + 1.0) * 0.5, 0.0, 1.0);
-        // Cool ice-blue (#7dd3fc) on upper-left arc, warm golden-amber (#fbbf24 / #f59e0b) on lower-right arc
-        vec3 rimCol = mix(vec3(0.98, 0.75, 0.14), vec3(0.49, 0.83, 0.99), rimDoppler);
-        accumulatedCol += rimCol * photonRim * 3.2 * uLight * uVoicePulse;
 
-        // Distant space stars for rays that escape without hitting disk
+        // 1. Upper-Left Razor-Thin Cool Ice-Blue/White Crescent (#93c5fd -> #e0f2fe)
+        // Peaks in upper-left (rimAngle ~ 2.35 rad), smoothly fades to 0 in lower-right
+        float blueArcFactor = clamp(sin(rimAngle - 0.78), 0.0, 1.0);
+        float blueDist = abs(minR - 1.48);
+        float blueRim = exp(-pow(blueDist / 0.035, 2.0)) * pow(blueArcFactor, 1.8);
+        vec3 colIceBlue = mix(vec3(0.58, 0.83, 0.99), vec3(0.92, 0.96, 1.0), blueRim);
+        accumulatedCol += colIceBlue * blueRim * 2.6 * uLight * uVoicePulse;
+
+        // 2. Upper-Right & Lower-Left Warm Golden-Amber Inner Rim (#fbbf24 -> #ea580c)
+        // Where tilted disk crosses in front of horizon
+        float amberArcFactor = clamp(-sin(rimAngle - 0.78), 0.0, 1.0);
+        float amberDist = abs(minR - 1.50);
+        float amberRim = exp(-pow(amberDist / 0.045, 2.0)) * pow(amberArcFactor, 1.8);
+        vec3 colAmber = mix(vec3(0.92, 0.35, 0.05), vec3(0.98, 0.75, 0.14), amberRim);
+        accumulatedCol += colAmber * amberRim * 2.2 * uLight * uVoicePulse;
+
+        // 3. Relativistic Beaming Flare on the Right Equator where disk meets shadow
+        float rightEquator = exp(-pow(rimAngle / 0.38, 2.0));
+        float flareDist = abs(minR - 1.52);
+        float equatorFlare = exp(-pow(flareDist / 0.075, 2.0)) * rightEquator;
+        vec3 flareCol = vec3(1.0, 0.94, 0.80);
+        accumulatedCol += flareCol * equatorFlare * 2.2 * uLight * uVoicePulse;
+
+        // 4. Crisp 3D Drifting Starfield with Sub-Pixel Twinkle
         if (transmit > 0.05) {
-          float starHash = hash(floor(dir.xy * 240.0 + dir.z * 180.0));
-          float star = step(0.994, starHash) * pow((starHash - 0.994) / 0.006, 3.0);
-          accumulatedCol += vec3(0.72, 0.86, 1.0) * star * transmit * 0.65;
+          vec3 sDir = dir + vec3(uTime * 0.003, uTime * 0.002, 0.0);
+          float s1 = hash(floor(sDir.xy * 280.0 + sDir.z * 160.0));
+          float star1 = step(0.995, s1) * pow((s1 - 0.995) / 0.005, 3.0);
+
+          vec3 sDir2 = dir * 2.4 + vec3(-uTime * 0.005, uTime * 0.003, 0.5);
+          float s2 = hash(floor(sDir2.xy * 380.0 + sDir2.z * 220.0));
+          float star2 = step(0.997, s2) * pow((s2 - 0.997) / 0.003, 2.0);
+
+          float twinkle = 0.8 + 0.2 * sin(uTime * 2.5 + s1 * 120.0);
+          accumulatedCol += (vec3(0.75, 0.88, 1.0) * star1 + vec3(1.0, 0.95, 0.85) * star2) * twinkle * transmit * 0.8;
         }
 
         // Analytic ACES Filmic Tone Mapping (prevents blown-out whiteout glare)

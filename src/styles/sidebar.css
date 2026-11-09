@@ -1,171 +1,172 @@
-/* Slim 60px Icon-Only Rail */
-.sidebar {
+/* Always-Visible 60px Left Icon Rail Sidebar */
+.sidebar,
+.galaxy-sidebar {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  bottom: 0 !important;
   width: 60px !important;
   min-width: 60px !important;
   max-width: 60px !important;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 14px 0 16px 0;
-  background: rgba(4, 4, 8, 0.78) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  padding: 14px 0 16px 0 !important;
+  background: rgba(5, 5, 8, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: none !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
   border-radius: 0 !important;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
-  user-select: none;
-  z-index: 60;
-  overflow: visible;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5) !important;
+  user-select: none !important;
+  z-index: 100 !important;
+  overflow: visible !important;
 }
 
-/* Glowing Circular Ring Logo */
-.brand-rail-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 22px;
-  transition: transform 0.25s ease;
+.sidebar-head,
+.galaxy-sidebar-head {
+  display: grid !important;
+  place-items: center !important;
+  width: 100% !important;
+  height: 44px !important;
+  margin-bottom: 14px !important;
 }
 
-.brand-rail-logo:hover {
-  transform: scale(1.08);
+.brand-rail-logo,
+.rail-brand {
+  display: grid !important;
+  place-items: center !important;
+  width: 40px !important;
+  height: 40px !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  transition: transform 0.25s ease !important;
 }
 
-.glowing-ring-emblem {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, transparent 70%);
-  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.55));
-  animation: emblem-breathe 4s ease-in-out infinite alternate;
+.brand-rail-logo:hover,
+.rail-brand:hover {
+  transform: scale(1.08) !important;
 }
 
-@keyframes emblem-breathe {
-  0% {
-    filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.45));
-  }
-  100% {
-    filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.65));
-  }
+.glowing-ring-emblem,
+.glowing-rail-ring {
+  position: relative !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50% !important;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, transparent 70%) !important;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.45)) !important;
 }
 
-/* Navlist */
-.sidebar .navlist {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  flex: 1;
-  padding: 0;
-  margin: 0;
-  list-style: none;
+.sidebar .navlist,
+.galaxy-sidebar-items {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 14px !important;
+  width: 100% !important;
+  flex: 1 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  list-style: none !important;
 }
 
 /* 40x40px Icon Buttons */
-.rail-icon-btn {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  border-radius: 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(203, 213, 225, 0.65);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  padding: 0;
+.rail-icon-btn,
+.galaxy-sidebar-items button {
+  position: relative !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: rgba(203, 213, 225, 0.65) !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  padding: 0 !important;
 }
 
-.rail-icon-btn svg {
-  width: 19px;
-  height: 19px;
-  stroke-width: 1.7;
-  transition: stroke 0.2s ease, transform 0.2s ease;
+.rail-icon-btn:hover,
+.galaxy-sidebar-items button:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  transform: translateY(-1px) !important;
 }
 
-.rail-icon-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
+/* Active rounded dark-grey pill background rgba(255,255,255,0.12) */
+.rail-icon-btn.active,
+.rail-icon-btn.is-home,
+.galaxy-sidebar-items button.active,
+.galaxy-sidebar-items button.is-home {
+  color: #38bdf8 !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(56, 189, 248, 0.35) !important;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.25) !important;
 }
 
-.rail-icon-btn.active {
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.14);
-  border-color: rgba(56, 189, 248, 0.35);
-  box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
-}
-
-.rail-icon-btn.active svg {
-  stroke: #38bdf8;
-  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.6));
-}
-
-/* Hover Tooltip */
 .rail-tooltip {
-  position: absolute;
-  left: 54px;
-  padding: 4px 9px;
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: #e2e8f0;
-  font: 500 11px 'Share Tech Mono', monospace;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateX(-4px);
-  transition: all 0.15s ease;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-  z-index: 100;
+  position: absolute !important;
+  left: 54px !important;
+  padding: 4px 9px !important;
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 6px !important;
+  color: #e2e8f0 !important;
+  font: 500 11px 'Share Tech Mono', monospace !important;
+  letter-spacing: 0.06em !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transform: translateX(-4px) !important;
+  transition: all 0.15s ease !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+  z-index: 110 !important;
 }
 
 .rail-icon-btn:hover .rail-tooltip {
-  opacity: 1;
-  transform: translateX(0);
+  opacity: 1 !important;
+  transform: translateX(0) !important;
 }
 
-/* Sidebar Foot Online Dot */
-.sidebar .sidebar-foot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 0;
-  width: 100%;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+/* Bottom: Subtle horizontal divider line + glowing green online status dot (8px #22c55e) */
+.sidebar .sidebar-foot,
+.galaxy-sidebar-foot {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 8px 0 !important;
+  width: 100% !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
-.status-dot-green {
-  display: block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px #22c55e, 0 0 16px rgba(34, 197, 94, 0.5);
-  animation: dot-pulse 2.2s infinite ease-in-out;
+.status-dot-green,
+.rail-state-dot {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #22c55e !important;
+  box-shadow: 0 0 8px #22c55e, 0 0 16px rgba(34, 197, 94, 0.5) !important;
+  animation: dot-pulse 2.2s infinite ease-in-out !important;
 }
 
-.online-label {
-  font: 700 8px 'Share Tech Mono', monospace;
-  letter-spacing: 0.12em;
-  color: rgba(34, 197, 94, 0.85);
+.online-label,
+.rail-online-text {
+  font: 700 8px 'Share Tech Mono', monospace !important;
+  letter-spacing: 0.12em !important;
+  color: rgba(34, 197, 94, 0.85) !important;
 }
 
 @keyframes dot-pulse {

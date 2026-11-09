@@ -1,25 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  Bell,
   BrainCircuit,
   ChevronRight,
   Database,
   Expand,
   Home,
+  Layers,
+  LayoutGrid,
   ListTodo,
   MessageSquare,
+  Monitor,
   Moon,
   RotateCcw,
   Settings2,
   Shrink,
   Sun,
   X,
+  Zap,
 } from 'lucide-react';
 import useTelemetry from '../hooks/useTelemetry.js';
 import { pollWithBackoff } from '../hooks/pollWithBackoff.js';
 import useVisualState from '../galaxy/useVisualState.js';
 import useWindowManager from '../galaxy/WindowManager.jsx';
 import Chat from './Chat.jsx';
+import Sidebar from './Sidebar.jsx';
 import {
   TasksWorkspace,
   MemoryWorkspace,
@@ -28,13 +34,14 @@ import {
 } from './WorkspaceViews.jsx';
 import '../styles/galaxy-home.css';
 import '../styles/galaxy-immersive.css';
+import '../styles/sidebar.css';
 
-const NAV = [
+export const NAV = [
   { id: 'home', label: 'Home', icon: Home },
-  { id: 'tasks', label: 'Tasks', icon: ListTodo },
+  { id: 'tasks', label: 'Tasks', icon: Layers },
   { id: 'memory', label: 'Memory', icon: Database },
-  { id: 'activity', label: 'Activity', icon: Activity },
-  { id: 'settings', label: 'Settings', icon: Settings2 },
+  { id: 'activity', label: 'Activity', icon: Zap },
+  { id: 'settings', label: 'Settings', icon: LayoutGrid },
 ];
 
 function getDynamicGreeting() {
@@ -95,73 +102,6 @@ function Scene({ phase, sceneRef, drawerOpen }) {
     <div className="galaxy-scene" ref={host} aria-label="Interactive 3D Gargantua Black Hole">
       {error && <div className="scene-error">3D Black Hole scene unavailable: {error}</div>}
     </div>
-  );
-}
-
-// Slim 60px Icon-Only Navigation Rail
-function Navigation({ open, active, onToggleChat, drawerOpen }) {
-  return (
-    <nav className="galaxy-sidebar" aria-label="JARVIS navigation rail">
-      {/* Top Circular Ring Logo */}
-      <div className="galaxy-sidebar-head">
-        <button className="rail-brand" onClick={() => open('home')} aria-label="Return to Home" title="Home">
-          <div className="glowing-rail-ring">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="#38bdf8" strokeWidth="1.5" strokeOpacity="0.4" />
-              <circle cx="12" cy="12" r="5" stroke="#f59e0b" strokeWidth="1.5" />
-              <circle cx="12" cy="12" r="2.5" fill="#ffffff" />
-            </svg>
-          </div>
-        </button>
-      </div>
-
-      {/* 40x40 Icon Buttons */}
-      <div className="galaxy-sidebar-items">
-        {/* Home */}
-        <button
-          key="home"
-          type="button"
-          className={active === 'home' && !drawerOpen ? 'is-home' : ''}
-          onClick={() => open('home')}
-          title="Home"
-          aria-label="Home"
-        >
-          <Home size={18} strokeWidth={1.75} />
-        </button>
-
-        {/* Chat Drawer Toggle Button */}
-        <button
-          key="chat-drawer"
-          type="button"
-          className={drawerOpen && active === 'home' ? 'is-home' : ''}
-          onClick={onToggleChat}
-          title="Toggle Chat Drawer"
-          aria-label="Toggle Chat Drawer"
-        >
-          <MessageSquare size={18} strokeWidth={1.75} />
-        </button>
-
-        {/* Essential Navigation Items */}
-        {NAV.filter((item) => item.id !== 'home').map(({ id, label, icon: IconComponent }) => (
-          <button
-            key={id}
-            type="button"
-            className={id === active ? 'is-home' : ''}
-            onClick={() => open(id)}
-            title={label}
-            aria-label={label}
-          >
-            <IconComponent size={18} strokeWidth={1.75} />
-          </button>
-        ))}
-      </div>
-
-      {/* Bottom Online Dot */}
-      <div className="galaxy-sidebar-foot" title="Local Core Online">
-        <span className="rail-state-dot" />
-        <span className="rail-online-text">ONLINE</span>
-      </div>
-    </nav>
   );
 }
 
@@ -383,11 +323,10 @@ export default function GalaxyHome() {
       <div className="galaxy-vignette" />
 
       {/* 2. Permanently Visible 60px Left Sidebar Rail */}
-      <Navigation
-        open={open}
-        active={activeTab}
+      <Sidebar
+        activeView={drawerOpen && activeTab === 'home' ? 'chat' : activeTab}
+        onNavigate={open}
         onToggleChat={() => setDrawerOpen((prev) => !prev)}
-        drawerOpen={drawerOpen}
       />
 
       {/* 3. Main Workspace Container (starts at left: 60px, width: calc(100vw - 60px)) */}
@@ -397,7 +336,6 @@ export default function GalaxyHome() {
           <div className="system-identity">
             <span className="identity-tick" />
             <span className="wordmark-title">J A R V I S</span>
-            <span className="wordmark-subtitle"> / PERSONAL EXECUTION LAYER</span>
           </div>
           <div className="topline-actions topbar-right">
             <button
@@ -414,15 +352,14 @@ export default function GalaxyHome() {
             </button>
             <span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />
             <span className="service-status-lbl">{visual.serviceStatus}</span>
-            <button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera">
-              <RotateCcw size={14} />
+            <button title="Notifications" aria-label="Notifications">
+              <Bell size={15} />
             </button>
-            <button
-              onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep}
-              title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
-              aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
-            >
-              {visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}
+            <button onClick={toggleImmersive} title="Toggle fullscreen monitor (F)" aria-label="Monitor">
+              <Monitor size={15} />
+            </button>
+            <button onClick={() => open('settings')} title="Settings" aria-label="Settings">
+              <Settings2 size={15} />
             </button>
           </div>
         </div>
@@ -433,13 +370,13 @@ export default function GalaxyHome() {
             {/* Centerpiece Hero Greeting Typography */}
             <div className={`galaxy-hero-typography ${drawerOpen ? 'shifted' : 'centered'}`}>
               <h1 className="hero-greeting">
-                <span className="hero-prefix">{getDynamicGreeting()}</span>
-                <span className="hero-name"> Pradhuman.</span>
+                <span className="greeting-light">{getDynamicGreeting()} </span>
+                <span className="greeting-bold">Pradhuman.</span>
               </h1>
               <p className="hero-subtitle">J A R V I S &nbsp; • &nbsp; P E R S O N A L &nbsp; E X E C U T I O N &nbsp; L A Y E R</p>
             </div>
 
-            {/* STATE 2: Docked Left Frosted-Glass Chat Drawer (left: 16px inside workspace, 76px from screen edge) */}
+            {/* STATE 2: Docked Left Frosted-Glass Chat Drawer (left: 76px from screen edge, 16px to right of sidebar) */}
             <div
               className={`galaxy-home-chat-wrapper ${drawerOpen ? 'is-open' : 'is-hidden'}`}
               data-testid="galaxy-home-chat"
@@ -447,64 +384,77 @@ export default function GalaxyHome() {
               <Chat embedded={true} />
             </div>
 
-            {/* STATE 1: Floating Glass Command Pill at bottom */}
+            {/* STATE 1: Wide Two-Row Floating Glass Command Box at bottom */}
             {!drawerOpen && (
               <div className="floating-command-pill-container">
                 <form
-                  className="floating-command-pill"
+                  className="floating-command-card"
                   onSubmit={(e) => {
                     e.preventDefault();
                     handleFloatingCommandSubmit();
                   }}
                 >
-                  <button
-                    type="button"
-                    className="pill-action-btn add-btn"
-                    onClick={() => setDrawerOpen(true)}
-                    title="New prompt"
-                    aria-label="New prompt"
-                  >
-                    +
-                  </button>
-                  <input
-                    type="text"
-                    className="pill-input"
-                    placeholder="Ask JARVIS anything..."
-                    value={commandInput}
-                    onChange={(e) => setCommandInput(e.target.value)}
-                    onFocus={() => {
-                      setDrawerOpen(true);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className={`pill-action-btn screen-btn ${commandScreenAttach ? 'active' : ''}`}
-                    onClick={() => setCommandScreenAttach((prev) => !prev)}
-                    title={commandScreenAttach ? 'Screen attached' : 'Attach screen'}
-                    aria-label="Attach screen"
-                  >
-                    [o]
-                  </button>
-                  <button
-                    type="button"
-                    className="pill-action-btn mic-btn"
-                    onClick={() => setDrawerOpen(true)}
-                    title="Voice command"
-                    aria-label="Voice command"
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="9" y="3" width="6" height="11" rx="3" />
-                      <path d="M5 11a7 7 0 0014 0M12 18v3" />
-                    </svg>
-                  </button>
-                  <button
-                    type="submit"
-                    className="pill-action-btn send-btn"
-                    title="Send message"
-                    aria-label="Send message"
-                  >
-                    →
-                  </button>
+                  {/* Top Row: Full-width clean text input */}
+                  <div className="command-card-top-row">
+                    <input
+                      type="text"
+                      className="command-card-input pill-input"
+                      placeholder="Ask JARVIS anything..."
+                      value={commandInput}
+                      onChange={(e) => setCommandInput(e.target.value)}
+                      onFocus={() => {
+                        setDrawerOpen(true);
+                      }}
+                    />
+                  </div>
+
+                  {/* Bottom Row: Actions */}
+                  <div className="command-card-bottom-row">
+                    <div className="bottom-row-left">
+                      <button
+                        type="button"
+                        className="card-action-btn add-btn"
+                        onClick={() => setDrawerOpen(true)}
+                        title="New prompt"
+                        aria-label="New prompt"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="bottom-row-right">
+                      <button
+                        type="button"
+                        className={`card-action-btn screen-btn ${commandScreenAttach ? 'active' : ''}`}
+                        onClick={() => setCommandScreenAttach((prev) => !prev)}
+                        title={commandScreenAttach ? 'Screen attached' : 'Attach screen'}
+                        aria-label="Attach screen"
+                      >
+                        [o]
+                      </button>
+                      <button
+                        type="button"
+                        className="card-action-btn mic-btn"
+                        onClick={() => setDrawerOpen(true)}
+                        title="Voice command"
+                        aria-label="Voice command"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="3" width="6" height="11" rx="3" />
+                          <path d="M5 11a7 7 0 0014 0M12 18v3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="submit"
+                        className="card-send-btn send-btn"
+                        title="Send query"
+                        aria-label="Send query"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                          <path d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </form>
               </div>
             )}

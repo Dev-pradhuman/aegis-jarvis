@@ -126,10 +126,9 @@ export default function TopBar() {
 
   return (
     <header className="topbar minimal-header">
-      {/* Left: J A R V I S Wordmark */}
+      {/* Left: Clean J A R V I S Wordmark */}
       <div className="topbar-wordmark-container">
         <span className="topbar-wordmark">J A R V I S</span>
-        <span className="topbar-subwordmark">EVENT HORIZON</span>
       </div>
 
       {/* Center: Live Schedule Event Pill (if any) */}

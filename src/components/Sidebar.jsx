@@ -1,124 +1,145 @@
-import Icon from './Icon.jsx';
+import { Home, MessageSquare, Layers, Zap, Database, LayoutGrid } from 'lucide-react';
 import '../styles/sidebar.css';
 
 export const NAV_ITEMS = [
-  { id: 'overview', label: 'Home', icon: 'overview' },
-  { id: 'tasks', label: 'Tasks', icon: 'tasks' },
-  { id: 'memory', label: 'Memory', icon: 'database' },
-  { id: 'activity', label: 'Activity', icon: 'activity' },
-  { id: 'settings', label: 'Settings', icon: 'settings' },
+  { id: 'overview', label: 'Home', icon: Home },
+  { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'tasks', label: 'Tasks', icon: Layers },
+  { id: 'activity', label: 'Activity', icon: Zap },
+  { id: 'memory', label: 'Memory', icon: Database },
+  { id: 'settings', label: 'Settings', icon: LayoutGrid },
 ];
 
-export default function Sidebar({ activeView, onNavigate }) {
+export default function Sidebar({ activeView = 'home', onNavigate, onToggleChat }) {
   const handleChatClick = () => {
-    if (activeView !== 'overview') {
-      onNavigate?.('overview');
+    if (onToggleChat) {
+      onToggleChat();
+    } else {
+      window.dispatchEvent(new CustomEvent('jarvis:toggle-chat'));
     }
-    window.dispatchEvent(new CustomEvent('jarvis:toggle-chat'));
   };
 
-  return (
-    <nav className="sidebar hud-panel" aria-label="Primary navigation">
-      {/* Glowing Relativistic Ring Logo */}
-      <button
-        className="brand-rail-logo"
-        onClick={() => onNavigate?.('overview')}
-        aria-label="JARVIS Home"
-        title="JARVIS Personal Execution Layer"
-      >
-        <div className="glowing-ring-emblem">
-          <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
-            <circle cx="14" cy="14" r="10" stroke="#38bdf8" strokeWidth="1.5" strokeOpacity="0.4" />
-            <circle cx="14" cy="14" r="6" stroke="#f59e0b" strokeWidth="1.5" />
-            <circle cx="14" cy="14" r="3" fill="#ffffff" />
-          </svg>
-        </div>
-      </button>
+  const handleNav = (id) => {
+    if (id === 'chat') {
+      handleChatClick();
+      return;
+    }
+    const resolved = id === 'home' ? 'overview' : id;
+    if (onNavigate) {
+      onNavigate(resolved);
+    } else {
+      window.dispatchEvent(new CustomEvent('jarvis:navigate', { detail: { id: resolved } }));
+    }
+  };
 
-      {/* 40x40px Icon Navigation Rail */}
-      <div className="navlist">
-        {/* Home */}
+  const isHomeActive = activeView === 'home' || activeView === 'overview';
+
+  return (
+    <nav className="sidebar galaxy-sidebar" aria-label="Primary navigation rail">
+      {/* Top: Glowing Circular Ring Logo (26px diameter outline circle) */}
+      <div className="sidebar-head galaxy-sidebar-head">
         <button
           type="button"
-          className={`rail-icon-btn${activeView === 'overview' ? ' active' : ''}`}
-          onClick={() => onNavigate?.('overview')}
+          className="brand-rail-logo rail-brand"
+          onClick={() => handleNav('home')}
+          aria-label="JARVIS Home"
+          title="JARVIS Personal Execution Layer"
+        >
+          <div className="glowing-ring-emblem">
+            <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+              <circle cx="14" cy="14" r="11" stroke="#38bdf8" strokeWidth="1.5" strokeOpacity="0.4" />
+              <circle cx="14" cy="14" r="6.5" stroke="#f59e0b" strokeWidth="1.5" />
+              <circle cx="14" cy="14" r="2.5" fill="#ffffff" />
+            </svg>
+          </div>
+        </button>
+      </div>
+
+      {/* Middle 6 Vertical Outline Icons (40x40px buttons, gap: 14px) */}
+      <div className="navlist galaxy-sidebar-items">
+        {/* 1. Home (House outline — active rounded dark-grey pill background rgba(255,255,255,0.12) when on Home) */}
+        <button
+          type="button"
+          className={`rail-icon-btn ${isHomeActive && activeView !== 'chat' ? 'active is-home' : ''}`}
+          onClick={() => handleNav('home')}
           title="Home"
           aria-label="Home"
-          aria-current={activeView === 'overview' ? 'page' : undefined}
+          aria-current={isHomeActive && activeView !== 'chat' ? 'page' : undefined}
         >
-          <Icon name="overview" />
+          <Home size={19} strokeWidth={1.75} />
           <span className="rail-tooltip">Home</span>
         </button>
 
-        {/* Chat Drawer Toggle */}
+        {/* 2. Chat (Speech bubble outline — toggles Left Slide-Over Chat Drawer) */}
         <button
           type="button"
-          className={`rail-icon-btn${activeView === 'chat' ? ' active' : ''}`}
+          className={`rail-icon-btn ${activeView === 'chat' ? 'active is-home' : ''}`}
           onClick={handleChatClick}
           title="Chat Drawer"
           aria-label="Chat Drawer"
+          aria-current={activeView === 'chat' ? 'page' : undefined}
         >
-          <Icon name="chat" />
+          <MessageSquare size={19} strokeWidth={1.75} />
           <span className="rail-tooltip">Chat</span>
         </button>
 
-        {/* Tasks */}
+        {/* 3. Tasks (Stacked layers outline) */}
         <button
           type="button"
-          className={`rail-icon-btn${activeView === 'tasks' ? ' active' : ''}`}
-          onClick={() => onNavigate?.('tasks')}
+          className={`rail-icon-btn ${activeView === 'tasks' ? 'active is-home' : ''}`}
+          onClick={() => handleNav('tasks')}
           title="Tasks"
           aria-label="Tasks"
           aria-current={activeView === 'tasks' ? 'page' : undefined}
         >
-          <Icon name="tasks" />
+          <Layers size={19} strokeWidth={1.75} />
           <span className="rail-tooltip">Tasks</span>
         </button>
 
-        {/* Memory */}
+        {/* 4. Activity (Lightning bolt outline) */}
         <button
           type="button"
-          className={`rail-icon-btn${activeView === 'memory' ? ' active' : ''}`}
-          onClick={() => onNavigate?.('memory')}
-          title="Memory"
-          aria-label="Memory"
-          aria-current={activeView === 'memory' ? 'page' : undefined}
-        >
-          <Icon name="database" />
-          <span className="rail-tooltip">Memory</span>
-        </button>
-
-        {/* Activity */}
-        <button
-          type="button"
-          className={`rail-icon-btn${activeView === 'activity' ? ' active' : ''}`}
-          onClick={() => onNavigate?.('activity')}
+          className={`rail-icon-btn ${activeView === 'activity' ? 'active is-home' : ''}`}
+          onClick={() => handleNav('activity')}
           title="Activity"
           aria-label="Activity"
           aria-current={activeView === 'activity' ? 'page' : undefined}
         >
-          <Icon name="activity" />
+          <Zap size={19} strokeWidth={1.75} />
           <span className="rail-tooltip">Activity</span>
         </button>
 
-        {/* Settings */}
+        {/* 5. Memory (Database cylinder outline) */}
         <button
           type="button"
-          className={`rail-icon-btn${activeView === 'settings' ? ' active' : ''}`}
-          onClick={() => onNavigate?.('settings')}
-          title="Settings"
-          aria-label="Settings"
-          aria-current={activeView === 'settings' ? 'page' : undefined}
+          className={`rail-icon-btn ${activeView === 'memory' ? 'active is-home' : ''}`}
+          onClick={() => handleNav('memory')}
+          title="Memory"
+          aria-label="Memory"
+          aria-current={activeView === 'memory' ? 'page' : undefined}
         >
-          <Icon name="settings" />
-          <span className="rail-tooltip">Settings</span>
+          <Database size={19} strokeWidth={1.75} />
+          <span className="rail-tooltip">Memory</span>
+        </button>
+
+        {/* 6. Apps / Grid (2x2 rounded square grid outline) */}
+        <button
+          type="button"
+          className={`rail-icon-btn ${activeView === 'settings' || activeView === 'apps' ? 'active is-home' : ''}`}
+          onClick={() => handleNav('settings')}
+          title="Apps & Settings"
+          aria-label="Apps & Settings"
+          aria-current={activeView === 'settings' || activeView === 'apps' ? 'page' : undefined}
+        >
+          <LayoutGrid size={19} strokeWidth={1.75} />
+          <span className="rail-tooltip">Apps</span>
         </button>
       </div>
 
-      {/* Online Status Dot */}
-      <div className="sidebar-foot" title="Local Core Online">
-        <span className="status-dot-green" />
-        <span className="online-label">ONLINE</span>
+      {/* Bottom: Subtle horizontal divider line + glowing green online status dot (8px #22c55e) */}
+      <div className="sidebar-foot galaxy-sidebar-foot" title="Local Core Online">
+        <span className="status-dot-green rail-state-dot" />
+        <span className="online-label rail-online-text">ONLINE</span>
       </div>
     </nav>
   );
