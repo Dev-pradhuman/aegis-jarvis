@@ -362,8 +362,9 @@
 }
 
 .embedded-home-chat .chat-head {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 8px;
+  background: transparent !important;
 }
 
 .embedded-home-chat .chat-head .hud-title {
@@ -376,36 +377,69 @@
   background: transparent !important;
 }
 
+/* Translucent Frosted Glass Message Bubbles */
 .embedded-home-chat .msg .body {
   background: rgba(15, 23, 42, 0.22) !important;
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(8px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
-  border-radius: 8px;
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px !important;
+  padding: 10px 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #e2e8f0 !important;
+}
+
+.embedded-home-chat .msg.jarvis .body {
+  background: rgba(18, 22, 32, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
 .embedded-home-chat .msg.user .body {
-  background: rgba(10, 25, 47, 0.35) !important;
-  border-color: rgba(56, 189, 248, 0.18);
+  background: rgba(255, 255, 255, 0.07) !important;
+  backdrop-filter: blur(8px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  padding: 10px 14px !important;
+  color: #f1f5f9 !important;
 }
 
 .embedded-home-chat .chat-input {
   background: rgba(15, 23, 42, 0.25) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 10px;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 14px !important;
 }
 
-/* Drawer Chat Panel Enhancements */
-.embedded-home-chat.drawer-chat-panel {
-  background: rgba(8, 12, 24, 0.65) !important;
-  backdrop-filter: blur(24px) !important;
-  -webkit-backdrop-filter: blur(24px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65) !important;
+.embedded-home-chat .chat-input input {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+
+/* State 2 Left Chat Drawer Glass Styling */
+.drawer-chat-panel {
+  background: rgba(8, 10, 16, 0.60) !important;
+  backdrop-filter: blur(22px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}
+
+.galaxy-home-chat-wrapper .drawer-chat-panel,
+.galaxy-home-chat-wrapper .chat-panel,
+.galaxy-home-chat-wrapper .embedded-home-chat {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+}
+
+.galaxy-home-chat-wrapper .drawer-head,
+.galaxy-home-chat-wrapper .drawer-title-area,
+.galaxy-home-chat-wrapper .chat-head,
+.galaxy-home-chat-wrapper .chat-log,
+.galaxy-home-chat-wrapper .chat-input {
+  background: transparent !important;
 }
 
 .drawer-head {

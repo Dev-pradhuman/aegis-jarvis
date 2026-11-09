@@ -1,0 +1,17 @@
+node_modules/
+dist/
+public/vendor/
+public/galaxy/*.mp4
+*.mp4
+*.webm
+*.db
+*.db-shm
+*.db-wal
+*.wasm
+*.task
+*.ttf
+.claude/
+.claude-flow/
+.swarm/
+server/data/*.backup*
+repomix-output*

@@ -22,6 +22,9 @@ const MIME_TYPES = {
   '.ttf': 'font/ttf',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.ogg': 'video/ogg',
 };
 
 const defaultDistDir = fileURLToPath(new URL('../dist', import.meta.url));
@@ -68,6 +71,19 @@ export async function serveStatic(req, res, url, distDir = defaultDistDir) {
     stat = await fs.promises.stat(targetPath).catch(() => null);
   }
 
+  // Fallback to public/ directory if not found in dist/
+  if (!stat || !stat.isFile()) {
+    const defaultPublicDir = fileURLToPath(new URL('../public', import.meta.url));
+    const publicTargetPath = path.resolve(defaultPublicDir, relativePath);
+    if (publicTargetPath.startsWith(path.resolve(defaultPublicDir))) {
+      const pubStat = await fs.promises.stat(publicTargetPath).catch(() => null);
+      if (pubStat?.isFile()) {
+        targetPath = publicTargetPath;
+        stat = pubStat;
+      }
+    }
+  }
+
   // If file does not exist:
   if (!stat || !stat.isFile()) {
     // If it is an explicit asset or has a file extension, do not fallback to index.html
@@ -89,9 +105,64 @@ export async function serveStatic(req, res, url, distDir = defaultDistDir) {
   const isHtml = ext === '.html';
   const isImmutableAsset = relativePath.startsWith('assets/') || relativePath.startsWith('assets\\');
 
+  // Handle Range requests for video/audio streaming
+  const range = req.headers?.range;
+  if (range && stat.size > 0) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+
+    if (isNaN(start) || isNaN(end) || start < 0 || end >= stat.size || start > end) {
+      res.writeHead(416, {
+        'content-range': `bytes */${stat.size}`,
+        'content-type': contentType,
+      });
+      safeEnd(res);
+      return true;
+    }
+
+    const chunkSize = end - start + 1;
+    res.writeHead(206, {
+      'content-range': `bytes ${start}-${end}/${stat.size}`,
+      'accept-ranges': 'bytes',
+      'content-length': chunkSize,
+      'content-type': contentType,
+      'cache-control': isHtml ? 'no-cache' : isImmutableAsset ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
+    });
+
+    if (req.method === 'HEAD') {
+      safeEnd(res);
+      return true;
+    }
+
+    const stream = fs.createReadStream(targetPath, { start, end });
+    if (typeof res.on === 'function') {
+      pipeline(stream, res, (err) => {
+        if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE' && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
+          console.warn('[static] stream error:', err.message);
+        }
+      });
+    } else {
+      stream.on('data', (chunk) => {
+        safeWrite(res, chunk);
+      });
+      stream.on('end', () => {
+        safeEnd(res);
+      });
+      stream.on('error', (err) => {
+        if (err.code !== 'ENOENT' && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
+          console.warn('[static] stream error:', err.message);
+        }
+        safeEnd(res);
+      });
+    }
+    return true;
+  }
+
   const headers = {
     'content-type': contentType,
     'content-length': stat.size,
+    'accept-ranges': 'bytes',
     'cache-control': isHtml ? 'no-cache' : isImmutableAsset ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
   };
 

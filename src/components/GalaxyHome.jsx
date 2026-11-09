@@ -51,60 +51,6 @@ function getDynamicGreeting() {
   return 'Good Evening,';
 }
 
-function Scene({ phase, sceneRef, drawerOpen }) {
-  const host = useRef(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let disposed = false;
-    let controller;
-    const sceneUrl = '/galaxy/scene.js';
-    const loadScene = new Function('url', 'return import(url)');
-    loadScene(sceneUrl)
-      .then(({ mountGalaxyScene }) => {
-        if (disposed) return;
-        try {
-          controller = mountGalaxyScene(host.current, {
-            reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-            quality:
-              import.meta.env.DEV && new URLSearchParams(window.location.search).get('galaxyQuality') === 'low'
-                ? 'low'
-                : 'auto',
-          });
-          sceneRef.current = controller;
-          if (import.meta.env.DEV) window.__jarvisGalaxyScene = controller;
-          controller.setVisualState(phase);
-          controller.setDrawerOpen(drawerOpen);
-          controller.setImmersive(Boolean(document.fullscreenElement));
-        } catch (cause) {
-          setError(cause.message);
-        }
-      })
-      .catch((cause) => setError(cause.message));
-
-    return () => {
-      disposed = true;
-      controller?.dispose();
-      sceneRef.current = null;
-      if (import.meta.env.DEV) delete window.__jarvisGalaxyScene;
-    };
-  }, []);
-
-  useEffect(() => {
-    sceneRef.current?.setVisualState(phase);
-  }, [phase]);
-
-  useEffect(() => {
-    sceneRef.current?.setDrawerOpen(drawerOpen);
-  }, [drawerOpen]);
-
-  return (
-    <div className="galaxy-scene" ref={host} aria-label="Interactive 3D Gargantua Black Hole">
-      {error && <div className="scene-error">3D Black Hole scene unavailable: {error}</div>}
-    </div>
-  );
-}
-
 export default function GalaxyHome() {
   const telemetry = useTelemetry();
   const visual = useVisualState();
@@ -318,8 +264,15 @@ export default function GalaxyHome() {
         if (immersive && (event.clientX < 75 || event.clientY > window.innerHeight - 70)) revealHud();
       }}
     >
-      {/* 1. Real-Time Raymarched Gargantua Black Hole Scene */}
-      <Scene phase={visual.phase} sceneRef={sceneRef} drawerOpen={drawerOpen} />
+      {/* 1. Fullscreen Event Horizon Video Background Backdrop */}
+      <video
+        className={`galaxy-bg-video ${drawerOpen ? 'shifted' : ''}`}
+        src="/galaxy/blackhole.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+      />
       <div className="galaxy-vignette" />
 
       {/* 2. Permanently Visible 60px Left Sidebar Rail */}

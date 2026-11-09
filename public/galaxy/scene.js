@@ -20,6 +20,7 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
     depth: false,
     stencil: false,
   });
+  renderer.autoClear = false;
 
   const gl = renderer.getContext();
   const debug = gl.getExtension('WEBGL_debug_renderer_info');
@@ -35,9 +36,9 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
   renderer.domElement.setAttribute('aria-hidden', 'true');
   container.appendChild(renderer.domElement);
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-
+  // Scene 1: Full-Screen Raymarched Relativistic Gargantua Black Hole Quad
+  const quadScene = new THREE.Scene();
+  const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const quadGeometry = new THREE.PlaneGeometry(2, 2);
 
   let state = 'idle';
@@ -77,7 +78,7 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
       uniform float uVoicePulse;
       uniform vec2 uMouse;
 
-      // 2D Pseudo Random
+      // 2D Hash
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
       }
@@ -89,8 +90,7 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         return vec2(cos(a), sin(a));
       }
 
-      // Perlin Gradient Noise with Quintic (C2 continuous) Hermite interpolation
-      // u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0) -> ZERO square/blocky grid artifacts
+      // C2 Quintic Hermite Perlin Noise (ZERO square/blocky artifacts)
       float gnoise(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
@@ -106,30 +106,31 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         float d01 = dot(g01, f - vec2(0.0, 1.0));
         float d11 = dot(g11, f - vec2(1.0, 1.0));
 
-        return mix(
-          mix(d00, d10, u.x),
-          mix(d01, d11, u.x),
-          u.y
-        );
+        return mix(mix(d00, d10, u.x), mix(d01, d11, u.x), u.y);
       }
 
-      // 4-Octave Fractional Brownian Motion for silky gas filaments
-      float fbm(vec2 p) {
-        float v = 0.0;
-        float a = 0.52;
+      // 6-Octave High-Frequency Ridged Multifractal Noise for Razor Filaments
+      float ridgedFbm(vec2 p) {
+        float sum = 0.0;
+        float amp = 0.52;
+        float freq = 1.0;
         mat2 rot = mat2(0.80, 0.60, -0.60, 0.80);
-        for (int i = 0; i < 4; i++) {
-          v += a * gnoise(p);
-          p = rot * p * 2.14 + vec2(1.7, 9.2);
-          a *= 0.48;
+        for (int i = 0; i < 6; i++) {
+          float n = gnoise(p * freq);
+          // High-contrast inverted absolute ridges: pow(1.0 - abs(n * 2.0 - 1.0), 4.0)
+          float r = pow(1.0 - abs(n * 1.8), 3.8);
+          sum += amp * r;
+          p = rot * p * 2.15 + vec2(1.7, 9.2);
+          amp *= 0.48;
+          freq *= 1.05;
         }
-        return v * 0.5 + 0.5;
+        return sum;
       }
 
-      // Rotation matrix to tilt the accretion disk plane by -24 degrees diagonally
+      // Disk tilt matrix (-24 deg pitch, diagonal bottom-left to top-right sweep)
       mat3 getDiskRotation() {
         float radX = -0.419; // -24 deg pitch
-        float radZ = 0.32;   // diagonal sweep from bottom-left to top-right
+        float radZ = 0.32;   // diagonal sweep
         float cx = cos(radX), sx = sin(radX);
         float cz = cos(radZ), sz = sin(radZ);
         mat3 rx = mat3(
@@ -153,46 +154,46 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         uv.x -= uCenterOffsetX;
 
         // Subtle mouse parallax
-        uv.x += uMouse.x * 0.035;
-        uv.y += uMouse.y * 0.025;
+        uv.x += uMouse.x * 0.025;
+        uv.y += uMouse.y * 0.018;
 
-        // Camera setup in 3D spacetime centered dead-on the black hole
-        vec3 ro = vec3(0.0, 0.6, -5.8);
+        // Calibrated Camera: Distance = 6.8, Focal = 1.7 -> Schwarzschild Shadow Radius ~32% of viewport height
+        vec3 ro = vec3(0.0, 0.5, -6.8);
         vec3 target = vec3(0.0, 0.0, 0.0);
         vec3 forward = normalize(target - ro);
         vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
         vec3 up = cross(right, forward);
-        vec3 dir = normalize(forward * 1.6 + right * uv.x + up * uv.y);
+        vec3 dir = normalize(forward * 1.7 + right * uv.x + up * uv.y);
 
         mat3 diskRot = getDiskRotation();
 
-        // Raymarching Geodesic Integration (64 steps)
         vec3 pos = ro;
-        float stepSize = 0.135;
+        float stepSize = 0.125;
         vec3 accumulatedCol = vec3(0.0);
         float transmit = 1.0;
         bool hitHorizon = false;
         float minR = 1e6;
 
-        const float RS = 1.15; // Schwarzschild Horizon Radius
+        // Schwarzschild Horizon Radius (scaled for exact 32% screen footprint)
+        const float RS = 1.06;
 
+        // Geodesic raymarching integration (64 steps)
         for (int i = 0; i < 64; i++) {
           float r2 = dot(pos, pos);
           float r = sqrt(r2);
           if (r < minR) minR = r;
 
-          // 1. PITCH-BLACK EVENT HORIZON VOID (#000000)
-          // Any ray that crosses Rs falls into singularity with zero escape
+          // 1. PITCH-BLACK EVENT HORIZON VOID: zero light escapes, exact #000000
           if (r < RS) {
             hitHorizon = true;
             break;
           }
 
-          // Ray escaped into deep space
-          if (r > 13.5) break;
+          // Escape into deep cosmic space
+          if (r > 12.0) break;
 
-          // 2. Geodesic Relativistic Deflection (Gravitational Bending)
-          vec3 gravity = -(pos / r) * (0.088 / max(r2, 0.04)) * stepSize;
+          // 2. Relativistic Geodesic Deflection
+          vec3 gravity = -(pos / r) * (0.085 / max(r2, 0.04)) * stepSize;
           dir = normalize(dir + gravity);
 
           // 3. Volumetric Accretion Disk in Tilted Coordinate Frame
@@ -200,102 +201,119 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
           float dist = length(pDisk.xz);
           float h = abs(pDisk.y);
 
-          // Accretion disk boundary: inner edge ~ 1.42, outer edge ~ 6.8, vertical half-thickness ~ 0.36
-          if (dist >= 1.42 && dist <= 6.8 && h < 0.36) {
-            float normR = (dist - 1.42) / (6.8 - 1.42);
-            float innerRamp = smoothstep(0.0, 0.15, normR);
-            float outerFade = pow(1.0 - normR, 1.8);
+          // Tight boundaries to completely eliminate outer grey fog: inner 1.35, outer 4.6, half-thickness 0.16
+          if (dist >= 1.35 && dist <= 4.6 && h < 0.16) {
+            float normR = (dist - 1.35) / (4.6 - 1.35);
+            float innerRamp = smoothstep(0.0, 0.12, normR);
+            float outerFade = pow(1.0 - normR, 2.2);
             float radialProfile = innerRamp * outerFade;
 
-            // Soft Gaussian vertical dissipation (silky plasma, no hard edges)
-            float verticalProfile = exp(-h * h / 0.018);
+            // Razor-thin vertical exponential falloff
+            float verticalProfile = exp(-h * h / 0.0075);
 
-            // Keplerian differential swirl: v ~ 1 / sqrt(r)
+            // Keplerian orbital swirl: v ~ 1 / sqrt(r)
             float angle = atan(pDisk.z, pDisk.x);
-            float speed = 1.35;
-            float swirl = angle + uTime * uMotion * (speed / sqrt(max(dist, 0.8))) * 0.42;
+            float speed = 1.45;
+            float swirl = angle + uTime * uMotion * (speed / sqrt(max(dist, 0.7))) * 0.45;
 
-            // Multi-octave fine logarithmic spiral Perlin noise
-            vec2 polar1 = vec2(log(dist) * 4.2 - uTime * uMotion * 0.08, swirl * 2.4);
-            float f1 = fbm(polar1);
-            vec2 polar2 = vec2(log(dist) * 9.5 + f1 * 1.1, swirl * 6.2 - uTime * uMotion * 0.18);
-            float f2 = fbm(polar2);
-            float gas = smoothstep(0.22, 0.82, f1 * 0.65 + f2 * 0.45);
+            // Domain-warped ridged multifractal filaments
+            vec2 polar1 = vec2(log(dist) * 4.6 - uTime * uMotion * 0.09, swirl * 2.8);
+            float f1 = ridgedFbm(polar1);
+            vec2 polar2 = vec2(log(dist) * 11.0 + f1 * 1.2, swirl * 7.5 - uTime * uMotion * 0.22);
+            float f2 = ridgedFbm(polar2);
 
-            // Doppler beaming: approaching side (blueshift + boost) vs receding side (redshift + dim)
-            float losVel = -sin(angle);
-            float doppler = 1.0 + 0.78 * losVel;
+            // High contrast gas density: crisp filament ridges, zero diffuse fog
+            float gas = smoothstep(0.28, 0.88, f1 * 0.65 + f2 * 0.45);
 
-            // Cosmic blue on approaching side, warm copper/gold on receding side
-            vec3 colBlue = mix(vec3(0.14, 0.28, 0.62), vec3(0.55, 0.85, 1.0), gas);
-            vec3 colGold = mix(vec3(0.85, 0.42, 0.04), vec3(0.99, 0.88, 0.65), gas);
+            if (gas > 0.01) {
+              // Relativistic Doppler beaming
+              float losVel = -sin(angle);
+              float doppler = 1.0 + 0.85 * losVel;
 
-            float dopplerT = clamp((losVel + 1.0) * 0.5, 0.0, 1.0);
-            vec3 plasmaCol = mix(colGold, colBlue, dopplerT);
+              // Color Palette:
+              // Incandescent Gold, Copper & Amber
+              vec3 cCoreGold = vec3(1.0, 0.98, 0.92); // #fffbeb
+              vec3 cAmber    = vec3(0.96, 0.62, 0.04); // #f59e0b
+              vec3 cCopper   = vec3(0.71, 0.33, 0.04); // #b45309
+              vec3 cDarkFire = vec3(0.27, 0.10, 0.01); // #451a03
 
-            // Hot inner rim flare
-            float hotRim = exp(-normR * 12.0) * 1.5;
-            plasmaCol += vec3(0.85, 0.95, 1.0) * hotRim;
+              // Electric Sapphire & Ice-Blue
+              vec3 cIceBlue  = vec3(0.88, 0.95, 1.00); // #e0f2fe
+              vec3 cSapphire = vec3(0.22, 0.74, 0.97); // #38bdf8
+              vec3 cDeepNavy = vec3(0.12, 0.23, 0.54); // #1e3a8a
 
-            float density = (gas * 1.6 + hotRim * 0.7) * radialProfile * verticalProfile * pow(max(0.1, doppler), 2.2);
-            float alpha = clamp(density * stepSize * 2.4, 0.0, 1.0);
+              vec3 colWarm = mix(cDarkFire, mix(cCopper, mix(cAmber, cCoreGold, gas), gas), gas);
+              vec3 colCool = mix(cDeepNavy, mix(cSapphire, cIceBlue, gas), gas);
 
-            accumulatedCol += transmit * plasmaCol * alpha * uLight * uVoicePulse;
-            transmit *= (1.0 - alpha * 0.85);
+              float dopplerT = clamp((losVel + 0.9) * 0.55, 0.0, 1.0);
+              vec3 plasmaCol = mix(colWarm, colCool, dopplerT);
 
-            if (transmit < 0.012) break;
+              // Hot inner rim flare
+              float hotRim = exp(-normR * 14.0) * 1.8;
+              plasmaCol += cCoreGold * hotRim;
+
+              float density = (gas * 2.2 + hotRim * 0.8) * radialProfile * verticalProfile * pow(max(0.08, doppler), 2.2);
+              float alpha = clamp(density * stepSize * 2.8, 0.0, 1.0);
+
+              accumulatedCol += transmit * plasmaCol * alpha * uLight * uVoicePulse;
+              transmit *= (1.0 - alpha * 0.90);
+
+              if (transmit < 0.008) break;
+            }
           }
 
           pos += dir * stepSize;
         }
 
-        // PITCH BLACK EVENT HORIZON VOID: zero light escapes, exact #000000
+        // EVENT HORIZON VOID: exact #000000 pitch black
         if (hitHorizon) {
           gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
           return;
         }
 
-        // ASYMMETRICAL PHOTON CRESCENT ARCS (ZERO uniform 360 circle ring)
+        // PHOTON RING: Razor-thin 2px-4px glowing ring (exp(-abs(r - Rs) * 95.0))
         float rimAngle = atan(uv.y, uv.x);
+        float ringDist = abs(minR - 1.34);
+        float photonRingIntensity = exp(-ringDist * 95.0);
 
-        // 1. Upper-Left Razor-Thin Cool Ice-Blue/White Crescent (#93c5fd -> #e0f2fe)
-        // Peaks in upper-left (rimAngle ~ 2.35 rad), smoothly fades to 0 in lower-right
-        float blueArcFactor = clamp(sin(rimAngle - 0.78), 0.0, 1.0);
-        float blueDist = abs(minR - 1.48);
-        float blueRim = exp(-pow(blueDist / 0.035, 2.0)) * pow(blueArcFactor, 1.8);
-        vec3 colIceBlue = mix(vec3(0.58, 0.83, 0.99), vec3(0.92, 0.96, 1.0), blueRim);
-        accumulatedCol += colIceBlue * blueRim * 2.6 * uLight * uVoicePulse;
+        if (photonRingIntensity > 0.005) {
+          // Upper-left Ice-Blue Crescent
+          float blueArcFactor = clamp(sin(rimAngle - 0.75), 0.0, 1.0);
+          vec3 colRingBlue = mix(vec3(0.22, 0.74, 0.97), vec3(0.92, 0.97, 1.0), photonRingIntensity);
 
-        // 2. Upper-Right & Lower-Left Warm Golden-Amber Inner Rim (#fbbf24 -> #ea580c)
-        // Where tilted disk crosses in front of horizon
-        float amberArcFactor = clamp(-sin(rimAngle - 0.78), 0.0, 1.0);
-        float amberDist = abs(minR - 1.50);
-        float amberRim = exp(-pow(amberDist / 0.045, 2.0)) * pow(amberArcFactor, 1.8);
-        vec3 colAmber = mix(vec3(0.92, 0.35, 0.05), vec3(0.98, 0.75, 0.14), amberRim);
-        accumulatedCol += colAmber * amberRim * 2.2 * uLight * uVoicePulse;
+          // Lower-left & Right Golden-Amber Crescent
+          float amberArcFactor = clamp(-sin(rimAngle - 0.75), 0.0, 1.0);
+          vec3 colRingAmber = mix(vec3(0.96, 0.55, 0.04), vec3(1.0, 0.95, 0.85), photonRingIntensity);
 
-        // 3. Relativistic Beaming Flare on the Right Equator where disk meets shadow
-        float rightEquator = exp(-pow(rimAngle / 0.38, 2.0));
-        float flareDist = abs(minR - 1.52);
-        float equatorFlare = exp(-pow(flareDist / 0.075, 2.0)) * rightEquator;
-        vec3 flareCol = vec3(1.0, 0.94, 0.80);
-        accumulatedCol += flareCol * equatorFlare * 2.2 * uLight * uVoicePulse;
-
-        // 4. Crisp 3D Drifting Starfield with Sub-Pixel Twinkle
-        if (transmit > 0.05) {
-          vec3 sDir = dir + vec3(uTime * 0.003, uTime * 0.002, 0.0);
-          float s1 = hash(floor(sDir.xy * 280.0 + sDir.z * 160.0));
-          float star1 = step(0.995, s1) * pow((s1 - 0.995) / 0.005, 3.0);
-
-          vec3 sDir2 = dir * 2.4 + vec3(-uTime * 0.005, uTime * 0.003, 0.5);
-          float s2 = hash(floor(sDir2.xy * 380.0 + sDir2.z * 220.0));
-          float star2 = step(0.997, s2) * pow((s2 - 0.997) / 0.003, 2.0);
-
-          float twinkle = 0.8 + 0.2 * sin(uTime * 2.5 + s1 * 120.0);
-          accumulatedCol += (vec3(0.75, 0.88, 1.0) * star1 + vec3(1.0, 0.95, 0.85) * star2) * twinkle * transmit * 0.8;
+          vec3 ringCol = mix(colRingAmber, colRingBlue, blueArcFactor);
+          accumulatedCol += ringCol * photonRingIntensity * 3.4 * uLight * uVoicePulse;
         }
 
-        // Analytic ACES Filmic Tone Mapping (prevents blown-out whiteout glare)
+        // Equatorial Relativistic Flare on the right side
+        float rightEquator = exp(-pow(rimAngle / 0.32, 2.0));
+        float flareDist = abs(minR - 1.38);
+        float equatorFlare = exp(-pow(flareDist / 0.065, 2.0)) * rightEquator;
+        accumulatedCol += vec3(1.0, 0.96, 0.88) * equatorFlare * 2.6 * uLight * uVoicePulse;
+
+        // PURE DEEP BLACK SPACE BACKGROUND (#020205) + Sharp Pinpoint Stars
+        if (transmit > 0.001) {
+          vec3 deepSpace = vec3(0.008, 0.008, 0.02); // #020205
+          accumulatedCol += deepSpace * transmit;
+
+          // Crisp Pinpoint Starfield (no diffuse blur)
+          vec3 sDir = dir + vec3(uTime * 0.002, uTime * 0.0015, 0.0);
+          float s1 = hash(floor(sDir.xy * 340.0 + sDir.z * 180.0));
+          float star1 = step(0.996, s1) * pow((s1 - 0.996) / 0.004, 2.5);
+
+          vec3 sDir2 = dir * 2.2 + vec3(-uTime * 0.003, uTime * 0.002, 0.4);
+          float s2 = hash(floor(sDir2.xy * 460.0 + sDir2.z * 260.0));
+          float star2 = step(0.9975, s2) * pow((s2 - 0.9975) / 0.0025, 2.0);
+
+          float twinkle = 0.85 + 0.15 * sin(uTime * 3.0 + s1 * 150.0);
+          accumulatedCol += (vec3(0.85, 0.92, 1.0) * star1 + vec3(1.0, 0.95, 0.88) * star2) * twinkle * transmit * 0.9;
+        }
+
+        // ACES Filmic Tone Mapping (prevents whiteout glare, preserves rich golden contrast)
         vec3 mapped = (accumulatedCol * (2.51 * accumulatedCol + 0.03)) /
                       (accumulatedCol * (2.43 * accumulatedCol + 0.59) + 0.14);
         mapped = clamp(mapped, 0.0, 1.0);
@@ -308,7 +326,166 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
   });
 
   const quad = new THREE.Mesh(quadGeometry, shaderMaterial);
-  scene.add(quad);
+  quadScene.add(quad);
+
+  // Scene 2: 25,000 GPU Keplerian Micro-Particles
+  const particleScene = new THREE.Scene();
+  const particleCamera = new THREE.PerspectiveCamera(32.8, width / height, 0.1, 50.0);
+  particleCamera.position.set(0.0, 0.5, -6.8);
+  particleCamera.lookAt(0.0, 0.0, 0.0);
+
+  const PARTICLE_COUNT = 25000;
+  const particleGeometry = new THREE.BufferGeometry();
+  const aRadius = new Float32Array(PARTICLE_COUNT);
+  const aAngle0 = new Float32Array(PARTICLE_COUNT);
+  const aSpeed = new Float32Array(PARTICLE_COUNT);
+  const aYOffset = new Float32Array(PARTICLE_COUNT);
+  const aColor = new Float32Array(PARTICLE_COUNT * 3);
+  const aSize = new Float32Array(PARTICLE_COUNT);
+
+  // Seed Keplerian micro-particles orbiting along the inclined disk
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    // Radius distribution concentrated between inner edge 1.38 and outer edge 4.4
+    const u = Math.random();
+    const r = 1.38 + Math.pow(u, 1.5) * (4.4 - 1.38);
+    aRadius[i] = r;
+
+    // Initial random angle around the accretion disk
+    aAngle0[i] = Math.random() * Math.PI * 2.0;
+
+    // Keplerian orbital velocity: v ~ 1 / sqrt(r)
+    aSpeed[i] = (1.45 / Math.sqrt(r)) * 0.45 * (0.92 + Math.random() * 0.16);
+
+    // Subtle Gaussian vertical fluttering
+    aYOffset[i] = (Math.random() - 0.5) * (Math.random() - 0.5) * 0.08;
+
+    // Local color matching temperature:
+    // Inner particles (r < 2.2): Incandescent gold / sapphire blue
+    // Outer particles (r >= 2.2): Warm amber / copper
+    const norm = (r - 1.38) / (4.4 - 1.38);
+    let cr, cg, cb;
+    if (Math.random() < 0.28 && norm < 0.5) {
+      // Sapphire / ice-blue highlight
+      cr = 0.25 + Math.random() * 0.3;
+      cg = 0.75 + Math.random() * 0.25;
+      cb = 1.0;
+    } else {
+      // Gold -> Amber -> Copper
+      cr = 1.0;
+      cg = 0.95 - norm * 0.55;
+      cb = 0.75 - norm * 0.65;
+    }
+    aColor[i * 3 + 0] = cr;
+    aColor[i * 3 + 1] = Math.max(0.1, cg);
+    aColor[i * 3 + 2] = Math.max(0.02, cb);
+
+    // Particle size
+    aSize[i] = (1.2 + Math.random() * 2.2) * (1.0 - norm * 0.45);
+  }
+
+  particleGeometry.setAttribute('aRadius', new THREE.BufferAttribute(aRadius, 1));
+  particleGeometry.setAttribute('aAngle0', new THREE.BufferAttribute(aAngle0, 1));
+  particleGeometry.setAttribute('aSpeed', new THREE.BufferAttribute(aSpeed, 1));
+  particleGeometry.setAttribute('aYOffset', new THREE.BufferAttribute(aYOffset, 1));
+  particleGeometry.setAttribute('aColor', new THREE.BufferAttribute(aColor, 3));
+  particleGeometry.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1));
+  // Dummy positions for Three.js bounding box
+  particleGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PARTICLE_COUNT * 3), 3));
+
+  const particleMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uMotion: { value: 0.6 },
+      uLight: { value: 1.0 },
+      uCenterOffsetX: { value: 0.0 },
+      uPixelRatio: { value: ratio(width, height) },
+    },
+    vertexShader: `
+      uniform float uTime;
+      uniform float uMotion;
+      uniform float uLight;
+      uniform float uCenterOffsetX;
+      uniform float uPixelRatio;
+
+      attribute float aRadius;
+      attribute float aAngle0;
+      attribute float aSpeed;
+      attribute float aYOffset;
+      attribute vec3 aColor;
+      attribute float aSize;
+
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      mat3 getDiskRotation() {
+        float radX = -0.419;
+        float radZ = 0.32;
+        float cx = cos(radX), sx = sin(radX);
+        float cz = cos(radZ), sz = sin(radZ);
+        mat3 rx = mat3(
+          1.0, 0.0, 0.0,
+          0.0, cx, -sx,
+          0.0, sx, cx
+        );
+        mat3 rz = mat3(
+          cz, -sz, 0.0,
+          sz, cz, 0.0,
+          0.0, 0.0, 1.0
+        );
+        return rz * rx;
+      }
+
+      void main() {
+        vColor = aColor;
+        float currentAngle = aAngle0 + uTime * uMotion * aSpeed;
+
+        // Position in disk plane
+        vec3 pDisk = vec3(cos(currentAngle) * aRadius, aYOffset, sin(currentAngle) * aRadius);
+
+        // Transform from disk coordinate frame to world frame (inverse rotation)
+        mat3 diskRot = getDiskRotation();
+        mat3 diskRotInv = mat3(
+          diskRot[0][0], diskRot[1][0], diskRot[2][0],
+          diskRot[0][1], diskRot[1][1], diskRot[2][1],
+          diskRot[0][2], diskRot[1][2], diskRot[2][2]
+        );
+        vec3 worldPos = diskRotInv * pDisk;
+
+        // View matrix projection
+        vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+
+        // Size with distance attenuation
+        gl_PointSize = (aSize * uPixelRatio * 7.5) / max(0.5, -mvPosition.z);
+
+        // Alpha fade near horizon and outer edge
+        float rFade = smoothstep(1.35, 1.55, aRadius) * (1.0 - smoothstep(4.0, 4.4, aRadius));
+        vAlpha = rFade * 0.75 * uLight;
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        if (dist > 0.5) discard;
+
+        // Soft circular glow point
+        float alpha = exp(-dist * 5.0) * vAlpha;
+        gl_FragColor = vec4(vColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const particlePoints = new THREE.Points(particleGeometry, particleMaterial);
+  particleScene.add(particlePoints);
 
   let raf = 0;
   let last = 0;
@@ -334,6 +511,10 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h);
     shaderMaterial.uniforms.uResolution.value.set(w * dpr, h * dpr);
+
+    particleCamera.aspect = w / h;
+    particleCamera.updateProjectionMatrix();
+    particleMaterial.uniforms.uPixelRatio.value = dpr;
   };
 
   const resizeObserver = new ResizeObserver(resize);
@@ -380,6 +561,7 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
         ? 1.0 + Math.sin(elapsed * 3.8) * 0.07
         : 1.0 + Math.sin(elapsed * 1.2) * 0.03;
 
+    // Update Quad Shader Uniforms
     shaderMaterial.uniforms.uTime.value = elapsed;
     shaderMaterial.uniforms.uCenterOffsetX.value = currentCenterOffsetX;
     shaderMaterial.uniforms.uMotion.value = profile.motion;
@@ -387,7 +569,23 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
     shaderMaterial.uniforms.uVoicePulse.value = voicePulse;
     shaderMaterial.uniforms.uMouse.value.set(mouse.x, mouse.y);
 
-    renderer.render(scene, camera);
+    // Update Particle Uniforms & Camera Offset to match Shader
+    particleMaterial.uniforms.uTime.value = elapsed;
+    particleMaterial.uniforms.uMotion.value = profile.motion;
+    particleMaterial.uniforms.uLight.value = profile.light;
+    particleMaterial.uniforms.uCenterOffsetX.value = currentCenterOffsetX;
+
+    // Camera shift aligns with shader's focal offset: (6.8 / 1.7) = 4.0
+    const camOffsetX = -currentCenterOffsetX * 4.0;
+    particleCamera.position.set(camOffsetX, 0.5, -6.8);
+    particleCamera.lookAt(camOffsetX, 0.0, 0.0);
+
+    // Pass 1: Render Relativistic Raymarched Quad
+    renderer.clear();
+    renderer.render(quadScene, quadCamera);
+
+    // Pass 2: Render 25,000 Keplerian Micro-Particles (additive blend)
+    renderer.render(particleScene, particleCamera);
   }
 
   raf = requestAnimationFrame(animate);
@@ -437,6 +635,8 @@ export function mountGalaxyScene(container, { reducedMotion = false, quality = '
 
       quadGeometry.dispose();
       shaderMaterial.dispose();
+      particleGeometry.dispose();
+      particleMaterial.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

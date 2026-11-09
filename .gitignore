@@ -50,3 +50,4 @@ scratch/
 *.mp4
 brag-output/
 repomix-output*
+public/galaxy/*.png

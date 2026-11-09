@@ -16,7 +16,24 @@
   font-family: inherit;
 }
 
-/* Full-Screen Raymarched GLSL Canvas Scene & Vignette */
+/* Event Horizon Fullscreen Video Backdrop & Vignette */
+.galaxy-bg-video {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateX(0);
+}
+
+.galaxy-bg-video.shifted,
+.galaxy-home.drawer-active .galaxy-bg-video {
+  transform: translateX(10%);
+}
+
 .galaxy-scene,
 .galaxy-vignette {
   position: absolute;
@@ -362,14 +379,14 @@
   z-index: 15;
   pointer-events: none;
   user-select: none;
-  transition: left 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
   width: 90%;
   max-width: 920px;
 }
 
-.galaxy-hero-typography.shifted {
-  left: 64%;
-  transform: translate(-50%, -50%);
+.galaxy-hero-typography.shifted,
+.galaxy-home.drawer-active .galaxy-hero-typography {
+  transform: translate(-50%, -50%) translateX(10%);
 }
 
 .hero-greeting {
@@ -434,11 +451,11 @@
   min-height: 86px;
   border-radius: 26px;
   padding: 16px 20px;
-  background: rgba(10, 12, 18, 0.72);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
+  background: rgba(8, 10, 16, 0.60) !important;
+  backdrop-filter: blur(22px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -550,7 +567,7 @@
   left: 76px;
   top: 64px;
   bottom: 24px;
-  width: 400px;
+  width: 410px;
   max-width: calc(100vw - 96px);
   overflow: hidden;
   z-index: 85;
@@ -558,11 +575,11 @@
   flex-direction: column;
   pointer-events: auto;
   border-radius: 20px;
-  background: rgba(10, 12, 18, 0.78) !important;
-  backdrop-filter: blur(28px) !important;
-  -webkit-backdrop-filter: blur(28px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75) !important;
+  background: rgba(8, 10, 16, 0.60) !important;
+  backdrop-filter: blur(22px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
   transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
 }
 
@@ -578,16 +595,32 @@
   pointer-events: none;
 }
 
-.galaxy-home-chat-wrapper .chat-panel {
+.galaxy-home-chat-wrapper .chat-panel,
+.galaxy-home-chat-wrapper .drawer-chat-panel,
+.galaxy-home-chat-wrapper .embedded-home-chat {
   height: 100%;
   padding: 18px !important;
-  border-radius: 14px;
-  background: rgba(8, 12, 24, 0.72) !important;
-  backdrop-filter: blur(24px) !important;
-  -webkit-backdrop-filter: blur(24px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6) !important;
+  border-radius: 20px !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
   overflow: hidden;
+}
+
+.galaxy-home-chat-wrapper .chat-log,
+.galaxy-home-chat-wrapper .chat-head,
+.galaxy-home-chat-wrapper .chat-input,
+.galaxy-home-chat-wrapper .drawer-head,
+.galaxy-home-chat-wrapper .drawer-title-area,
+.galaxy-home-chat-wrapper .active-run-progress {
+  background: transparent !important;
+}
+
+.galaxy-home-chat-wrapper .chat-input input {
+  background: transparent !important;
+  color: #ffffff !important;
 }
 
 /* Fullpage Workspace Layout for Non-Home Views */

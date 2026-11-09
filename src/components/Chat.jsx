@@ -748,15 +748,21 @@ export default function Chat({ embedded = false, drawerMode = false, onClose = n
   const lastMsg = messages[messages.length - 1];
   const lastIsStreamingJarvis = lastMsg?.who === 'JARVIS' && (lastMsg.lines?.join('').length || 0) > 0;
 
+  const isDrawer = drawerMode || embedded;
+  const handleCloseDrawer = () => {
+    if (onClose) onClose();
+    else window.dispatchEvent(new CustomEvent('jarvis:close-drawer'));
+  };
+
   return (
-    <section className={`chat-panel hud-panel${embedded ? ' embedded-home-chat' : ''}${drawerMode ? ' drawer-chat-panel' : ''}`}>
-      <div className={`chat-head${embedded ? ' embedded-head' : ''}${drawerMode ? ' drawer-head' : ''}`}>
+    <section className={`chat-panel hud-panel${embedded ? ' embedded-home-chat' : ''}${isDrawer ? ' drawer-chat-panel' : ''}`}>
+      <div className={`chat-head${embedded ? ' embedded-head' : ''}${isDrawer ? ' drawer-head' : ''}`}>
         <div className="drawer-title-area">
-          <div className="hud-title">{drawerMode ? 'Chat' : embedded ? 'JARVIS // CHAT' : 'Jarvis Chat Interface'}</div>
-          {drawerMode && <span className="drawer-subtitle">PERSONAL EXECUTION</span>}
+          <div className="hud-title">{isDrawer ? 'Chat' : 'Jarvis Chat Interface'}</div>
+          {isDrawer && <span className="drawer-subtitle">PERSONAL EXECUTION</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {drawerMode && (
+          {isDrawer && (
             <button
               type="button"
               className="drawer-head-btn"
@@ -779,11 +785,11 @@ export default function Chat({ embedded = false, drawerMode = false, onClose = n
           >
             <Icon name={speechEnabled ? "speaker" : "speakerOff"} />
           </button>
-          {drawerMode && onClose ? (
+          {isDrawer ? (
             <button
               type="button"
               className="drawer-close-btn"
-              onClick={onClose}
+              onClick={handleCloseDrawer}
               title="Close chat drawer"
               aria-label="Close chat drawer"
             >

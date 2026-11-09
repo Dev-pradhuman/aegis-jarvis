@@ -92,6 +92,29 @@ test('serveStatic handles HEAD requests with headers and no body stream', async 
   assert.equal(ended, true);
 });
 
+test('serveStatic serves .mp4 with video/mp4 MIME and accepts range requests', async () => {
+  let statusCode = 0;
+  let headers = {};
+  let ended = false;
+  const req = {
+    method: 'GET',
+    headers: { range: 'bytes=0-1023' },
+  };
+  const res = {
+    writeHead(code, h) { statusCode = code; headers = h; },
+    write() { return true; },
+    end() { ended = true; },
+  };
+
+  const handled = await serveStatic(req, res, new URL('http://127.0.0.1:8787/galaxy/blackhole.mp4'));
+  assert.equal(handled, true);
+  assert.equal(statusCode, 206);
+  assert.equal(headers['content-type'], 'video/mp4');
+  assert.equal(headers['accept-ranges'], 'bytes');
+  assert.equal(headers['content-length'], 1024);
+  assert.match(headers['content-range'], /^bytes 0-1023\/\d+$/);
+});
+
 test('routeRequest routes natural language resume phrases to browser.resume', () => {
   const r1 = routeRequest('resume browser');
   assert.equal(r1.route, 'TOOL_CALL');
