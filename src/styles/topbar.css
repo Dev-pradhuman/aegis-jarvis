@@ -1,149 +1,210 @@
-.topbar {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1.1fr 1.3fr 1.2fr auto auto auto;
-  align-items: stretch;
-}
-.tb-clock {
-  min-width: 160px;
-}
-.tb-clock-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.tb-clock-val {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: #ffb86c;
-}
-.tb-clock-date {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-.tb-countdown-pill {
-  margin-top: 4px;
-  padding: 2px 8px;
-  background: rgba(255, 149, 0, 0.12);
-  border: 1px solid rgba(255, 149, 0, 0.28);
-  border-radius: 12px;
-  color: #ffd49c;
-  font-size: 9px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.15s ease;
-  width: fit-content;
-  max-width: 100%;
-}
-.tb-countdown-pill:hover {
-  background: rgba(255, 149, 0, 0.22);
-  border-color: rgba(255, 149, 0, 0.5);
-  color: #fff;
-}
-.tb-seg {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 8px 18px;
-  border-right: 1px solid var(--border-orange-soft);
-  min-width: 0;
-}
-.tb-seg:last-child {
-  border-right: none;
-}
-.tb-seg .eyebrow {
-  margin-bottom: 3px;
-}
-.tb-usage {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-}
-.tb-usage span {
-  font-size: 14px;
-  color: var(--text-primary);
-  font-weight: 600;
-}
-.tb-usage .lbl {
-  font-size: 8px;
-  color: var(--text-muted);
-  display: block;
-  letter-spacing: 0.08em;
-}
-.tb-uptime {
+/* Minimal Top Header Bar */
+.topbar.minimal-header {
+  display: flex !important;
   align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 20px;
+  background: rgba(4, 4, 8, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #c2d8ff;
+  user-select: none;
+  z-index: 50;
+  grid-template-columns: none !important;
 }
-.tb-uptime-val {
-  font-family: var(--font-mono);
-  font-size: 18px;
-  letter-spacing: 0.05em;
-  color: var(--text-primary);
+
+/* J A R V I S Wordmark */
+.topbar-wordmark-container {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
-.tb-uptime-sub {
-  font-size: 8px;
-  letter-spacing: 0.15em;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-.tb-core {
-  align-items: flex-end;
-  text-align: right;
-  justify-content: center;
-}
-.tb-core .hud-status {
+
+.topbar-wordmark {
+  font-family: 'Share Tech Mono', monospace, sans-serif;
   font-size: 13px;
+  letter-spacing: 0.38em;
+  font-weight: 500;
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
 }
-.tb-execution-mode {
+
+.topbar-subwordmark {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: rgba(148, 163, 184, 0.65);
+}
+
+/* Center Pill / Clock */
+.topbar-center {
+  display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 140px;
 }
+
+.topbar-event-pill {
+  padding: 4px 12px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 14px;
+  color: #bae6fd;
+  font: 500 11px 'Share Tech Mono', monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.topbar-event-pill:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.65);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+}
+
+.topbar-clock-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 11px 'Share Tech Mono', monospace;
+  letter-spacing: 0.08em;
+  color: rgba(203, 213, 225, 0.75);
+}
+
+.topbar-model-hint {
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+/* Topbar Right Area */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 1-Click Execution Mode Switcher Pill */
 .execution-mode-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono, monospace);
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font: 700 11px 'Share Tech Mono', monospace;
+  letter-spacing: 0.06em;
   cursor: pointer;
-  transition: all 0.2s ease;
   white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .execution-mode-btn.cloud {
-  background: rgba(0, 168, 255, 0.12);
-  border: 1px solid rgba(0, 168, 255, 0.4);
-  color: #00d2ff;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
 }
+
 .execution-mode-btn.cloud:hover {
-  background: rgba(0, 168, 255, 0.24);
-  border-color: rgba(0, 168, 255, 0.7);
-  box-shadow: 0 0 10px rgba(0, 168, 255, 0.3);
+  background: rgba(56, 189, 248, 0.24);
+  border-color: rgba(56, 189, 248, 0.8);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
 }
+
 .execution-mode-btn.cli {
-  background: rgba(234, 179, 8, 0.14);
-  border: 1px solid rgba(234, 179, 8, 0.45);
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.4);
   color: #facc15;
 }
+
 .execution-mode-btn.cli:hover {
-  background: rgba(234, 179, 8, 0.28);
-  border-color: rgba(234, 179, 8, 0.8);
-  box-shadow: 0 0 10px rgba(234, 179, 8, 0.35);
+  background: rgba(250, 204, 21, 0.24);
+  border-color: rgba(250, 204, 21, 0.8);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.45);
 }
+
 .execution-mode-btn.local {
-  background: rgba(0, 255, 136, 0.12);
-  border: 1px solid rgba(0, 255, 136, 0.4);
-  color: #00ff88;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: #4ade80;
 }
+
 .execution-mode-btn.local:hover {
-  background: rgba(0, 255, 136, 0.24);
-  border-color: rgba(0, 255, 136, 0.7);
-  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  background: rgba(74, 222, 128, 0.24);
+  border-color: rgba(74, 222, 128, 0.8);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.45);
+}
+
+/* Outline Icons */
+.topbar-outline-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.topbar-icon-action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: rgba(203, 213, 225, 0.7);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  padding: 0;
+}
+
+.topbar-icon-action svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6;
+}
+
+.topbar-icon-action:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Status Badge */
+.topbar-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topbar-status-badge .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.topbar-status-badge .status-dot.green {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}
+
+.topbar-status-badge .status-dot.red {
+  background: #ef4444;
+  box-shadow: 0 0 6px #ef4444;
+}
+
+.topbar-status-badge .status-text {
+  font: 700 9px 'Share Tech Mono', monospace;
+  letter-spacing: 0.08em;
+  color: rgba(203, 213, 225, 0.75);
 }

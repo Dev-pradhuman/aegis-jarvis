@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react';
 import useTelemetry, { formatUptime } from '../hooks/useTelemetry.js';
 import { pollWithBackoff } from '../hooks/pollWithBackoff.js';
+import Icon from './Icon.jsx';
 import '../styles/topbar.css';
 
 function formatClockTime(date) {
   return date.toTimeString().slice(0, 8);
-}
-
-function formatClockDate(date) {
-  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function computeNextEvent(overview) {
@@ -19,7 +16,7 @@ function computeNextEvent(overview) {
     const first = overview.ringingReminders[0];
     return {
       label: `🔔 Ringing: ${first.title}`,
-      isRinging: true
+      isRinging: true,
     };
   }
 
@@ -67,7 +64,7 @@ function computeNextEvent(overview) {
   const icon = next.type === 'calendar' ? '📅' : next.type === 'alarm' ? '⏰' : next.type === 'timer' ? '⏳' : '📌';
   return {
     label: `${icon} ${timeLabel}: ${next.title}`,
-    isRinging: false
+    isRinging: false,
   };
 }
 
@@ -97,7 +94,7 @@ export default function TopBar() {
       const res = await fetch('/api/models/execution-mode', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: nextMode })
+        body: JSON.stringify({ mode: nextMode }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -128,73 +125,78 @@ export default function TopBar() {
   const nextEvent = computeNextEvent(schedule);
 
   return (
-    <header className="topbar hud-panel">
-      <div className="tb-seg">
-        <div className="eyebrow">Provider</div>
-        <div className="val-lg">{provider.label || 'Not configured'}</div>
+    <header className="topbar minimal-header">
+      {/* Left: J A R V I S Wordmark */}
+      <div className="topbar-wordmark-container">
+        <span className="topbar-wordmark">J A R V I S</span>
+        <span className="topbar-subwordmark">EVENT HORIZON</span>
       </div>
-      <div className="tb-seg">
-        <div className="eyebrow">Model</div>
-        <div className="val-lg">{routedModel || 'Not configured'}</div>
-      </div>
-      <div className="tb-seg">
-        <div className="eyebrow">Active Router</div>
-        <div className="val-lg">{telemetry.modelRouting?.mode === 'manual' ? 'Manual source' : telemetry.modelRouting?.last?.executionTier?.replaceAll('_', ' ') || 'Local → Web → Free API'}</div>
-      </div>
-      <div className="tb-seg">
-        <div className="eyebrow">Usage Today</div>
-        <div className="tb-usage">
-          <span>
-            {usage.requests || 0}<span className="lbl">Requests</span>
-          </span>
-          <span>
-            {usage.tokens || 0}<span className="lbl">Tokens</span>
-          </span>
-          <span>
-            ${Number(usage.cost || 0).toFixed(2)}<span className="lbl">Cost</span>
-          </span>
-        </div>
-      </div>
-      <div className="tb-seg tb-clock">
-        <div className="eyebrow">Clock</div>
-        <div className="tb-clock-row">
-          <span className="tb-clock-val">{formatClockTime(currentTime)}</span>
-          <span className="tb-clock-date">{formatClockDate(currentTime)}</span>
-        </div>
-        {nextEvent && (
+
+      {/* Center: Live Schedule Event Pill (if any) */}
+      <div className="topbar-center">
+        {nextEvent ? (
           <button
             type="button"
-            className="tb-countdown-pill"
+            className="topbar-event-pill"
             onClick={() => window.dispatchEvent(new CustomEvent('jarvis:open-window', { detail: { id: 'reminders' } }))}
             title="Open Reminders & Calendar Hub"
           >
             {nextEvent.label}
           </button>
+        ) : (
+          <div className="topbar-clock-display mono">
+            <span>{formatClockTime(currentTime)}</span>
+            <span className="topbar-model-hint">{routedModel || 'SPARK-X2.5'}</span>
+          </div>
         )}
       </div>
-      <div className="tb-seg tb-uptime">
-        <div className="eyebrow">Uptime</div>
-        <div className="tb-uptime-val mono">{formatUptime(telemetry.uptimeSeconds)}</div>
-        <div className="tb-uptime-sub">DAYS &nbsp; HRS &nbsp; MINS &nbsp; SECS</div>
-      </div>
-      <div className="tb-seg tb-execution-mode topbar-right">
-        <div className="eyebrow">Execution Mode</div>
+
+      {/* Right: 1-Click Mode Pill + Outline Icons */}
+      <div className="topbar-right">
+        {/* Execution Mode Pill */}
         <button
           type="button"
           className={`execution-mode-btn ${activeMode === 'cli' ? 'cli' : activeMode === 'local' ? 'local' : 'cloud'}`}
           onClick={handleToggleMode}
           title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama"
           data-testid="execution-mode-toggle"
+          aria-label="Toggle execution mode"
         >
-          {activeMode === 'cli' ? '⚡ CLI AGENT' : activeMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
+          {activeMode === 'cli' ? '⚡ CLI' : activeMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
         </button>
-      </div>
-      <div className="tb-seg tb-core">
-        <div className="eyebrow" style={{ textAlign: 'right' }}>
-          Jarvis Core
+
+        {/* Outline Action Icons */}
+        <div className="topbar-outline-icons">
+          <button
+            type="button"
+            className="topbar-icon-action"
+            title="Reminders & Notifications"
+            onClick={() => window.dispatchEvent(new CustomEvent('jarvis:open-window', { detail: { id: 'reminders' } }))}
+          >
+            <Icon name="bell" />
+          </button>
+          <button
+            type="button"
+            className="topbar-icon-action"
+            title="System Diagnostics & Monitor"
+            onClick={() => window.dispatchEvent(new CustomEvent('jarvis:open-window', { detail: { id: 'system' } }))}
+          >
+            <Icon name="terminal" />
+          </button>
+          <button
+            type="button"
+            className="topbar-icon-action"
+            title="Settings & Brain Preferences"
+            onClick={() => window.dispatchEvent(new CustomEvent('jarvis:open-window', { detail: { id: 'settings' } }))}
+          >
+            <Icon name="settings" />
+          </button>
         </div>
-        <div className={`hud-status ${telemetry.online ? 'green' : ''}`}>
-          {telemetry.online ? 'ACTIVE' : 'OFFLINE'} <span className={`dot ${telemetry.online ? 'green' : ''}`}></span>
+
+        {/* Core Online Status */}
+        <div className="topbar-status-badge">
+          <span className={`status-dot ${telemetry.online ? 'green' : 'red'}`} />
+          <span className="status-text">{telemetry.online ? 'ONLINE' : 'OFFLINE'}</span>
         </div>
       </div>
     </header>

@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
-  AudioLines,
   BrainCircuit,
   ChevronRight,
   Database,
   Expand,
-  Globe2,
   Home,
   ListTodo,
+  MessageSquare,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   RotateCcw,
   Settings2,
   Shrink,
@@ -40,56 +37,132 @@ const NAV = [
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ];
 
-function Scene({ phase, sceneRef }) {
+function getDynamicGreeting() {
+  const hr = new Date().getHours();
+  if (hr < 12) return 'Good Morning,';
+  if (hr < 18) return 'Good Afternoon,';
+  return 'Good Evening,';
+}
+
+function Scene({ phase, sceneRef, drawerOpen }) {
   const host = useRef(null);
   const [error, setError] = useState('');
+
   useEffect(() => {
     let disposed = false;
     let controller;
     const sceneUrl = '/galaxy/scene.js';
     const loadScene = new Function('url', 'return import(url)');
-    loadScene(sceneUrl).then(({ mountGalaxyScene }) => {
-      if (disposed) return;
-      try {
-        controller = mountGalaxyScene(host.current, { reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches, quality: import.meta.env.DEV && new URLSearchParams(window.location.search).get('galaxyQuality') === 'low' ? 'low' : 'auto' });
-        sceneRef.current = controller;
-        if (import.meta.env.DEV) window.__jarvisGalaxyScene = controller;
-        controller.setVisualState(phase);
-        controller.setImmersive(Boolean(document.fullscreenElement));
-      } catch (cause) { setError(cause.message); }
-    }).catch((cause) => setError(cause.message));
-    return () => { disposed = true; controller?.dispose(); sceneRef.current = null; if (import.meta.env.DEV) delete window.__jarvisGalaxyScene; };
+    loadScene(sceneUrl)
+      .then(({ mountGalaxyScene }) => {
+        if (disposed) return;
+        try {
+          controller = mountGalaxyScene(host.current, {
+            reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+            quality:
+              import.meta.env.DEV && new URLSearchParams(window.location.search).get('galaxyQuality') === 'low'
+                ? 'low'
+                : 'auto',
+          });
+          sceneRef.current = controller;
+          if (import.meta.env.DEV) window.__jarvisGalaxyScene = controller;
+          controller.setVisualState(phase);
+          controller.setDrawerOpen(drawerOpen);
+          controller.setImmersive(Boolean(document.fullscreenElement));
+        } catch (cause) {
+          setError(cause.message);
+        }
+      })
+      .catch((cause) => setError(cause.message));
+
+    return () => {
+      disposed = true;
+      controller?.dispose();
+      sceneRef.current = null;
+      if (import.meta.env.DEV) delete window.__jarvisGalaxyScene;
+    };
   }, []);
-  useEffect(() => { sceneRef.current?.setVisualState(phase); }, [phase]);
-  return <div className="galaxy-scene" ref={host} aria-label="Interactive three-dimensional JARVIS galaxy">{error && <div className="scene-error">3D scene unavailable: {error}</div>}</div>;
-}
 
-function Navigation({ expanded, onToggle, open, phase, active }) {
-  return <nav className={`galaxy-sidebar ${expanded ? 'is-expanded' : ''}`} aria-label="JARVIS navigation">
-    <div className="galaxy-sidebar-head">
-      <button className="rail-brand" onClick={() => open('home')} aria-label="Galaxy home"><BrainCircuit size={20} strokeWidth={1.5} /><span>JARVIS</span></button>
-      <button className="rail-toggle" onClick={onToggle} aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}>{expanded ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button>
+  useEffect(() => {
+    sceneRef.current?.setVisualState(phase);
+  }, [phase]);
+
+  useEffect(() => {
+    sceneRef.current?.setDrawerOpen(drawerOpen);
+  }, [drawerOpen]);
+
+  return (
+    <div className="galaxy-scene" ref={host} aria-label="Interactive 3D Gargantua Black Hole">
+      {error && <div className="scene-error">3D Black Hole scene unavailable: {error}</div>}
     </div>
-    <div className="galaxy-sidebar-items">
-      {NAV.map(({ id, label, icon: Icon }) => <button key={id} className={id === active ? 'is-home' : ''} onClick={() => open(id)} title={label} aria-label={label}><Icon size={17} strokeWidth={1.65} /><span>{label}</span></button>)}
-    </div>
-    <div className="galaxy-sidebar-foot"><span className="rail-state-dot" /><span>{phase.toUpperCase()}</span><a href="/legacy" title="Open preserved legacy console">Legacy console <ChevronRight size={13} /></a></div>
-  </nav>;
+  );
 }
 
-function Telemetry({ metrics, telemetry, status, open }) {
-  const stats = [['CPU', metrics?.cpuPercent], ['RAM', metrics?.memoryPercent], ['GPU', metrics?.gpuPercent]];
-  return <button className="galaxy-telemetry" onClick={() => open('system')} aria-label="Open system diagnostics">
-    {stats.map(([label, value]) => <div className="telemetry-stat" key={label} style={{ '--progress': `${(value || 0) * 3.6}deg` }}><span className="telemetry-ring"><b>{value == null ? '—' : `${value}%`}</b></span><small>{label}</small></div>)}
-    <span className={`telemetry-link ${status === 'ONLINE' ? 'is-online' : ''}`}>{status}<small>{telemetry.modelRouting?.last?.actualModel || telemetry.provider?.model || 'MODEL —'}</small></span>
-  </button>;
-}
+// Slim 60px Icon-Only Navigation Rail
+function Navigation({ open, active, onToggleChat, drawerOpen }) {
+  return (
+    <nav className="galaxy-sidebar" aria-label="JARVIS navigation rail">
+      {/* Top Circular Ring Logo */}
+      <div className="galaxy-sidebar-head">
+        <button className="rail-brand" onClick={() => open('home')} aria-label="Return to Home" title="Home">
+          <div className="glowing-rail-ring">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="#38bdf8" strokeWidth="1.5" strokeOpacity="0.4" />
+              <circle cx="12" cy="12" r="5" stroke="#f59e0b" strokeWidth="1.5" />
+              <circle cx="12" cy="12" r="2.5" fill="#ffffff" />
+            </svg>
+          </div>
+        </button>
+      </div>
 
-function VoiceChannel({ phase, open }) {
-  return <button className="galaxy-voice" onClick={() => open('chat')} aria-label="Open conversation and voice channel">
-    <div className="voice-channel-meta"><span><AudioLines size={13} /> Voice channel</span><b>JARVIS</b><span className="voice-phase">{phase.toUpperCase()}</span></div>
-    <div className="voice-bars" aria-hidden="true">{Array.from({ length: 39 }, (_, i) => <i key={i} style={{ '--i': i, '--height': `${7 + (i * 19 % 23)}px` }} />)}</div>
-  </button>;
+      {/* 40x40 Icon Buttons */}
+      <div className="galaxy-sidebar-items">
+        {/* Home */}
+        <button
+          key="home"
+          type="button"
+          className={active === 'home' && !drawerOpen ? 'is-home' : ''}
+          onClick={() => open('home')}
+          title="Home"
+          aria-label="Home"
+        >
+          <Home size={18} strokeWidth={1.75} />
+        </button>
+
+        {/* Chat Drawer Toggle Button */}
+        <button
+          key="chat-drawer"
+          type="button"
+          className={drawerOpen && active === 'home' ? 'is-home' : ''}
+          onClick={onToggleChat}
+          title="Toggle Chat Drawer"
+          aria-label="Toggle Chat Drawer"
+        >
+          <MessageSquare size={18} strokeWidth={1.75} />
+        </button>
+
+        {/* Essential Navigation Items */}
+        {NAV.filter((item) => item.id !== 'home').map(({ id, label, icon: IconComponent }) => (
+          <button
+            key={id}
+            type="button"
+            className={id === active ? 'is-home' : ''}
+            onClick={() => open(id)}
+            title={label}
+            aria-label={label}
+          >
+            <IconComponent size={18} strokeWidth={1.75} />
+          </button>
+        ))}
+      </div>
+
+      {/* Bottom Online Dot */}
+      <div className="galaxy-sidebar-foot" title="Local Core Online">
+        <span className="rail-state-dot" />
+        <span className="rail-online-text">ONLINE</span>
+      </div>
+    </nav>
+  );
 }
 
 export default function GalaxyHome() {
@@ -99,10 +172,11 @@ export default function GalaxyHome() {
   const sceneRef = useRef(null);
   const homeRef = useRef(null);
   const hideHudTimer = useRef(null);
-  const [expanded, setExpanded] = useState(false);
+
   const [activeTab, setActiveTab] = useState('home');
-  const [metrics, setMetrics] = useState(null);
-  const [incomingCall, setIncomingCall] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [commandInput, setCommandInput] = useState('');
+  const [commandScreenAttach, setCommandScreenAttach] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const [hudVisible, setHudVisible] = useState(false);
   const [executionMode, setExecutionMode] = useState(() => telemetry?.modelRouting?.executionMode || 'cloud');
@@ -140,29 +214,50 @@ export default function GalaxyHome() {
       console.error('Failed to toggle execution mode:', err);
     }
   };
-  useEffect(() => { let active = true; fetch('/api/brain').then((response) => response.ok ? response.json() : null).then((result) => { if (active && result?.setupRequired) manager.open('brain'); }).catch(() => {}); return () => { active = false; }; }, []);
-  useEffect(() => pollWithBackoff(async (signal) => {
-    const response = await fetch('/api/system/metrics', { signal });
-    if (!response.ok) throw new Error(`Metrics ${response.status}`);
-    setMetrics(await response.json());
-  }, { connectedMs: 5000, onError: () => setMetrics(null) }), []);
-  useEffect(() => pollWithBackoff(async (signal) => {
-    const response = await fetch('/api/device/status', { signal });
-    if (!response.ok) throw new Error(`Device status ${response.status}`);
-    const status = await response.json();
-    const latestCall = (status.events || []).find((event) => event.type.startsWith('call.'));
-    setIncomingCall(latestCall?.type === 'call.incoming' && Date.now() - Date.parse(latestCall.at) < 120_000 ? latestCall : null);
-  }, { connectedMs: 5000, onError: () => setIncomingCall(null) }), []);
-  const revealHud = () => { setHudVisible(true); clearTimeout(hideHudTimer.current); hideHudTimer.current = setTimeout(() => setHudVisible(false), 3200); };
+
+  const revealHud = () => {
+    setHudVisible(true);
+    clearTimeout(hideHudTimer.current);
+    hideHudTimer.current = setTimeout(() => setHudVisible(false), 3200);
+  };
+
   useEffect(() => {
-    const onFullscreen = () => { const active = document.fullscreenElement === homeRef.current; setImmersive(active); sceneRef.current?.setImmersive(active); if (active) { sceneRef.current?.focus(); revealHud(); } else { setHudVisible(false); clearTimeout(hideHudTimer.current); } };
+    const onFullscreen = () => {
+      const active = document.fullscreenElement === homeRef.current;
+      setImmersive(active);
+      sceneRef.current?.setImmersive(active);
+      if (active) {
+        sceneRef.current?.focus();
+        revealHud();
+      } else {
+        setHudVisible(false);
+        clearTimeout(hideHudTimer.current);
+      }
+    };
     document.addEventListener('fullscreenchange', onFullscreen);
-    return () => { document.removeEventListener('fullscreenchange', onFullscreen); clearTimeout(hideHudTimer.current); };
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreen);
+      clearTimeout(hideHudTimer.current);
+    };
   }, []);
+
   const toggleImmersive = async () => {
     if (document.fullscreenElement === homeRef.current) await document.exitFullscreen();
     else if (homeRef.current?.requestFullscreen) await homeRef.current.requestFullscreen().catch(() => {});
   };
+
+  // Listen to drawer commands
+  useEffect(() => {
+    const handleToggle = () => setDrawerOpen((prev) => !prev);
+    const handleClose = () => setDrawerOpen(false);
+    window.addEventListener('jarvis:toggle-chat', handleToggle);
+    window.addEventListener('jarvis:close-drawer', handleClose);
+    return () => {
+      window.removeEventListener('jarvis:toggle-chat', handleToggle);
+      window.removeEventListener('jarvis:close-drawer', handleClose);
+    };
+  }, []);
+
   useEffect(() => {
     const handleNav = (e) => {
       const target = e.detail?.id || e.detail?.view;
@@ -179,6 +274,11 @@ export default function GalaxyHome() {
   useEffect(() => {
     const onKey = (event) => {
       if (event.key === 'Escape') {
+        if (drawerOpen) {
+          event.preventDefault();
+          setDrawerOpen(false);
+          return;
+        }
         if (activeTab !== 'home') {
           event.preventDefault();
           setActiveTab('home');
@@ -190,23 +290,45 @@ export default function GalaxyHome() {
           return;
         }
       }
-      if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable) return;
-      const ownsNavigation = document.activeElement === sceneRef.current?.canvas || document.fullscreenElement === homeRef.current && document.activeElement === homeRef.current;
+      if (
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.isComposing ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) ||
+        document.activeElement?.isContentEditable
+      )
+        return;
+      const ownsNavigation =
+        document.activeElement === sceneRef.current?.canvas ||
+        (document.fullscreenElement === homeRef.current && document.activeElement === homeRef.current);
       if (!ownsNavigation) return;
-      if (event.key.toLowerCase() === 'f') { event.preventDefault(); void toggleImmersive(); }
-      if (event.key.toLowerCase() === 'h') { event.preventDefault(); sceneRef.current?.resetView(); }
+      if (event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        void toggleImmersive();
+      }
+      if (event.key.toLowerCase() === 'h') {
+        event.preventDefault();
+        sceneRef.current?.resetView();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeTab]);
+  }, [activeTab, drawerOpen]);
 
   const open = (id) => {
     if (visual.phase === 'sleeping') visual.wake();
     if (immersive) void document.exitFullscreen();
-    if (id === 'home') {
+    if (id === 'home' || id === 'overview') {
       setActiveTab('home');
+      setDrawerOpen(false);
       manager.closeAll();
-      setExpanded(false);
+      return;
+    }
+    if (id === 'chat') {
+      setActiveTab('home');
+      setDrawerOpen(true);
+      manager.closeAll();
       return;
     }
     const tabMap = {
@@ -225,62 +347,224 @@ export default function GalaxyHome() {
     };
     if (tabMap[id]) {
       setActiveTab(tabMap[id]);
+      setDrawerOpen(false);
       manager.closeAll();
-      setExpanded(false);
       return;
     }
     manager.open(id);
-    setExpanded(false);
   };
 
-  return <main ref={homeRef} className={`galaxy-home phase-${visual.phase}${immersive ? ' is-immersive' : ''}${hudVisible ? ' show-immersive-hud' : ''}`} data-phase={visual.phase} onPointerMove={(event) => { if (immersive && (event.clientX < 75 || event.clientY > window.innerHeight - 70)) revealHud(); }}>
-    <Scene phase={visual.phase} sceneRef={sceneRef} />
-    <div className="galaxy-vignette" />
-    <Navigation expanded={expanded} onToggle={() => setExpanded((value) => !value)} open={open} phase={visual.phase} active={activeTab} />
-    <div className="galaxy-topline"><div className="system-identity"><span className="identity-tick" /> SYSTEM ACCESS <span> / INTELLIGENCE</span></div><div className="topline-actions topbar-right"><button type="button" data-testid="execution-mode-toggle" className={`execution-mode-btn ${executionMode === 'cli' ? 'cli' : executionMode === 'local' ? 'local' : 'cloud'}`} onClick={handleToggleMode} title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama" aria-label="Toggle execution mode">{executionMode === 'cli' ? '⚡ CLI' : executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}</button><span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />{visual.serviceStatus}<button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera"><RotateCcw size={14} /></button><button onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep} title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'} aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}>{visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
-    <button className="galaxy-fullscreen-toggle" onClick={() => void toggleImmersive()} aria-label={immersive ? 'Exit immersive Galaxy' : 'Enter immersive Galaxy'} title={immersive ? 'Exit immersive Galaxy (Esc)' : 'Enter immersive Galaxy (F)'}>{immersive ? <Shrink size={15} /> : <Expand size={15} />}</button>
+  const handleFloatingCommandSubmit = () => {
+    const text = commandInput.trim();
+    if (!text) return;
+    setDrawerOpen(true);
+    window.dispatchEvent(
+      new CustomEvent('jarvis:submit-query', {
+        detail: { query: text, attachScreen: commandScreenAttach },
+      })
+    );
+    setCommandInput('');
+    setCommandScreenAttach(false);
+  };
 
-    {activeTab === 'home' && (
-      <>
-        <div className="galaxy-home-chat-wrapper" data-testid="galaxy-home-chat">
-          <Chat embedded={true} />
+  return (
+    <main
+      ref={homeRef}
+      className={`galaxy-home phase-${visual.phase}${drawerOpen ? ' drawer-active' : ''}${
+        immersive ? ' is-immersive' : ''
+      }${hudVisible ? ' show-immersive-hud' : ''}`}
+      data-phase={visual.phase}
+      onPointerMove={(event) => {
+        if (immersive && (event.clientX < 75 || event.clientY > window.innerHeight - 70)) revealHud();
+      }}
+    >
+      {/* 1. Real-Time Gargantua 3D Black Hole Scene */}
+      <Scene phase={visual.phase} sceneRef={sceneRef} drawerOpen={drawerOpen} />
+      <div className="galaxy-vignette" />
+
+      {/* 2. Slim 60px Icon Navigation Rail */}
+      <Navigation
+        open={open}
+        active={activeTab}
+        onToggleChat={() => setDrawerOpen((prev) => !prev)}
+        drawerOpen={drawerOpen}
+      />
+
+      {/* 3. Top Header Bar with Mode Toggle & Actions */}
+      <div className="galaxy-topline">
+        <div className="system-identity">
+          <span className="identity-tick" />
+          <span className="wordmark-title">J A R V I S</span>
+          <span className="wordmark-subtitle"> / PERSONAL EXECUTION LAYER</span>
         </div>
-        <section className="galaxy-left-card" aria-label="JARVIS activity"><div className="micro-label">SYSTEM ACTIVITY <span>{visual.backendOnline ? 'LIVE' : visual.serviceStatus}</span></div><div className="activity-primary"><strong>{visual.backendOnline && telemetry.online ? telemetry.usage?.requests ?? '—' : '—'}</strong><span>REQUESTS</span></div><div className="activity-sub">{!visual.backendOnline ? 'SERVICE UNAVAILABLE' : visual.activeRun ? `RUNNING · ${visual.activeRun.title || visual.activeRun.id}` : telemetry.modelRouting?.last?.actualModel || telemetry.provider?.model || 'MODEL UNAVAILABLE'}</div><div className="activity-line"><span>CORE STATE</span><b>{visual.phase.toUpperCase()}</b></div></section>
-        <Telemetry metrics={visual.backendOnline ? metrics : null} telemetry={telemetry} status={visual.serviceStatus} open={open} />
-        {visual.activeRun && <div className="galaxy-task-cards"><button onClick={() => open('runs')}><span>{visual.activeRun.title || visual.activeRun.id}</span><small>{visual.activeRun.status}</small></button></div>}
-        {visual.browserStatus?.engine && <button className="galaxy-browser-chip" onClick={() => open('browser')}><Globe2 size={13} />{visual.browserStatus.humanActionRequired ? 'HUMAN ACTION' : !visual.browserStatus.active ? 'BROWSER READY' : visual.browserStatus.engine === 'firefox' ? 'VISUAL BROWSER' : 'BROWSING'}<span>{visual.browserStatus.engine.toUpperCase()}</span></button>}
-        {visual.browserStatus?.humanActionRequired && <div className="galaxy-handoff"><strong>Human verification required</strong><span>Firefox needs your interaction to continue this browser task.</span><button onClick={() => open('browser')}>Open browser controls <ChevronRight size={14} /></button></div>}
-        {incomingCall && <div className="galaxy-call-notice" role="status"><strong>Incoming call</strong><span>{incomingCall.contactName || incomingCall.number || 'Unknown caller'}</span><button onClick={() => open('phone')}>View phone status <ChevronRight size={14} /></button></div>}
-        <VoiceChannel phase={visual.phase} open={open} />
-        <div className="galaxy-bottomline"><span>CORE {visual.phase.toUpperCase()}</span><i /> <span>{visual.backendOnline ? 'LOCAL SERVICE CONNECTED' : 'LOCAL SERVICE UNAVAILABLE'}</span></div>
-      </>
-    )}
-
-    {activeTab !== 'home' && (
-      <div className="galaxy-fullpage-workspace" data-testid="galaxy-fullpage-workspace" role="region" aria-label={`${activeTab} workspace`}>
-        <div className="galaxy-fullpage-topbar">
-          <div className="galaxy-fullpage-breadcrumb">
-            <button type="button" className="fullpage-home-link" onClick={() => setActiveTab('home')}>
-              <Home size={14} /> HOME
-            </button>
-            <ChevronRight size={13} />
-            <span className="fullpage-current-tab">{activeTab.toUpperCase()}</span>
-          </div>
-          <button type="button" className="galaxy-fullpage-close" onClick={() => setActiveTab('home')} title="Return to Galaxy Home (Esc)">
-            <X size={16} /> <span>CLOSE</span>
+        <div className="topline-actions topbar-right">
+          <button
+            type="button"
+            data-testid="execution-mode-toggle"
+            className={`execution-mode-btn ${
+              executionMode === 'cli' ? 'cli' : executionMode === 'local' ? 'local' : 'cloud'
+            }`}
+            onClick={handleToggleMode}
+            title="Toggle execution mode: Cloud API → CLI Agent (OpenCode/MCP) → Local Ollama"
+            aria-label="Toggle execution mode"
+          >
+            {executionMode === 'cli' ? '⚡ CLI' : executionMode === 'local' ? '💻 LOCAL' : '☁️ CLOUD'}
+          </button>
+          <span className={`connection-dot ${visual.backendOnline ? 'is-online' : ''}`} />
+          <span className="service-status-lbl">{visual.serviceStatus}</span>
+          <button onClick={() => sceneRef.current?.resetView()} title="Reset camera (H)" aria-label="Reset camera">
+            <RotateCcw size={14} />
+          </button>
+          <button
+            onClick={visual.phase === 'sleeping' ? visual.wake : visual.sleep}
+            title={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
+            aria-label={visual.phase === 'sleeping' ? 'Wake JARVIS' : 'Sleep JARVIS'}
+          >
+            {visual.phase === 'sleeping' ? <Sun size={15} /> : <Moon size={15} />}
           </button>
         </div>
-        <div className="galaxy-fullpage-content">
-          {activeTab === 'tasks' && <TasksWorkspace />}
-          {activeTab === 'memory' && <MemoryWorkspace />}
-          {activeTab === 'activity' && <ActivityWorkspace />}
-          {activeTab === 'settings' && <SettingsWorkspaceCombined />}
-        </div>
       </div>
-    )}
 
-    {immersive && hudVisible && <div className="galaxy-gesture-hint">Drag orbit · Wheel zoom · Shift drag pan · W A S D Q E move · H home · Esc exit</div>}
-    {visual.previewEnabled && <div className="visual-preview" aria-label="Development visual state preview"><span>STATE PREVIEW</span>{['sleeping', 'idle', 'listening', 'thinking', 'working', 'speaking'].map((state) => <button key={state} className={(visual.preview || visual.phase) === state ? 'active' : ''} onClick={() => visual.setPreview(state)}>{state}</button>)}<button onClick={() => visual.setPreview(null)}>Live</button></div>}
-    {manager.view}
-  </main>;
+      <button
+        className="galaxy-fullscreen-toggle"
+        onClick={() => void toggleImmersive()}
+        aria-label={immersive ? 'Exit immersive Galaxy' : 'Enter immersive Galaxy'}
+        title={immersive ? 'Exit immersive Galaxy (Esc)' : 'Enter immersive Galaxy (F)'}
+      >
+        {immersive ? <Shrink size={15} /> : <Expand size={15} />}
+      </button>
+
+      {/* HOME TAB VIEW */}
+      {activeTab === 'home' && (
+        <>
+          {/* Centerpiece Hero Greeting Typography */}
+          <div className={`galaxy-hero-typography ${drawerOpen ? 'shifted' : 'centered'}`}>
+            <h1 className="hero-greeting">
+              <span className="hero-prefix">{getDynamicGreeting()}</span>
+              <span className="hero-name"> Pradhuman.</span>
+            </h1>
+            <p className="hero-subtitle">J A R V I S &nbsp; • &nbsp; P E R S O N A L &nbsp; E X E C U T I O N &nbsp; L A Y E R</p>
+          </div>
+
+          {/* STATE 2: Docked Left Frosted-Glass Chat Drawer */}
+          <div
+            className={`galaxy-home-chat-wrapper ${drawerOpen ? 'is-open' : 'is-hidden'}`}
+            data-testid="galaxy-home-chat"
+          >
+            <Chat embedded={true} />
+          </div>
+
+          {/* STATE 1: Floating Glass Command Pill at bottom */}
+          {!drawerOpen && (
+            <div className="floating-command-pill-container">
+              <form
+                className="floating-command-pill"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleFloatingCommandSubmit();
+                }}
+              >
+                <button
+                  type="button"
+                  className="pill-action-btn add-btn"
+                  onClick={() => setDrawerOpen(true)}
+                  title="New prompt"
+                  aria-label="New prompt"
+                >
+                  +
+                </button>
+                <input
+                  type="text"
+                  className="pill-input"
+                  placeholder="Ask JARVIS anything..."
+                  value={commandInput}
+                  onChange={(e) => setCommandInput(e.target.value)}
+                  onFocus={() => {
+                    // Clicking or focusing opens drawer smoothly
+                    setDrawerOpen(true);
+                  }}
+                />
+                <button
+                  type="button"
+                  className={`pill-action-btn screen-btn ${commandScreenAttach ? 'active' : ''}`}
+                  onClick={() => setCommandScreenAttach((prev) => !prev)}
+                  title={commandScreenAttach ? 'Screen attached' : 'Attach screen'}
+                  aria-label="Attach screen"
+                >
+                  [o]
+                </button>
+                <button
+                  type="button"
+                  className="pill-action-btn mic-btn"
+                  onClick={() => setDrawerOpen(true)}
+                  title="Voice command"
+                  aria-label="Voice command"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="9" y="3" width="6" height="11" rx="3" />
+                    <path d="M5 11a7 7 0 0014 0M12 18v3" />
+                  </svg>
+                </button>
+                <button
+                  type="submit"
+                  className="pill-action-btn send-btn"
+                  title="Send message"
+                  aria-label="Send message"
+                >
+                  →
+                </button>
+              </form>
+            </div>
+          )}
+
+          <div className="galaxy-bottomline">
+            <span>CORE {visual.phase.toUpperCase()}</span>
+            <i />
+            <span>{visual.backendOnline ? 'LOCAL SERVICE CONNECTED' : 'LOCAL SERVICE UNAVAILABLE'}</span>
+          </div>
+        </>
+      )}
+
+      {/* FULL-PAGE WORKSPACES FOR NON-HOME TABS */}
+      {activeTab !== 'home' && (
+        <div
+          className="galaxy-fullpage-workspace"
+          data-testid="galaxy-fullpage-workspace"
+          role="region"
+          aria-label={`${activeTab} workspace`}
+        >
+          <div className="galaxy-fullpage-topbar">
+            <div className="galaxy-fullpage-breadcrumb">
+              <button type="button" className="fullpage-home-link" onClick={() => setActiveTab('home')}>
+                <Home size={14} /> HOME
+              </button>
+              <ChevronRight size={13} />
+              <span className="fullpage-current-tab">{activeTab.toUpperCase()}</span>
+            </div>
+            <button
+              type="button"
+              className="galaxy-fullpage-close"
+              onClick={() => setActiveTab('home')}
+              title="Return to Galaxy Home (Esc)"
+            >
+              <X size={16} /> <span>CLOSE</span>
+            </button>
+          </div>
+          <div className="galaxy-fullpage-content">
+            {activeTab === 'tasks' && <TasksWorkspace />}
+            {activeTab === 'memory' && <MemoryWorkspace />}
+            {activeTab === 'activity' && <ActivityWorkspace />}
+            {activeTab === 'settings' && <SettingsWorkspaceCombined />}
+          </div>
+        </div>
+      )}
+
+      {immersive && hudVisible && (
+        <div className="galaxy-gesture-hint">
+          Drag orbit · Wheel zoom · Shift drag pan · W A S D Q E move · H home · Esc exit
+        </div>
+      )}
+      {manager.view}
+    </main>
+  );
 }

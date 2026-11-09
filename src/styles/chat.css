@@ -399,4 +399,149 @@
   border-radius: 10px;
 }
 
+/* Drawer Chat Panel Enhancements */
+.embedded-home-chat.drawer-chat-panel {
+  background: rgba(8, 12, 24, 0.65) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65) !important;
+}
+
+.drawer-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.drawer-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drawer-title-area .hud-title {
+  font-size: 15px !important;
+  font-weight: 600;
+  color: #ffffff !important;
+  letter-spacing: 0.08em !important;
+}
+
+.drawer-subtitle {
+  font: 8px 'Share Tech Mono', monospace;
+  letter-spacing: 0.16em;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.drawer-head-btn,
+.drawer-close-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(203, 213, 225, 0.8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.drawer-head-btn:hover,
+.drawer-close-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.drawer-close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+/* User Bubble Read Receipt */
+.read-receipt {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  color: #38bdf8;
+  letter-spacing: -0.05em;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+/* JARVIS Glowing Ring Avatar */
+.jarvis-avatar-circle {
+  display: inline-grid;
+  place-items: center;
+  margin-right: 6px;
+  font-size: 11px;
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.7));
+  animation: avatar-ring-glow 3.5s ease-in-out infinite alternate;
+}
+
+@keyframes avatar-ring-glow {
+  0% {
+    filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.5));
+  }
+  100% {
+    filter: drop-shadow(0 0 7px rgba(245, 158, 11, 0.75));
+  }
+}
+
+/* Active Inline Run Progress Bar */
+.active-run-progress {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.active-run-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: 0.06em;
+}
+
+.active-run-label .mono {
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+.active-run-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.active-run-fill {
+  width: 67%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #38bdf8, #818cf8, #f59e0b);
+  background-size: 200% 100%;
+  animation: run-shimmer 2s linear infinite;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+
+@keyframes run-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+
 
