@@ -12,6 +12,7 @@ import GalaxyHome from './components/GalaxyHome.jsx';
 import GlobalVoice from './components/GlobalVoice.jsx';
 import GlobalVision from './components/GlobalVision.jsx';
 import DynamicIsland from './components/DynamicIsland.jsx';
+import MiniLauncher from './components/MiniLauncher.jsx';
 
 import useAppearance from './hooks/useAppearance.js';
 
@@ -59,6 +60,7 @@ export default function App() {
   const [appearance] = useAppearance();
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const isIsland = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'island';
+  const isMini = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('mode') === 'mini' || window.location.pathname === '/mini');
 
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname);
@@ -71,13 +73,19 @@ export default function App() {
   useEffect(() => {
     if (isIsland) {
       document.title = 'JARVIS-ISLAND';
+    } else if (isMini) {
+      document.title = 'JARVIS-MINI';
     } else {
       document.title = isLegacy ? 'JARVIS // Legacy Console' : 'JARVIS // Galaxy';
     }
-  }, [isIsland, isLegacy]);
+  }, [isIsland, isMini, isLegacy]);
 
   if (isIsland) {
     return <AuthGate minimal><DynamicIsland /></AuthGate>;
+  }
+
+  if (isMini) {
+    return <AuthGate minimal><MiniLauncher /></AuthGate>;
   }
 
   return <AuthGate>{isLegacy ? <LegacyConsole /> : <GalaxyHome />}</AuthGate>;

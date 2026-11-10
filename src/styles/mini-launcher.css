@@ -1,0 +1,331 @@
+/* Aegis-JARVIS Mini Popup Launcher Styles */
+
+.mini-launcher-viewport {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  box-sizing: border-box;
+  font-family: 'Rajdhani', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: visible;
+  user-select: none;
+}
+
+/* Outer Full-Bleed Pill Container matching image_d5475c.png */
+.mini-launcher-pill {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 46px;
+  background: radial-gradient(circle at 85% 90%, rgba(217, 119, 6, 0.22), transparent 55%), rgba(8, 8, 12, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 50;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mini-launcher-pill.is-busy {
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.25), 0 12px 40px rgba(0, 0, 0, 0.9), 0 0 25px rgba(217, 119, 6, 0.25);
+}
+
+/* Left 46x46px Circular Gargantua Emblem Badge */
+.mini-gargantua-badge {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #07090e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+
+.mini-gargantua-svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+.mini-gargantua-svg.pulsing {
+  animation: miniGargantuaPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes miniGargantuaPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.6));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(96, 165, 250, 0.95)) drop-shadow(0 0 6px rgba(245, 158, 11, 0.8));
+    transform: scale(1.08);
+  }
+}
+
+/* Vertical Divider Line */
+.mini-divider {
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 18px;
+  flex-shrink: 0;
+}
+
+/* Center Borderless Input */
+.mini-input-form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.mini-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 19px;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: inherit;
+  letter-spacing: 0.3px;
+  padding: 0 8px;
+}
+
+.mini-input::placeholder {
+  color: rgba(255, 255, 255, 0.38);
+  font-weight: 300;
+}
+
+/* Right Action Cluster */
+.mini-action-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.mini-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  outline: none;
+}
+
+.mini-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.mini-icon-btn:active {
+  transform: translateY(1px);
+}
+
+/* Far Right 48x48px Circular Glowing Send Button */
+.mini-send-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 80%, rgba(147, 197, 253, 0.45), rgba(30, 58, 138, 0.35));
+  border: 1px solid rgba(191, 219, 254, 0.5);
+  box-shadow: 0 0 18px rgba(96, 165, 250, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #ffffff;
+  transition: all 0.2s ease;
+  padding: 0;
+  outline: none;
+}
+
+.mini-send-btn:hover:not(:disabled) {
+  background: radial-gradient(circle at 50% 80%, rgba(147, 197, 253, 0.65), rgba(30, 58, 138, 0.5));
+  border-color: rgba(191, 219, 254, 0.85);
+  box-shadow: 0 0 24px rgba(96, 165, 250, 0.6);
+  transform: scale(1.05);
+}
+
+.mini-send-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.mini-send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* History Dropdown Overlay */
+.mini-history-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 18px;
+  right: 18px;
+  background: rgba(10, 12, 18, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.85);
+  padding: 12px 14px;
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.mini-history-header {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(251, 191, 36, 0.8);
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 0 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mini-history-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-history-item:hover {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+}
+
+/* Inline Compact Response Strip */
+.mini-response-strip {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  background: radial-gradient(circle at 90% 10%, rgba(217, 119, 6, 0.18), transparent 60%), rgba(10, 12, 18, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 24px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
+  padding: 16px 20px;
+  z-index: 90;
+  animation: miniResponseSlide 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+@keyframes miniResponseSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mini-response-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mini-response-author {
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  font-weight: 600;
+  color: #fbbf24;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mini-response-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mini-response-body {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.mini-response-body code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  color: #93c5fd;
+}
+
+.mini-loading-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.mini-loading-dots span {
+  width: 5px;
+  height: 5px;
+  background: #fbbf24;
+  border-radius: 50%;
+  animation: miniDotPulse 1.2s infinite ease-in-out both;
+}
+
+.mini-loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.mini-loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes miniDotPulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1.1); opacity: 1; }
+}
