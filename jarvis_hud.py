@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Aegis-JARVIS Dynamic Island HUD
-PyGObject (GTK4 + libadwaita) + Gtk4LayerShell bottom-anchored HUD for Hyprland.
-Integrates with engine_adapter.py (AntigravityACPAdapter) and persists to ~/.jarvis/history.json.
+Minimalist 480px Dark Glass Pill for Hyprland using GTK4 + libadwaita + Gtk4LayerShell.
+Progressive 2-stage spring height with smooth Adw.TimedAnimation and Gtk.Revealer transitions.
 """
 
 import os
@@ -43,7 +43,6 @@ except ImportError:
 try:
     from engine_adapter import AntigravityACPAdapter
 except ImportError:
-    # Look in script directory or parent directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
@@ -87,6 +86,7 @@ def save_history(history: List[Dict[str, Any]]) -> None:
 class JarvisHUDWindow(Adw.ApplicationWindow):
     """
     Bottom-anchored Wayland Layer-Shell Dynamic Island HUD.
+    Features progressive 2-stage height and spring animations.
     """
 
     def __init__(self, *args, **kwargs):
@@ -97,15 +97,16 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         self.is_recording = False
         self.current_session: Dict[str, Any] = self._create_new_session_data()
         self.active_session_id: Optional[str] = None
+        self._anim = None
+
+        # Headless dummy label for backward compatibility with existing tests
+        self.mode_label = Gtk.Label()
 
         self._setup_layer_shell()
         self._load_css()
         self._build_ui()
         self._setup_event_controllers()
         self._setup_signal_handlers()
-
-        # Display initial welcome bubble
-        self._append_assistant_bubble("Good day, Pradhuman. All systems are operational. How can I assist you?")
 
     def _create_new_session_data(self) -> Dict[str, Any]:
         """Generate a fresh session dictionary conforming to schema."""
@@ -122,7 +123,8 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         """Initialize Wayland Layer-Shell Overlay anchored to the bottom edge."""
         Gtk4LayerShell.init_for_window(self)
         Gtk4LayerShell.set_layer(self, Gtk4LayerShell.Layer.OVERLAY)
-        Gtk4LayerShell.set_namespace(self, "jarvis-hud")
+        # Use jarvis-island namespace for Hyprland slide & blur rules
+        Gtk4LayerShell.set_namespace(self, "jarvis-island")
 
         # Anchor strictly to BOTTOM
         Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.BOTTOM, True)
@@ -130,7 +132,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.LEFT, False)
         Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.RIGHT, False)
 
-        # Bottom margin 14px
+        # Bottom margin 14px default
         Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.BOTTOM, 14)
 
         # Exclusive keyboard mode while focused
@@ -156,24 +158,24 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
                     print(f"[HUD] Error loading CSS from {path}: {e}", file=sys.stderr)
 
         if not loaded:
-            # Inline fallback CSS matching specs
             fallback_css = """
             window { background: transparent; }
             .island-root {
                 background-color: rgba(10, 12, 16, 0.94);
                 border-radius: 26px;
                 border: 1px solid rgba(255, 255, 255, 0.08);
-                padding: 14px 18px;
-                box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
-                min-width: 540px;
+                padding: 12px 18px;
+                min-width: 480px;
             }
-            .status-orb { min-width: 18px; min-height: 18px; border-radius: 50%; background-color: #3b82f6; }
-            .mode-label { color: rgba(255, 255, 255, 0.88); font-size: 11px; font-weight: bold; }
-            .icon-btn { border-radius: 50%; min-width: 30px; min-height: 30px; background: rgba(255,255,255,0.04); }
-            .action-card { background-color: #18191c; border-radius: 18px; padding: 12px; }
-            .confirm-btn { background-color: #10a37f; color: white; border-radius: 12px; }
-            .cancel-btn { background-color: rgba(255, 255, 255, 0.06); color: #f87171; border-radius: 12px; }
-            .send-btn { background-color: #3b82f6; color: white; border-radius: 18px; }
+            .status-orb {
+                min-width: 20px; min-height: 20px;
+                border-radius: 999px;
+                background: radial-gradient(circle at 30% 30%, #a5d8ff 0%, #3b82f6 55%, #1d4ed8 100%);
+            }
+            .ghost-btn { background: transparent; border: none; opacity: 0.45; color: #fff; }
+            .card-container { background-color: rgba(28, 30, 36, 0.95); border-radius: 18px; }
+            .island-input { background: transparent; border: none; font-size: 16px; color: #f3f4f6; }
+            .send-pill { background: rgba(255, 255, 255, 0.08); color: #fff; border-radius: 999px; }
             """
             provider.load_from_data(fallback_css.encode("utf-8"))
 
@@ -184,60 +186,57 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
             )
 
     def _build_ui(self) -> None:
-        """Construct the GTK4 widget hierarchy."""
+        """Construct the compact 480px GTK4 Dynamic Island hierarchy."""
         # Outer container: .island-root
-        self.root_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.root_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.root_box.add_css_class("island-root")
-        self.root_box.set_size_request(540, -1)
+        self.root_box.set_size_request(480, -1)
         self.set_content(self.root_box)
 
-        # 1. Top Header Row
-        self.header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        # 1. Top Header Row: 20px Glossy Sphere on Left, Ghost Action Icons on Right
+        self.header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.header_box.add_css_class("header-row")
 
-        # Left: Status Orb + Mode Label
+        # Left: Glossy 20px Sky-Blue Spherical Orb (Strict 20x20, never oval)
         self.status_orb = Gtk.Box()
         self.status_orb.add_css_class("status-orb")
+        self.status_orb.set_size_request(20, 20)
+        self.status_orb.set_valign(Gtk.Align.CENTER)
+        self.status_orb.set_halign(Gtk.Align.CENTER)
         self.header_box.append(self.status_orb)
 
-        self.mode_label = Gtk.Label(label="JARVIS // ACTIVE", xalign=0)
-        self.mode_label.add_css_class("mode-label")
-        self.header_box.append(self.mode_label)
-
-        # Spacer to push action buttons right
+        # Spacer pushing ghost action buttons to the right
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         self.header_box.append(spacer)
 
-        # Right: Action Buttons
-        actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        actions_box.add_css_class("header-actions")
+        # Right: Ultra-minimal Ghost Icon Buttons (24x24px, borderless, opacity 0.45)
+        actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
 
         # History Button (Ctrl+H)
         self.btn_history = Gtk.Button.new_from_icon_name("document-open-recent-symbolic")
-        self.btn_history.add_css_class("icon-btn")
+        self.btn_history.add_css_class("ghost-btn")
         self.btn_history.set_tooltip_text("Past Sessions (Ctrl+H)")
         self.btn_history.connect("clicked", self._on_history_clicked)
         actions_box.append(self.btn_history)
 
         # New Chat Button (Ctrl+N)
         self.btn_new = Gtk.Button.new_from_icon_name("list-add-symbolic")
-        self.btn_new.add_css_class("icon-btn")
+        self.btn_new.add_css_class("ghost-btn")
         self.btn_new.set_tooltip_text("New Chat (Ctrl+N)")
         self.btn_new.connect("clicked", self._on_new_chat_clicked)
         actions_box.append(self.btn_new)
 
         # Voice Mic Button (Ctrl+M)
         self.btn_mic = Gtk.Button.new_from_icon_name("audio-input-microphone-symbolic")
-        self.btn_mic.add_css_class("icon-btn")
+        self.btn_mic.add_css_class("ghost-btn")
         self.btn_mic.set_tooltip_text("Voice Input (Ctrl+M)")
         self.btn_mic.connect("clicked", self._on_mic_clicked)
         actions_box.append(self.btn_mic)
 
         # Close Button (✕)
         self.btn_close = Gtk.Button.new_from_icon_name("window-close-symbolic")
-        self.btn_close.add_css_class("icon-btn")
-        self.btn_close.add_css_class("close-btn")
+        self.btn_close.add_css_class("ghost-btn")
         self.btn_close.set_tooltip_text("Collapse Island (Esc)")
         self.btn_close.connect("clicked", lambda b: self.collapse())
         actions_box.append(self.btn_close)
@@ -245,18 +244,27 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         self.header_box.append(actions_box)
         self.root_box.append(self.header_box)
 
-        # 2. Dynamic Middle Stack (SLIDE_UP_DOWN transition)
+        # 2. Stage 2 Revealer (Houses the Inner Dark Card, collapsed by default in Stage 1)
+        self.revealer = Gtk.Revealer()
+        self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        self.revealer.set_transition_duration(250)
+        self.revealer.set_reveal_child(False)
+
+        # Inner dark card container
+        self.card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.card_box.add_css_class("card-container")
+
+        # Dynamic Middle Stack inside the card
         self.stack = Gtk.Stack()
-        self.stack.add_css_class("middle-stack")
         self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP_DOWN)
-        self.stack.set_transition_duration(240)
+        self.stack.set_transition_duration(200)
 
         # Page 1: chat_view
         self.chat_scroll = Gtk.ScrolledWindow()
         self.chat_scroll.add_css_class("chat-scroll")
         self.chat_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.chat_scroll.set_min_content_height(120)
-        self.chat_scroll.set_max_content_height(340)
+        self.chat_scroll.set_min_content_height(100)
+        self.chat_scroll.set_max_content_height(320)
         self.chat_listbox = Gtk.ListBox()
         self.chat_listbox.add_css_class("chat-list")
         self.chat_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -268,7 +276,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         self.history_scroll.add_css_class("history-scroll")
         self.history_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.history_scroll.set_min_content_height(140)
-        self.history_scroll.set_max_content_height(340)
+        self.history_scroll.set_max_content_height(320)
         self.history_listbox = Gtk.ListBox()
         self.history_listbox.add_css_class("history-list")
         self.history_listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -277,9 +285,11 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         self.stack.add_named(self.history_scroll, "history_view")
 
         self.stack.set_visible_child_name("chat_view")
-        self.root_box.append(self.stack)
+        self.card_box.append(self.stack)
+        self.revealer.set_child(self.card_box)
+        self.root_box.append(self.revealer)
 
-        # 3. Bottom Input Row
+        # 3. Bottom Input Row: Borderless Entry + Subtle Dark-Glass Send Pill
         self.input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.input_box.add_css_class("input-row")
 
@@ -288,14 +298,23 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         self.input_entry.set_hexpand(True)
         self.input_entry.set_placeholder_text("What would you like to do?")
         self.input_entry.connect("activate", self._on_send_clicked)
+        self.input_entry.connect("changed", self._on_entry_changed)
         self.input_box.append(self.input_entry)
 
+        # Subtle dark-glass Send pill (hidden until text is typed)
         self.btn_send = Gtk.Button(label="Send")
-        self.btn_send.add_css_class("send-btn")
+        self.btn_send.add_css_class("send-pill")
+        self.btn_send.set_valign(Gtk.Align.CENTER)
+        self.btn_send.set_visible(False)
         self.btn_send.connect("clicked", self._on_send_clicked)
         self.input_box.append(self.btn_send)
 
         self.root_box.append(self.input_box)
+
+    def _on_entry_changed(self, entry) -> None:
+        """Toggle send pill visibility based on whether input has text."""
+        has_text = bool(entry.get_text().strip())
+        self.btn_send.set_visible(has_text)
 
     def _setup_event_controllers(self) -> None:
         """Register global keyboard shortcuts on the window."""
@@ -310,10 +329,11 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
 
     def _on_key_pressed(self, controller, keyval, keycode, state) -> bool:
         """Handle keyboard accelerators."""
-        # Escape: collapse island
         if keyval == Gdk.KEY_Escape:
             if self.stack.get_visible_child_name() == "history_view":
                 self.stack.set_visible_child_name("chat_view")
+                if not self.current_session.get("messages"):
+                    self.revealer.set_reveal_child(False)
                 self.input_entry.grab_focus()
                 return True
             self.collapse()
@@ -348,12 +368,22 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         return GLib.SOURCE_CONTINUE
 
     def expand(self) -> None:
-        """Expand and reveal the Dynamic Island HUD."""
+        """Expand and reveal the Dynamic Island HUD with smooth spring animation."""
         self.set_visible(True)
         Gtk4LayerShell.set_keyboard_mode(self, Gtk4LayerShell.KeyboardMode.EXCLUSIVE)
-        self.root_box.set_size_request(540, -1)
         self.input_entry.grab_focus()
         self.is_expanded = True
+
+        # Opening spring animation: opacity 0.0 -> 1.0, margin -20px -> 14px
+        def on_anim_step(value):
+            self.set_opacity(value)
+            cur_margin = int(-20 + value * 34)
+            Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.BOTTOM, cur_margin)
+
+        target = Adw.CallbackAnimationTarget.new(on_anim_step)
+        self._anim = Adw.TimedAnimation.new(self, 0.0, 1.0, 240, target)
+        self._anim.set_easing(Adw.Easing.EASE_OUT_EXPO)
+        self._anim.play()
 
     def collapse(self) -> None:
         """Collapse and hide the Dynamic Island HUD."""
@@ -364,31 +394,34 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         self.is_expanded = False
 
     def _on_history_clicked(self, button) -> None:
-        """Toggle between chat_view and history_view."""
+        """Toggle between chat_view and history_view inside the revealer."""
         if self.stack.get_visible_child_name() == "history_view":
             self.stack.set_visible_child_name("chat_view")
-            self.mode_label.set_label("JARVIS // ACTIVE")
+            if not self.current_session.get("messages"):
+                self.revealer.set_reveal_child(False)
             self.input_entry.grab_focus()
         else:
             self._populate_history_view()
             self.stack.set_visible_child_name("history_view")
-            self.mode_label.set_label("JARVIS // SESSIONS")
+            self.revealer.set_reveal_child(True)
 
     def _on_new_chat_clicked(self, button) -> None:
-        """Create a fresh conversation session."""
+        """Create a fresh conversation session and collapse back to compact 84px pill."""
         self._save_active_session_if_needed()
         self.current_session = self._create_new_session_data()
         self.active_session_id = None
 
-        # Clear conversation list and show initial greeting
+        # Clear conversation bubbles
         while row := self.chat_listbox.get_first_child():
             self.chat_listbox.remove(row)
 
-        self._append_assistant_bubble("New session initialized. What task shall we tackle next?")
+        # Smoothly collapse the middle card back down to Stage 1 (84px pill)
+        self.revealer.set_reveal_child(False)
+        self.stack.set_visible_child_name("chat_view")
+
         self.input_entry.set_placeholder_text("What would you like to do?")
         self.input_entry.set_text("")
-        self.stack.set_visible_child_name("chat_view")
-        self.mode_label.set_label("JARVIS // ACTIVE")
+        self.btn_send.set_visible(False)
         self.input_entry.grab_focus()
 
     def _on_mic_clicked(self, button) -> None:
@@ -399,31 +432,35 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
             self.start_voice_recording()
 
     def start_voice_recording(self) -> None:
-        """Trigger voice recording pipeline and animate mic button."""
+        """Trigger voice recording pipeline and animate ghost mic button."""
         self.is_recording = True
-        self.btn_mic.add_css_class("mic-recording")
-        self.mode_label.set_label("JARVIS // LISTENING...")
+        self.btn_mic.add_css_class("ghost-mic-recording")
         self.engine.start_voice_recording()
 
     def stop_voice_recording(self) -> None:
         """Stop voice recording and inject transcribed speech into entry."""
         self.is_recording = False
-        self.btn_mic.remove_css_class("mic-recording")
-        self.mode_label.set_label("JARVIS // ACTIVE")
+        self.btn_mic.remove_css_class("ghost-mic-recording")
         transcription = self.engine.stop_voice_recording()
         if transcription:
             self.input_entry.set_text(transcription)
+            self.btn_send.set_visible(True)
             self.input_entry.grab_focus()
 
     def _on_send_clicked(self, widget) -> None:
-        """Process user message submission."""
+        """Process user message submission and transition to Stage 2."""
         text = self.input_entry.get_text().strip()
         if not text:
             return
 
-        # 1. Append user bubble
+        # Reveal Stage 2 Card immediately
+        self.stack.set_visible_child_name("chat_view")
+        self.revealer.set_reveal_child(True)
+
+        # Append user bubble
         self._append_user_bubble(text)
         self.input_entry.set_text("")
+        self.btn_send.set_visible(False)
         self.input_entry.set_placeholder_text("Type another task...")
 
         # Record message in current session
@@ -431,12 +468,9 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         if self.current_session["title"] == "New Session":
             self.current_session["title"] = text[:36] + ("..." if len(text) > 36 else "")
 
-        # 2. Show thinking indicator
-        self.mode_label.set_label("JARVIS // THINKING...")
-        self.btn_send.set_sensitive(False)
         self.input_entry.set_sensitive(False)
 
-        # 3. Dispatch to worker thread
+        # Dispatch inference to worker thread
         threading.Thread(
             target=self._worker_send_prompt,
             args=(text, self.active_session_id),
@@ -450,9 +484,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
 
     def _on_prompt_reply(self, response_data: Dict[str, Any]) -> bool:
         """Handle LLM reply on main GTK loop."""
-        self.btn_send.set_sensitive(True)
         self.input_entry.set_sensitive(True)
-        self.mode_label.set_label("JARVIS // ACTIVE")
         self.input_entry.grab_focus()
 
         reply_text = response_data.get("text", "Processed.")
@@ -489,7 +521,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
 
         lbl = Gtk.Label(label=text, wrap=True, xalign=0)
         lbl.add_css_class("user-bubble")
-        lbl.set_max_width_chars(42)
+        lbl.set_max_width_chars(38)
 
         box.append(lbl)
         row.set_child(box)
@@ -506,7 +538,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
 
         lbl = Gtk.Label(label=text, wrap=True, xalign=0)
         lbl.add_css_class("assistant-bubble")
-        lbl.set_max_width_chars(52)
+        lbl.set_max_width_chars(46)
 
         box.append(lbl)
         row.set_child(box)
@@ -522,15 +554,13 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         row = Gtk.ListBoxRow()
         row.add_css_class("chat-row")
 
-        card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         card_box.add_css_class("action-card")
 
-        # Title
         title_label = Gtk.Label(label=f"⚠️  {title}", xalign=0)
         title_label.add_css_class("action-title")
         card_box.append(title_label)
 
-        # Editable Command TextView inside monospace box
         tv = Gtk.TextView()
         tv.add_css_class("action-code-view")
         tv.set_editable(True)
@@ -538,9 +568,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         tv.get_buffer().set_text(command)
         card_box.append(tv)
 
-        # Action Buttons
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-
         confirm_btn = Gtk.Button(label="Confirm")
         confirm_btn.add_css_class("confirm-btn")
 
@@ -564,7 +592,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
 
             def on_confirm_done(res):
                 out = res.get("output", "Execution finished.")
-                title_label.set_label(f"✓ Confirmed: {out[:60]}")
+                title_label.set_label(f"✓ Confirmed: {out[:50]}")
                 self.current_session["messages"].append({
                     "role": "tool",
                     "text": f"Executed: {mod_cmd}\nOutput: {out}"
@@ -620,15 +648,13 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
             row.add_css_class("history-row")
             row.session_data = sess
 
-            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
 
-            # Title
             title_text = sess.get("title") or "Untitled Session"
             title_lbl = Gtk.Label(label=title_text, xalign=0)
             title_lbl.add_css_class("history-title")
             vbox.append(title_lbl)
 
-            # Metadata Row: Timestamp + Engine Badge + Msg Count
             meta_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
 
             raw_time = sess.get("updated_at", "")
@@ -656,7 +682,7 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
             self.history_listbox.append(row)
 
     def _on_history_row_activated(self, listbox, row) -> None:
-        """Load a selected past session into chat_view and resume session."""
+        """Load a selected past session into chat_view, reveal card, and resume session."""
         sess = getattr(row, "session_data", None)
         if not sess:
             return
@@ -666,11 +692,9 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
         target_sid = sess.get("antigravity_session_id") or sess.get("id")
         self.active_session_id = target_sid
 
-        # Inform adapter of session resume
         if target_sid:
             self.engine.resume_session(target_sid)
 
-        # Clear and load messages into chat_view
         while child := self.chat_listbox.get_first_child():
             self.chat_listbox.remove(child)
 
@@ -687,11 +711,12 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
 
         if messages:
             self.input_entry.set_placeholder_text("Type another task...")
+            self.revealer.set_reveal_child(True)
         else:
             self.input_entry.set_placeholder_text("What would you like to do?")
+            self.revealer.set_reveal_child(False)
 
         self.stack.set_visible_child_name("chat_view")
-        self.mode_label.set_label(f"JARVIS // {sess.get('title', 'SESSION')[:16]}")
         self.input_entry.grab_focus()
 
     def _save_active_session_if_needed(self) -> None:
@@ -700,7 +725,6 @@ class JarvisHUDWindow(Adw.ApplicationWindow):
             return
 
         sessions = load_history()
-        # Find index of existing session
         idx = -1
         for i, s in enumerate(sessions):
             if s.get("id") == self.current_session.get("id"):

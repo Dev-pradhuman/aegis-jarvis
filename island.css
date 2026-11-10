@@ -1,104 +1,95 @@
 /* Aegis-JARVIS Dynamic Island HUD Stylesheet */
-/* GTK4 Layer-Shell Dark Glass Pill Aesthetic */
+/* Minimalist Dark Glass Aesthetic — Compact 480px Spring Island */
 
 window {
   background-color: transparent;
   background: transparent;
 }
 
+/* Outer Pill Container (Stage 1 Compact: 480px, ~84px) */
 .island-root {
   background-color: rgba(10, 12, 16, 0.94);
   border-radius: 26px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 14px 18px;
+  padding: 12px 18px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85), inset 0 1px 1px rgba(255, 255, 255, 0.12);
-  min-width: 540px;
+  min-width: 480px;
 }
 
-/* Header Row */
+/* Header Row: 20px Sphere on Left, Minimal Ghost Icons on Right */
 .header-row {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
+/* Glossy 20px Sky-Blue Spherical Orb (Never Oval) */
 .status-orb {
-  min-width: 18px;
-  min-height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #60a5fa, #1d4ed8);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.7);
-  margin-right: 8px;
+  min-width: 20px;
+  min-height: 20px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #a5d8ff 0%, #3b82f6 55%, #1d4ed8 100%);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.55);
 }
 
-.mode-label {
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1.2px;
-  font-family: 'Rajdhani', 'JetBrains Mono', 'Share Tech Mono', sans-serif;
-}
-
-.header-actions {
-  margin-left: 6px;
-}
-
-.icon-btn {
-  background-color: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 50%;
-  min-width: 30px;
-  min-height: 30px;
-  padding: 4px;
-  color: rgba(255, 255, 255, 0.75);
+/* Ghost Action Icons (24x24px, Borderless, Subtle Opacity) */
+.ghost-btn {
+  background: transparent;
+  background-color: transparent;
+  border: none;
   box-shadow: none;
-  transition: all 180ms ease-in-out;
-}
-
-.icon-btn:hover {
-  background-color: rgba(255, 255, 255, 0.12);
+  padding: 0;
+  margin: 0 4px;
+  min-width: 24px;
+  min-height: 24px;
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.22);
+  opacity: 0.45;
+  transition: opacity 160ms ease-in-out;
 }
 
-.icon-btn:active {
-  background-color: rgba(59, 130, 246, 0.3);
-  border-color: rgba(96, 165, 250, 0.5);
+.ghost-btn:hover {
+  background: transparent;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  opacity: 1.0;
+  color: #ffffff;
 }
 
-.close-btn:hover {
-  background-color: rgba(239, 68, 68, 0.2);
-  color: #f87171;
-  border-color: rgba(239, 68, 68, 0.4);
+.ghost-btn:active {
+  background: transparent;
+  border: none;
+  opacity: 0.85;
 }
 
-/* Mic Recording Pulse Animation */
-@keyframes pulse-mic {
+/* Voice Recording Glow on Ghost Mic */
+@keyframes pulse-ghost-mic {
   0% {
-    background-color: rgba(239, 68, 68, 0.25);
+    opacity: 0.65;
     color: #ef4444;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
   }
-  70% {
-    background-color: rgba(239, 68, 68, 0.5);
+  50% {
+    opacity: 1.0;
     color: #fca5a5;
-    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
   }
   100% {
-    background-color: rgba(239, 68, 68, 0.25);
+    opacity: 0.65;
     color: #ef4444;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
   }
 }
 
-.mic-recording {
-  animation: pulse-mic 1.2s infinite ease-in-out;
+.ghost-mic-recording {
+  animation: pulse-ghost-mic 1s infinite ease-in-out;
+  opacity: 1.0;
   color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.65);
 }
 
-/* Middle Dynamic Stack & Views */
-.middle-stack {
-  margin-top: 4px;
-  margin-bottom: 8px;
+/* Stage 2 — Inner Dark Card (Revealed only on interaction) */
+.card-container {
+  background-color: rgba(28, 30, 36, 0.95);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 14px 16px;
+  margin: 8px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .chat-scroll {
@@ -113,7 +104,7 @@ window {
 .chat-row {
   background: transparent;
   background-color: transparent;
-  padding: 4px 0;
+  padding: 3px 0;
   border: none;
   box-shadow: none;
 }
@@ -126,41 +117,38 @@ window {
 
 .user-bubble {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(37, 99, 235, 0.38));
-  border: 1px solid rgba(96, 165, 250, 0.4);
+  border: 1px solid rgba(96, 165, 250, 0.35);
   color: #ffffff;
-  border-radius: 16px 16px 4px 16px;
+  border-radius: 14px 14px 3px 14px;
   padding: 8px 14px;
   font-size: 13px;
   line-height: 1.4;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .assistant-bubble {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: #e2e8f0;
-  border-radius: 16px 16px 16px 4px;
+  border-radius: 14px 14px 14px 3px;
   padding: 10px 14px;
   font-size: 13px;
   line-height: 1.45;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 /* Action & Tool Approval Card */
 .action-card {
   background-color: #18191c;
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   margin: 6px 0;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .action-title {
   color: #fbbf24;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.5px;
 }
 
 .action-code-view {
@@ -176,24 +164,22 @@ window {
 .confirm-btn {
   background-color: #10a37f;
   color: #ffffff;
-  border-radius: 12px;
-  padding: 6px 18px;
+  border-radius: 10px;
+  padding: 6px 16px;
   font-weight: 600;
   font-size: 12px;
   border: none;
-  box-shadow: 0 2px 10px rgba(16, 163, 127, 0.3);
-  transition: all 150ms ease;
+  transition: background-color 150ms ease;
 }
 
 .confirm-btn:hover {
   background-color: #0e8f6f;
-  box-shadow: 0 4px 14px rgba(16, 163, 127, 0.45);
 }
 
 .cancel-btn {
   background-color: rgba(255, 255, 255, 0.06);
   color: #f87171;
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 6px 14px;
   font-weight: 600;
   font-size: 12px;
@@ -204,10 +190,9 @@ window {
 .cancel-btn:hover {
   background-color: rgba(239, 68, 68, 0.18);
   color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.5);
 }
 
-/* History View */
+/* History List */
 .history-scroll {
   min-height: 140px;
 }
@@ -220,14 +205,14 @@ window {
 .history-row {
   background-color: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
+  border-radius: 12px;
   margin: 4px 0;
-  padding: 10px 14px;
-  transition: all 180ms ease;
+  padding: 8px 12px;
+  transition: background-color 160ms ease;
 }
 
 .history-row:hover {
-  background-color: rgba(255, 255, 255, 0.09);
+  background-color: rgba(255, 255, 255, 0.08);
   border-color: rgba(96, 165, 250, 0.35);
 }
 
@@ -245,25 +230,19 @@ window {
 .engine-badge {
   background-color: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
-  border-radius: 8px;
-  padding: 2px 8px;
+  border-radius: 6px;
+  padding: 2px 6px;
   font-size: 10px;
   font-weight: 600;
 }
 
-/* Bottom Input Row */
+/* Bottom Input Row: Borderless & Clean */
 .input-row {
-  background-color: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 4px 6px 4px 14px;
+  background: transparent;
+  background-color: transparent;
+  border: none;
+  padding: 2px 0 0 0;
   margin-top: 4px;
-  transition: border-color 200ms ease;
-}
-
-.input-row:focus-within {
-  border-color: rgba(96, 165, 250, 0.4);
-  background-color: rgba(255, 255, 255, 0.06);
 }
 
 .island-input {
@@ -271,33 +250,38 @@ window {
   background-color: transparent;
   border: none;
   box-shadow: none;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 300;
+  font-size: 16px;
+  color: #f3f4f6;
+  padding: 4px 0;
+  outline: none;
 }
 
 .island-input:focus {
+  background: transparent;
+  background-color: transparent;
   box-shadow: none;
   outline: none;
 }
 
-.send-btn {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+/* Subtle Dark-Glass Send Pill (appears only when text is entered) */
+.send-pill {
+  background: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.08);
   color: #ffffff;
-  border-radius: 18px;
-  padding: 6px 18px;
-  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 13px;
-  border: none;
-  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
-  transition: all 180ms ease;
+  font-weight: 500;
+  transition: all 160ms ease-in-out;
 }
 
-.send-btn:hover {
-  background: linear-gradient(135deg, #60a5fa, #2563eb);
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.5);
+.send-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
-.send-btn:active {
-  background: #1d4ed8;
+.send-pill:active {
+  background: rgba(255, 255, 255, 0.2);
 }

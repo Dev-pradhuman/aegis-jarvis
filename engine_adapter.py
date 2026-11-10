@@ -1,10 +1,11 @@
 """
-Antigravity ACP Engine Adapter for Aegis-JARVIS Dynamic Island HUD
-Provides communication with the local Aegis-JARVIS daemon and Antigravity ACP agents.
+Antigravity ACP & Aegis-JARVIS Engine Adapter for Dynamic Island HUD
+Routes fast turns to the local Aegis daemon (127.0.0.1:8787) and deep/fallback turns
+to the headless Google Gemini CLI (/home/pradhuman/.npm-global/bin/gemini -p).
 """
 
 import os
-import sys
+import shutil
 import json
 import uuid
 import urllib.request
@@ -15,24 +16,22 @@ from typing import Optional, Dict, Any
 
 
 class AntigravityACPAdapter:
-    """
-    Adapter that integrates with Aegis-JARVIS ACP protocol (http://127.0.0.1:8787)
-    with autonomous offline resilience and tool execution confirmation hooks.
-    """
-
     def __init__(self, api_base: str = "http://127.0.0.1:8787"):
         self.api_base = api_base.rstrip("/")
         self.engine_name = "Antigravity ACP"
         self.active_session_id: Optional[str] = None
         self.is_recording = False
-        self._record_process = None
+        self.gemini_bin = shutil.which("gemini") or "/home/pradhuman/.npm-global/bin/gemini"
+
+    def _clean_env(self) -> dict:
+        """Isolate personal OAuth session from global API key overrides (Open Duet pattern)."""
+        env = os.environ.copy()
+        for k in ["GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]:
+            env.pop(k, None)
+        return env
 
     def resume_session(self, session_id: str) -> Dict[str, Any]:
-        """
-        Resume an existing Antigravity ACP session.
-        """
         self.active_session_id = session_id
-        # Inform daemon of session resumption if available
         try:
             url = f"{self.api_base}/api/session/resume"
             req = urllib.request.Request(
@@ -48,23 +47,47 @@ class AntigravityACPAdapter:
             pass
         return {"status": "resumed", "session_id": session_id}
 
+    def _run_gemini_headless(self, prompt: str, target_session: str) -> Optional[Dict[str, Any]]:
+        """Execute headless Google Gemini CLI (-p) when explicitly requested or when daemon fails."""
+        if not os.path.exists(self.gemini_bin):
+            return None
+        try:
+            proc = subprocess.run(
+                [self.gemini_bin, "-p", prompt],
+                capture_output=True,
+                text=True,
+                env=self._clean_env(),
+                timeout=45
+            )
+            out = (proc.stdout or "").strip()
+            if proc.returncode == 0 and out:
+                return {
+                    "text": out,
+                    "antigravity_session_id": target_session,
+                    "action_required": None
+                }
+        except Exception:
+            pass
+        return None
+
     def send_prompt(self, prompt: str, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Send a user prompt to the ACP agent engine.
-        If session_id is provided, resumes the session.
-        Returns a dict containing:
-          - text: Response message string
-          - antigravity_session_id: The session ID updated by the engine
-          - action_required: (optional) Action card payload requiring user confirmation
-        """
         target_session = session_id or self.active_session_id or str(uuid.uuid4())
         self.active_session_id = target_session
+        prompt_stripped = prompt.strip()
+        prompt_lower = prompt_stripped.lower()
 
-        # 1. Attempt communication with live Aegis-JARVIS HTTP daemon
+        # 0. Explicit deep-agent trigger (/gemini or /agy prefix)
+        if prompt_lower.startswith(("/gemini ", "/agy ")):
+            clean_query = prompt_stripped.split(" ", 1)[1].strip()
+            res = self._run_gemini_headless(clean_query, target_session)
+            if res:
+                return res
+
+        # 1. Primary path: Live Aegis-JARVIS HTTP daemon (127.0.0.1:8787)
         try:
             url = f"{self.api_base}/api/chat"
             payload = {
-                "message": prompt,
+                "message": prompt_stripped,
                 "sessionId": target_session,
                 "mode": "cloud",
                 "client": "jarvis-hud"
@@ -75,20 +98,22 @@ class AntigravityACPAdapter:
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=12) as res:
+            with urllib.request.urlopen(req, timeout=15) as res:
                 if res.status == 200:
                     data = json.loads(res.read().decode("utf-8"))
-                    reply_text = data.get("response") or data.get("reply") or data.get("text") or "Command executed successfully."
-                    session_ret = data.get("sessionId") or target_session
+                    reply_text = data.get("response") or data.get("reply") or data.get("text") or "Command executed."
+                    session_ret = data.get("sessionId") or data.get("runId") or target_session
 
-                    # Check if daemon emitted an approval/action request
                     action_req = None
-                    if "approval" in data or "action" in data or data.get("requiresConfirmation"):
+                    plan_steps = (data.get("plan") or {}).get("steps") or []
+                    needs_plan_approval = any(s.get("requiresApproval") for s in plan_steps if isinstance(s, dict))
+
+                    if "approval" in data or "action" in data or data.get("requiresConfirmation") or needs_plan_approval:
                         act = data.get("approval") or data.get("action") or {}
                         action_req = {
-                            "id": act.get("id") or str(uuid.uuid4()),
+                            "id": act.get("id") or data.get("runId") or str(uuid.uuid4()),
                             "title": act.get("title") or "Action Confirmation Required",
-                            "command": act.get("command") or act.get("toolCall", "system.execute_task()")
+                            "command": act.get("command") or act.get("toolCall") or prompt_stripped
                         }
 
                     return {
@@ -97,84 +122,66 @@ class AntigravityACPAdapter:
                         "action_required": action_req
                     }
         except Exception:
-            # Daemon offline or request timed out; fall through to intelligent local handler
             pass
 
-        # 2. Intelligent local fallback engine (ensures zero crashes and full demo support)
-        prompt_lower = prompt.lower().strip()
-
-        # Check for command execution patterns that trigger the Action Card
-        danger_triggers = ["run", "exec", "sudo", "install", "rm", "kill", "systemctl", "bash", "deploy"]
-        if any(trig in prompt_lower for trig in danger_triggers) and not prompt_lower.startswith("what"):
+        # 2. Shell / Tool Approval Gate (triggers inline Action Card in HUD)
+        danger_triggers = ["run ", "exec ", "sudo ", "install ", "rm ", "kill ", "systemctl ", "bash ", "deploy "]
+        if any(prompt_lower.startswith(trig) or f" {trig}" in f" {prompt_lower}" for trig in danger_triggers) and not prompt_lower.startswith("what"):
             action_id = str(uuid.uuid4())
-            # Synthesize recommended command from prompt
-            cmd = prompt
-            if prompt_lower.startswith("run "):
-                cmd = prompt[4:].strip()
-            elif prompt_lower.startswith("exec "):
-                cmd = prompt[5:].strip()
-
+            cmd = prompt_stripped
+            for prefix in ("run ", "exec "):
+                if prompt_lower.startswith(prefix):
+                    cmd = prompt_stripped[len(prefix):].strip()
             return {
-                "text": f"I prepared the execution plan for your request. Please review the command below before confirming.",
+                "text": "I prepared the execution plan for your request. Please review the command below before confirming.",
                 "antigravity_session_id": target_session,
                 "action_required": {
                     "id": action_id,
-                    "title": f"Tool Approval: Command Execution",
+                    "title": "Tool Approval: Command Execution",
                     "command": cmd
                 }
             }
 
-        # Local response logic for standard queries
+        # 3. Real Local Hardware/OS Fast-Path
         if "volume" in prompt_lower:
             try:
                 res = subprocess.check_output(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"], stderr=subprocess.DEVNULL)
-                vol_str = res.decode("utf-8").strip()
                 return {
-                    "text": f"Current system volume: {vol_str}",
+                    "text": f"Current system volume: {res.decode('utf-8').strip()}",
+                    "antigravity_session_id": target_session,
+                    "action_required": None
+                }
+            except Exception as e:
+                return {"text": f"Volume check failed: {e}", "antigravity_session_id": target_session, "action_required": None}
+
+        if "spotify" in prompt_lower or "play" in prompt_lower or "pause" in prompt_lower:
+            try:
+                subprocess.run(["playerctl", "play-pause"], stderr=subprocess.DEVNULL, timeout=3)
+                status = subprocess.check_output(["playerctl", "status"], stderr=subprocess.DEVNULL, timeout=3).decode().strip()
+                return {
+                    "text": f"Toggled media playback via MPRIS playerctl (Status: {status}).",
                     "antigravity_session_id": target_session,
                     "action_required": None
                 }
             except Exception:
-                return {
-                    "text": "Volume is set to 85% on PipeWire default sink.",
-                    "antigravity_session_id": target_session,
-                    "action_required": None
-                }
-
-        if "spotify" in prompt_lower or "play" in prompt_lower:
-            return {
-                "text": "Sent playback command to Spotify desktop via MPRIS playerctl.",
-                "antigravity_session_id": target_session,
-                "action_required": None
-            }
+                pass
 
         if "time" in prompt_lower or "date" in prompt_lower:
             now = datetime.now().strftime("%A, %B %d, %Y %I:%M %p")
-            return {
-                "text": f"The current system time is {now}.",
-                "antigravity_session_id": target_session,
-                "action_required": None
-            }
+            return {"text": f"The current system time is {now}.", "antigravity_session_id": target_session, "action_required": None}
 
-        if "diagnostic" in prompt_lower or "status" in prompt_lower or "health" in prompt_lower:
-            return {
-                "text": "All 31 desktop systems are online. Hyprland Layer-Shell Overlay active at 60fps.",
-                "antigravity_session_id": target_session,
-                "action_required": None
-            }
+        # 4. Real Headless Gemini CLI Fallback before generic acknowledgment
+        gemini_res = self._run_gemini_headless(prompt_stripped, target_session)
+        if gemini_res:
+            return gemini_res
 
-        # General acknowledgment
         return {
-            "text": f"Acknowledged: \"{prompt}\". Aegis-JARVIS autonomous agent processed your instruction through the Event Horizon runtime.",
+            "text": f"Acknowledged: \"{prompt_stripped}\". (Daemon offline and headless CLI unavailable).",
             "antigravity_session_id": target_session,
             "action_required": None
         }
 
     def confirm_action(self, action_id: str, command: str) -> Dict[str, Any]:
-        """
-        Execute or confirm the specified action command.
-        """
-        # Attempt daemon confirmation if active
         try:
             url = f"{self.api_base}/api/chat/action/approve"
             payload = {"actionId": action_id, "command": command}
@@ -190,18 +197,14 @@ class AntigravityACPAdapter:
         except Exception:
             pass
 
-        # Local execution fallback
         try:
-            proc = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
+            proc = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=15)
             output = proc.stdout.strip() or proc.stderr.strip() or f"Process exited with code {proc.returncode}"
             return {"status": "success", "action_id": action_id, "output": output}
         except Exception as e:
             return {"status": "error", "action_id": action_id, "error": str(e)}
 
     def reject_action(self, action_id: str) -> Dict[str, Any]:
-        """
-        Reject and cancel the specified action.
-        """
         try:
             url = f"{self.api_base}/api/chat/action/reject"
             payload = {"actionId": action_id}
@@ -218,9 +221,6 @@ class AntigravityACPAdapter:
         return {"status": "cancelled", "action_id": action_id}
 
     def start_voice_recording(self) -> None:
-        """
-        Begin voice recording pipeline.
-        """
         self.is_recording = True
         try:
             req = urllib.request.Request(f"{self.api_base}/api/voice/enable", method="POST")
@@ -229,9 +229,6 @@ class AntigravityACPAdapter:
             pass
 
     def stop_voice_recording(self) -> str:
-        """
-        Finish voice recording and retrieve speech transcription.
-        """
         self.is_recording = False
         try:
             req = urllib.request.Request(f"{self.api_base}/api/voice/status", method="GET")
@@ -242,4 +239,4 @@ class AntigravityACPAdapter:
                     return transcript
         except Exception:
             pass
-        return "What are my active system tasks?"
+        return ""
