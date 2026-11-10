@@ -1,42 +1,55 @@
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
+import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 
 let hudProcess = null;
-let isVisible = false;
 
 export function startHUDManager(onInput, onVoice) {
   if (process.env.JARVIS_TEST === '1') return;
-  const hudPath = fileURLToPath(new URL('./hud.py', import.meta.url));
+  try {
+    execSync('pkill -f jarvis_hud.py 2>/dev/null || true');
+  } catch {}
   
-  hudProcess = spawn('python3', [hudPath], { stdio: ['pipe', 'pipe', 'pipe'] });
-  hudProcess.stdin?.on('error', () => {});
-  hudProcess.on('error', () => { hudProcess = null; isVisible = false; });
+  const hudPath = fileURLToPath(new URL('../jarvis_hud.py', import.meta.url));
   
-  const reader = createInterface({ input: hudProcess.stdout });
-  reader.on('line', (line) => {
-    try {
-      const data = JSON.parse(line);
-      if (data.event === 'text_input') {
-        isVisible = false;
-        if (onInput) onInput(data.text);
-      } else if (data.event === 'voice_listen') {
-        isVisible = false;
-        if (onVoice) onVoice();
-      }
-    } catch(e) {}
+  hudProcess = spawn('python3', [hudPath], {
+    env: { ...process.env, LD_PRELOAD: '/usr/lib/libgtk4-layer-shell.so' },
+    stdio: 'ignore'
   });
   
-  hudProcess.on('exit', () => { hudProcess = null; isVisible = false; });
+  hudProcess.on('error', (err) => {
+    console.warn('[HUDManager] Failed to spawn jarvis_hud.py:', err.message);
+    hudProcess = null;
+  });
+  
+  hudProcess.on('exit', () => {
+    hudProcess = null;
+  });
 }
 
 export function toggleHUD() {
-  if (!hudProcess || !hudProcess.stdin || hudProcess.stdin.destroyed) return;
+  if (!hudProcess || hudProcess.exitCode !== null) {
+    startHUDManager();
+    return;
+  }
   try {
-    isVisible = !isVisible;
-    hudProcess.stdin.write(JSON.stringify({ action: isVisible ? 'show' : 'hide' }) + '\n');
-  } catch(e) {
-    // Ignore write failure if process terminated
+    hudProcess.kill('SIGUSR1');
+  } catch (e) {
+    startHUDManager();
   }
 }
+
+export function stopHUDManager() {
+  if (hudProcess && hudProcess.exitCode === null) {
+    try {
+      hudProcess.kill('SIGTERM');
+    } catch {}
+    hudProcess = null;
+  }
+  try {
+    execSync('pkill -f jarvis_hud.py 2>/dev/null || true');
+  } catch {}
+}
+
+process.once('exit', () => stopHUDManager());
+process.once('SIGINT', () => stopHUDManager());
+process.once('SIGTERM', () => stopHUDManager());

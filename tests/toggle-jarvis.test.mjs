@@ -21,69 +21,13 @@ test('toggle-jarvis.sh: file exists, is executable, and passes bash syntax valid
   assert.equal(result, '', 'bash -n should produce no syntax errors');
 });
 
-test('toggle-jarvis.sh: correctly identifies jarvis-mini window address and PID via jq pattern', () => {
-  const sampleClients = JSON.stringify([
-    {
-      address: '0x557a1006bce0',
-      pid: 12345,
-      title: 'JARVIS // Galaxy — Zen Browser',
-      class: 'zen',
-      workspace: { id: 1, name: '1' },
-    },
-    {
-      address: '0x557a102f2180',
-      pid: 23456,
-      title: 'Aegis-JARVIS Brain Mode Upgrade Prompts - Google Gemini — Zen Browser',
-      class: 'zen',
-      workspace: { id: 1, name: '1' },
-    },
-    {
-      address: '0x557a10413180',
-      pid: 34567,
-      title: 'JARVIS-MINI',
-      class: 'jarvis-mini',
-      initialClass: 'jarvis-mini',
-      workspace: { id: 1, name: '1' },
-    },
-    {
-      address: '0x557a10555555',
-      pid: 45678,
-      title: 'terminal',
-      class: 'kitty',
-      workspace: { id: 2, name: '2' },
-    },
-  ]);
+test('toggle-jarvis.sh: targets jarvis_hud.py and dispatches SIGUSR1 / SIGUSR2 signals', () => {
+  const content = fs.readFileSync(toggleScriptPath, 'utf8');
 
-  const jqQueryAddr = `
-    .[] | select(
-      ((.class // "") == "jarvis-mini") or
-      ((.initialClass // "") == "jarvis-mini") or
-      (((.title // "") | test("JARVIS-MINI"; "i"))) or
-      (((.title // "") | test("127\\\\.0\\\\.0\\\\.1:8787/\\\\?mode=mini"; "i")))
-    ) | .address
-  `;
-
-  const jqQueryPid = `
-    .[] | select(
-      ((.class // "") == "jarvis-mini") or
-      ((.initialClass // "") == "jarvis-mini") or
-      (((.title // "") | test("JARVIS-MINI"; "i"))) or
-      (((.title // "") | test("127\\\\.0\\\\.0\\\\.1:8787/\\\\?mode=mini"; "i")))
-    ) | .pid
-  `;
-
-  const outputAddr = execFileSync('jq', ['-r', jqQueryAddr], {
-    input: sampleClients,
-    encoding: 'utf8',
-  }).trim();
-
-  const outputPid = execFileSync('jq', ['-r', jqQueryPid], {
-    input: sampleClients,
-    encoding: 'utf8',
-  }).trim();
-
-  assert.equal(outputAddr, '0x557a10413180', 'Should extract the jarvis-mini window address');
-  assert.equal(outputPid, '34567', 'Should extract the jarvis-mini PID');
+  assert.match(content, /jarvis_hud\.py/, 'toggle-jarvis.sh must target jarvis_hud.py');
+  assert.match(content, /kill\s+-USR1/, 'toggle-jarvis.sh must send SIGUSR1 to toggle HUD');
+  assert.match(content, /kill\s+-USR2/, 'toggle-jarvis.sh must send SIGUSR2 for voice triggers');
+  assert.match(content, /find_hud_pid/, 'toggle-jarvis.sh must contain find_hud_pid function');
 });
 
 test('hyprland.conf: contains SUPER, J binding to toggle-jarvis.sh without conflicts', () => {
@@ -106,24 +50,18 @@ test('hyprland.conf: contains SUPER, J binding to toggle-jarvis.sh without confl
   assert.equal(conflictingLine, undefined, 'No conflicting SUPER, J movefocus binding should exist');
 });
 
-test('hyprland.conf: defines windowrulev2 rules for jarvis-mini', () => {
+test('hyprland.conf: defines layerrule for jarvis-island', () => {
   assert.ok(fs.existsSync(hyprlandConfPath), '~/.config/hypr/hyprland.conf should exist');
   const content = fs.readFileSync(hyprlandConfPath, 'utf8');
 
-  assert.match(content, /windowrulev2\s*=\s*float,\s*class:\^\(jarvis-mini\)\$/, 'Must float jarvis-mini');
-  assert.match(content, /windowrulev2\s*=\s*size\s+800\s+76,\s*class:\^\(jarvis-mini\)\$/, 'Must set size 800 76');
-  assert.match(content, /windowrulev2\s*=\s*center,\s*class:\^\(jarvis-mini\)\$/, 'Must center jarvis-mini');
-  assert.match(content, /windowrulev2\s*=\s*noborder,\s*class:\^\(jarvis-mini\)\$/, 'Must remove border');
-  assert.match(content, /windowrulev2\s*=\s*pin,\s*class:\^\(jarvis-mini\)\$/, 'Must pin jarvis-mini');
-  assert.match(content, /windowrulev2\s*=\s*stayfocused,\s*class:\^\(jarvis-mini\)\$/, 'Must keep focus');
+  assert.match(content, /layerrule\s*=\s*blur,\s*jarvis-island/, 'Must blur jarvis-island');
+  assert.match(content, /layerrule\s*=\s*animation\s+slide\s+bottom,\s*jarvis-island/, 'Must slide bottom jarvis-island');
 });
 
-test('hyprland.lua: defines Lua window rules for jarvis-mini', () => {
+test('hyprland.lua: defines Lua layer rule for jarvis-island', () => {
   assert.ok(fs.existsSync(hyprlandLuaPath), '~/.config/hypr/hyprland.lua should exist');
   const content = fs.readFileSync(hyprlandLuaPath, 'utf8');
 
-  assert.match(content, /class\s*=\s*"\^\(jarvis-mini\)\$"/, 'Must match jarvis-mini class in hyprland.lua');
-  assert.match(content, /float\s*=\s*true/, 'Must set float = true in hyprland.lua');
-  assert.match(content, /border_size\s*=\s*0/, 'Must set border_size = 0 in hyprland.lua');
-  assert.match(content, /stay_focused\s*=\s*true/, 'Must set stay_focused = true in hyprland.lua');
+  assert.match(content, /namespace\s*=\s*"\^\(jarvis-island\)\$"/, 'Must match jarvis-island namespace in hyprland.lua');
+  assert.match(content, /blur\s*=\s*true/, 'Must set blur = true in hyprland.lua');
 });

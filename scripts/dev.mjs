@@ -1,11 +1,34 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const port = Number(process.env.JARVIS_PORT || 8787);
 let backend = null;
 let frontend = null;
+let hud = null;
 let stopping = false;
+
+// Kill any stale HUD and old popup instances immediately
+try {
+  execSync('pkill -f jarvis_hud.py 2>/dev/null || true');
+  execSync('pkill -f "chromium.*jarvis-mini" 2>/dev/null || true');
+} catch {}
+
+function startHUD() {
+  if (stopping) return;
+  try {
+    execSync('pkill -f jarvis_hud.py 2>/dev/null || true');
+  } catch {}
+  const hudPath = fileURLToPath(new URL('../jarvis_hud.py', import.meta.url));
+  hud = spawn('python3', [hudPath], {
+    cwd: root,
+    env: { ...process.env, LD_PRELOAD: '/usr/lib/libgtk4-layer-shell.so' },
+    stdio: 'ignore'
+  });
+  hud.once('exit', () => {
+    hud = null;
+  });
+}
 
 async function healthy() {
   const controller = new AbortController();
@@ -21,11 +44,21 @@ async function healthy() {
 function stop(code = 0) {
   if (stopping) return;
   stopping = true;
+  hud?.kill('SIGTERM');
+  try {
+    execSync('pkill -f jarvis_hud.py 2>/dev/null || true');
+    execSync('pkill -f "chromium.*jarvis-mini" 2>/dev/null || true');
+  } catch {}
   frontend?.kill('SIGTERM');
   backend?.kill('SIGTERM');
-  const force = setTimeout(() => { frontend?.kill('SIGKILL'); backend?.kill('SIGKILL'); process.exit(code); }, 3500);
+  const force = setTimeout(() => {
+    frontend?.kill('SIGKILL');
+    backend?.kill('SIGKILL');
+    hud?.kill('SIGKILL');
+    process.exit(code);
+  }, 3500);
   force.unref();
-  Promise.all([backend, frontend].filter(Boolean).map((child) => new Promise((resolve) => child.exitCode !== null ? resolve() : child.once('exit', resolve))))
+  Promise.all([backend, frontend, hud].filter(Boolean).map((child) => new Promise((resolve) => child.exitCode !== null ? resolve() : child.once('exit', resolve))))
     .finally(() => { clearTimeout(force); process.exit(code); });
 }
 
@@ -54,6 +87,7 @@ else {
 }
 
 if (!stopping) {
+  startHUD();
   frontend = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1'], { cwd: root, env: process.env, stdio: 'inherit' });
   frontend.once('exit', (code) => { if (!stopping) stop(code || 0); });
 }
