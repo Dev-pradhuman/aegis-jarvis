@@ -1,0 +1,303 @@
+/* Aegis-JARVIS Dynamic Island HUD Stylesheet */
+/* GTK4 Layer-Shell Dark Glass Pill Aesthetic */
+
+window {
+  background-color: transparent;
+  background: transparent;
+}
+
+.island-root {
+  background-color: rgba(10, 12, 16, 0.94);
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85), inset 0 1px 1px rgba(255, 255, 255, 0.12);
+  min-width: 540px;
+}
+
+/* Header Row */
+.header-row {
+  margin-bottom: 8px;
+}
+
+.status-orb {
+  min-width: 18px;
+  min-height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #60a5fa, #1d4ed8);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.7);
+  margin-right: 8px;
+}
+
+.mode-label {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  font-family: 'Rajdhani', 'JetBrains Mono', 'Share Tech Mono', sans-serif;
+}
+
+.header-actions {
+  margin-left: 6px;
+}
+
+.icon-btn {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.75);
+  box-shadow: none;
+  transition: all 180ms ease-in-out;
+}
+
+.icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.icon-btn:active {
+  background-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.close-btn:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* Mic Recording Pulse Animation */
+@keyframes pulse-mic {
+  0% {
+    background-color: rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    background-color: rgba(239, 68, 68, 0.5);
+    color: #fca5a5;
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+  100% {
+    background-color: rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.mic-recording {
+  animation: pulse-mic 1.2s infinite ease-in-out;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.65);
+}
+
+/* Middle Dynamic Stack & Views */
+.middle-stack {
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.chat-scroll {
+  min-height: 120px;
+}
+
+.chat-list {
+  background: transparent;
+  background-color: transparent;
+}
+
+.chat-row {
+  background: transparent;
+  background-color: transparent;
+  padding: 4px 0;
+  border: none;
+  box-shadow: none;
+}
+
+.chat-row:hover,
+.chat-row:selected {
+  background: transparent;
+  background-color: transparent;
+}
+
+.user-bubble {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(37, 99, 235, 0.38));
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  color: #ffffff;
+  border-radius: 16px 16px 4px 16px;
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.assistant-bubble {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #e2e8f0;
+  border-radius: 16px 16px 16px 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Action & Tool Approval Card */
+.action-card {
+  background-color: #18191c;
+  border-radius: 18px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 6px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.action-title {
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+.action-code-view {
+  background-color: #0d0e11;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #67e8f9;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Share Tech Mono', monospace;
+  font-size: 12px;
+}
+
+.confirm-btn {
+  background-color: #10a37f;
+  color: #ffffff;
+  border-radius: 12px;
+  padding: 6px 18px;
+  font-weight: 600;
+  font-size: 12px;
+  border: none;
+  box-shadow: 0 2px 10px rgba(16, 163, 127, 0.3);
+  transition: all 150ms ease;
+}
+
+.confirm-btn:hover {
+  background-color: #0e8f6f;
+  box-shadow: 0 4px 14px rgba(16, 163, 127, 0.45);
+}
+
+.cancel-btn {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #f87171;
+  border-radius: 12px;
+  padding: 6px 14px;
+  font-weight: 600;
+  font-size: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  transition: all 150ms ease;
+}
+
+.cancel-btn:hover {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* History View */
+.history-scroll {
+  min-height: 140px;
+}
+
+.history-list {
+  background: transparent;
+  background-color: transparent;
+}
+
+.history-row {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  margin: 4px 0;
+  padding: 10px 14px;
+  transition: all 180ms ease;
+}
+
+.history-row:hover {
+  background-color: rgba(255, 255, 255, 0.09);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.history-title {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.history-meta {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+
+.engine-badge {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Bottom Input Row */
+.input-row {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 4px 6px 4px 14px;
+  margin-top: 4px;
+  transition: border-color 200ms ease;
+}
+
+.input-row:focus-within {
+  border-color: rgba(96, 165, 250, 0.4);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.island-input {
+  background: transparent;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 300;
+}
+
+.island-input:focus {
+  box-shadow: none;
+  outline: none;
+}
+
+.send-btn {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: #ffffff;
+  border-radius: 18px;
+  padding: 6px 18px;
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+  transition: all 180ms ease;
+}
+
+.send-btn:hover {
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.5);
+}
+
+.send-btn:active {
+  background: #1d4ed8;
+}
